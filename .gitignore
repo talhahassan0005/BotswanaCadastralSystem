@@ -29,3 +29,6 @@ Thumbs.db
 # Uploads / generated artifacts
 apps/api/uploads/
 apps/api/exports/
+
+# Private proposal / milestone doc — not for GitHub
+MILESTONES.md

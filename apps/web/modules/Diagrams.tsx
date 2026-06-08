@@ -10,9 +10,9 @@ import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketc
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
   { id: "framed", label: "Framed", blurb: "Framed from an approved General Plan." },
-  { id: "compiled", label: "Compiled", blurb: "Compiled from existing approved records / prior surveys." },
+  { id: "compiled", label: "Compiled", blurb: "Compiled from existing approved records — submitted to DSM for approval (carries the DSM approval block)." },
   { id: "borehole", label: "Borehole", blurb: "Borehole site tied by bearing & distance to reference marks." },
-  { id: "lease", label: "Tribal Lease", blurb: "Land Board tribal-lease sketch — locality + boundary sketch compiled from base-map data." },
+  { id: "lease", label: "Tribal Lease", blurb: "Land Board tribal-lease sketch — NOT submitted to DSM (witness blocks, no approval). Locality + boundary sketch from base-map data." },
 ];
 
 export function Diagrams() {
