@@ -28,14 +28,14 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
 
   return (
     <div className="bg-navy-900 text-white">
-      <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-2 text-xl font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded bg-brand/20 text-brand">▦</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-center gap-1.5 text-base font-semibold sm:gap-2 sm:text-xl">
+          <span className="grid h-6 w-6 place-items-center rounded bg-brand/20 text-brand sm:h-7 sm:w-7">▦</span>
           <span>Botswana</span>
           <span className="text-brand">Cadastral</span>
           <span>System</span>
         </div>
-        <div className="flex items-center gap-4 text-sm text-slate-300">
+        <div className="flex items-center gap-3 text-xs text-slate-300 sm:gap-4 sm:text-sm">
           {health && (
             <div className="hidden items-center gap-3 sm:flex">
               <span className="flex items-center gap-1"><Dot ok={health.engine} /> Engine</span>
@@ -43,16 +43,16 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
               <span className="flex items-center gap-1"><Dot ok={health.db} /> DB</span>
             </div>
           )}
-          <span>Module: {active?.module ?? ""}</span>
+          <span className="truncate">Module: {active?.module ?? ""}</span>
         </div>
       </div>
 
-      <nav className="flex gap-1 overflow-x-auto bg-navy-800 px-4">
+      <nav className="flex gap-1 overflow-x-auto bg-navy-800 px-2 sm:px-4">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => onTab(t.id)}
-            className={`whitespace-nowrap rounded-md px-4 py-2.5 text-sm font-medium transition ${
+            className={`whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition sm:px-4 sm:py-2.5 sm:text-sm ${
               activeTab === t.id
                 ? "bg-brand text-white"
                 : "text-slate-300 hover:bg-navy-700 hover:text-white"

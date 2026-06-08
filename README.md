@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Botswana Cadastral Survey System
 
 Web-based cadastral data-processing software for Botswana land surveyors: import survey data,
@@ -75,3 +76,6 @@ npm run test:engine     # Python COGO unit tests
 Live now: COGO engine, Data Import, COGO Engine screen, AI Validate.
 Planned (see ARCHITECTURE.md): coordinate-system transforms, parcel construction,
 diagram/plan generation, exports (PDF/DXF/SHP/DWG), GIS map.
+=======
+# BotswanaCadastralSystem
+>>>>>>> fd516f331afa671183459cff8ee6be0caf1098a1

@@ -1,4 +1,5 @@
-// All requests go through Next's /api rewrite -> Express backend.
+// All requests go through Next.js route handlers under app/api/** (in-process
+// COGO / traverse / CRS / import / validation — no separate backend needed).
 
 export async function apiJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {

@@ -15,7 +15,7 @@ function Workspace() {
   return (
     <div className="min-h-screen">
       <Header activeTab={activeTab} onTab={setActiveTab} />
-      <main className="mx-auto max-w-7xl px-6 py-6">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
         {activeTab === "import" && <DataImport />}
         {activeTab === "cogo" && <CogoEngine />}
         {activeTab === "traverse" && <Traverse />}

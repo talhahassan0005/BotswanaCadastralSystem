@@ -56,7 +56,7 @@ export function DataImport() {
           const f = e.dataTransfer.files?.[0];
           if (f) handleFile(f);
         }}
-        className={`rounded-2xl border-2 border-dashed p-12 text-center transition ${
+        className={`rounded-2xl border-2 border-dashed p-6 text-center transition sm:p-12 ${
           dragging ? "border-brand bg-brand-light/40" : "border-brand/40 bg-brand-light/10"
         }`}
       >
@@ -65,7 +65,7 @@ export function DataImport() {
         </div>
         <p className="text-lg font-medium text-brand-dark">Drop your CSV observation file here</p>
         <p className="mt-1 text-sm text-emerald-600">Supports: CSV, TXT — Botswana DSM format</p>
-        <div className="mt-5 flex justify-center gap-3">
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
           <Button onClick={() => fileRef.current?.click()}>📁 Browse file</Button>
           <Button variant="ghost" onClick={loadSample}>
             Load sample
@@ -90,8 +90,8 @@ export function DataImport() {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Preview — {importResult.filename} ({importResult.rows.length} rows detected)
           </p>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3">#</th>
