@@ -18,6 +18,9 @@ export interface DiagramSide {
   distance: number;
 }
 
+/** Which of the four Botswana diagram templates to render. */
+export type DiagramKind = "surveyed" | "compiled" | "framed" | "borehole";
+
 export interface DiagramMeta {
   lotName: string;        // e.g. "LOT 14182 CHARLESHILL"
   parent: string;         // e.g. "A PORTION OF CADASTRE 243"
@@ -34,6 +37,28 @@ export interface DiagramMeta {
   beaconDescription: string; // e.g. "ALL: 12mm iron peg"
   areaHa: number;
   closed: boolean;
+  kind?: DiagramKind;        // template variant (defaults to "surveyed")
+  sourceRef?: string;        // Compiled-from / Framed-from source document
+  boreholeNo?: string;       // borehole identifier (borehole template)
+}
+
+const KIND_CAPTION: Record<DiagramKind, string> = {
+  surveyed: "SURVEYED DIAGRAM",
+  compiled: "COMPILED DIAGRAM",
+  framed: "FRAMED DIAGRAM",
+  borehole: "BOREHOLE DIAGRAM",
+};
+
+/** Certification line wording — differs per diagram type per SG convention. */
+export function certificationLine(meta: DiagramMeta): string {
+  switch (meta.kind) {
+    case "compiled":
+      return `Compiled in ${meta.surveyedDate} by me${meta.sourceRef ? ` from ${meta.sourceRef}` : ""}`;
+    case "framed":
+      return `Framed${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me`;
+    default:
+      return `Surveyed in ${meta.surveyedDate} by me`;
+  }
 }
 
 interface Props {
@@ -50,20 +75,20 @@ function groupThousands(intPart: string): string {
 }
 
 /** Signed coordinate: 93205.88 -> "+93 205,88" */
-function fmtCoord(n: number): string {
+export function fmtCoord(n: number): string {
   const sign = n < 0 ? "-" : "+";
   const [i, f] = Math.abs(n).toFixed(2).split(".");
   return `${sign}${groupThousands(i)},${f}`;
 }
 
 /** Distance: 408.24 -> "408,24" */
-function fmtDist(n: number): string {
+export function fmtDist(n: number): string {
   const [i, f] = n.toFixed(2).split(".");
   return `${groupThousands(i)},${f}`;
 }
 
 /** "272°36'20\"" (or "272 36 20") -> "272.36.20" (Botswana DIRECTIONS notation) */
-function toDotted(dms: string): string {
+export function toDotted(dms: string): string {
   const m = dms.match(/(-?\d+)\D+(\d+)\D+(\d+(?:\.\d+)?)/);
   if (!m) return dms;
   const ss = Math.round(parseFloat(m[3]));
@@ -132,6 +157,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* Outer border */}
       <rect x={8} y={8} width={VB_W - 16} height={VB_H - 16} fill="white" stroke="black" strokeWidth={2} />
       <rect x={14} y={14} width={VB_W - 28} height={VB_H - 28} fill="none" stroke="black" strokeWidth={0.5} />
+
+      {/* ---------- Diagram-type caption ---------- */}
+      <text
+        x={draw.x + draw.w / 2}
+        y={56}
+        textAnchor="middle"
+        fontSize={14}
+        fontWeight="bold"
+        textDecoration="underline"
+      >
+        {KIND_CAPTION[meta.kind ?? "surveyed"]}
+      </text>
 
       {/* ---------- North arrow ---------- */}
       <g transform={`translate(${draw.x + draw.w - 70}, 96)`}>
@@ -284,7 +321,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ---------- Surveyor + registration block (bottom) ---------- */}
       <g fontSize={10}>
         <line x1={24} y1={VB_H - 80} x2={VB_W - 24} y2={VB_H - 80} stroke="black" strokeWidth={0.7} />
-        <text x={36} y={VB_H - 60}>Surveyed in {meta.surveyedDate} by me</text>
+        <text x={36} y={VB_H - 60}>{certificationLine(meta)}</text>
         <text x={VB_W - 260} y={VB_H - 62} fontWeight="bold">{meta.surveyor}</text>
         <text x={VB_W - 260} y={VB_H - 48} fontSize={9}>Land Surveyor</text>
         <line x1={24} y1={VB_H - 44} x2={VB_W - 24} y2={VB_H - 44} stroke="black" strokeWidth={0.5} />
