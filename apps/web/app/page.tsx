@@ -5,6 +5,8 @@ import { StoreProvider, useStore } from "@/lib/store";
 import { DataImport } from "@/modules/DataImport";
 import { CogoEngine } from "@/modules/CogoEngine";
 import { Traverse } from "@/modules/Traverse";
+import { Topographic } from "@/modules/Topographic";
+import { Volume } from "@/modules/Volume";
 import { AiValidate } from "@/modules/AiValidate";
 import { Diagrams } from "@/modules/Diagrams";
 import { Placeholder } from "@/modules/Placeholder";
@@ -19,6 +21,8 @@ function Workspace() {
         {activeTab === "import" && <DataImport />}
         {activeTab === "cogo" && <CogoEngine />}
         {activeTab === "traverse" && <Traverse />}
+        {activeTab === "topo" && <Topographic />}
+        {activeTab === "volume" && <Volume />}
         {activeTab === "validate" && <AiValidate />}
         {activeTab === "diagrams" && <Diagrams />}
         {["parcels", "gis", "export"].includes(activeTab) && (

@@ -68,3 +68,52 @@ export interface ValidationResult {
   aiSource: "groq" | "fallback";
   aiEngine: boolean;
 }
+
+// --- Topographic survey processing ---------------------------------------
+export interface TopoPoint {
+  name: string | null;
+  x: number; // Easting
+  y: number; // Northing
+  z: number; // Reduced level (elevation)
+}
+
+export interface ContourLevel {
+  level: number;
+  segments: [[number, number], [number, number]][];
+}
+
+export interface TopoStats {
+  count: number;
+  triangles: number;
+  minZ: number;
+  maxZ: number;
+  meanZ: number;
+  relief: number;
+  planArea: number;
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+}
+
+export interface TopoResult {
+  points: TopoPoint[];
+  triangles: { a: number; b: number; c: number }[];
+  contours: ContourLevel[];
+  interval: number;
+  stats: TopoStats;
+}
+
+// --- Volume computations --------------------------------------------------
+export type VolumeMethod = "surface" | "section" | "grid" | "contour";
+
+export interface VolumeResult {
+  method: VolumeMethod;
+  cut: number;
+  fill: number;
+  net: number;
+  prismoidalCut?: number | null;
+  prismoidalFill?: number | null;
+  breakdown: { label: string; value: number }[];
+  notes: string[];
+  faces?: { a: number; b: number; c: number; d: number }[];
+  points?: TopoPoint[];
+  datum?: number;
+}

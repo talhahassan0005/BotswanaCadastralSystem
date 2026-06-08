@@ -14,11 +14,14 @@ const TOOL_TITLES: Record<ToolId, string> = {
   transform: "Coordinate Transform (Lo / Arc1950 / WGS84 / UTM)",
 };
 
+// Gauss-Conform "Lo" belts (2° wide, odd central meridians). Lo13–Lo29 covers
+// the 12°E–30°E band; Botswana's territory falls in Lo21–Lo29.
+const LO_MERIDIANS = [13, 15, 17, 19, 21, 23, 25, 27, 29];
 const CRS_OPTIONS = [
-  { value: "Lo21", label: "Lo 21° (Botswana)" },
-  { value: "Lo23", label: "Lo 23° (Botswana)" },
-  { value: "Lo25", label: "Lo 25° (Botswana)" },
-  { value: "Lo27", label: "Lo 27° (Botswana)" },
+  ...LO_MERIDIANS.map((m) => ({
+    value: `Lo${m}`,
+    label: `Lo ${m}°${[21, 23, 25, 27, 29].includes(m) ? " (Botswana)" : ""}`,
+  })),
   { value: "Arc1950", label: "Arc 1950 (lat/lon)" },
   { value: "WGS84", label: "WGS84 (lat/lon)" },
   { value: "UTM34S", label: "UTM 34S" },

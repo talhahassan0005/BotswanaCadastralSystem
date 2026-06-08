@@ -7,6 +7,8 @@ export const TABS = [
   { id: "import", label: "Data Import", module: "Data Import" },
   { id: "cogo", label: "COGO Engine", module: "COGO Engine" },
   { id: "traverse", label: "Traverse", module: "Traverse Adjustment" },
+  { id: "topo", label: "Topo Survey", module: "Topographic Survey" },
+  { id: "volume", label: "Volume", module: "Volume Computation" },
   { id: "parcels", label: "Parcels", module: "Parcel Construction" },
   { id: "diagrams", label: "Diagrams", module: "Diagram Generation" },
   { id: "gis", label: "GIS Map", module: "GIS Integration" },

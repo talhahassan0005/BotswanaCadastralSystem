@@ -3,8 +3,10 @@
  * Ported from services/engine/app/crs.py — pure TypeScript (no PROJ dependency).
  *
  * Supported systems:
- *   - Lo 21 / 23 / 25 / 27  — Botswana Gauss-Conform "Lo" belts (Transverse
- *     Mercator on Clarke 1880 / Arc 1950, Y west-positive, X south-positive).
+ *   - Lo 13 … 29 (odd)      — Southern-African Gauss-Conform "Lo" belts, 2° wide
+ *     on odd central meridians (Transverse Mercator on Clarke 1880 / Arc 1950,
+ *     Y west-positive, X south-positive). Botswana's territory falls in
+ *     Lo21–Lo29; the full Lo13–Lo29 span (12°E–30°E) is registered.
  *   - Arc1950 / WGS84       — geographic lat/lon.
  *   - UTM34S / UTM35S       — UTM (WGS84) zones covering Botswana.
  */
@@ -185,14 +187,18 @@ function utmInverse(e: number, n: number, zone: number, south = true): [number, 
 // ---------------------------------------------------------------------------
 // CRS registry + orchestrator
 // ---------------------------------------------------------------------------
-const LO_ZONES: Record<string, number> = { Lo21: 21, Lo23: 23, Lo25: 25, Lo27: 27 };
+// Gauss-Conform "Lo" belts: 2° wide, on ODD central meridians. Lo13–Lo29 spans
+// the 12°E–30°E band; Botswana's national survey uses Lo21–Lo29.
+const LO_MERIDIANS = [13, 15, 17, 19, 21, 23, 25, 27, 29];
+const BOTSWANA_LO = new Set([21, 23, 25, 27, 29]);
+const LO_ZONES: Record<string, number> = Object.fromEntries(LO_MERIDIANS.map((m) => [`Lo${m}`, m]));
 const UTM_ZONES: Record<string, number> = { UTM34S: 34, UTM35S: 35 };
 
 export const CRS_LIST = [
-  { code: "Lo21", label: "Lo 21° (Botswana Gauss-Conform)" },
-  { code: "Lo23", label: "Lo 23° (Botswana Gauss-Conform)" },
-  { code: "Lo25", label: "Lo 25° (Botswana Gauss-Conform)" },
-  { code: "Lo27", label: "Lo 27° (Botswana Gauss-Conform)" },
+  ...LO_MERIDIANS.map((m) => ({
+    code: `Lo${m}`,
+    label: `Lo ${m}° (Gauss-Conform${BOTSWANA_LO.has(m) ? ", Botswana" : ""})`,
+  })),
   { code: "Arc1950", label: "Arc 1950 (geographic lat/lon)" },
   { code: "WGS84", label: "WGS84 (geographic lat/lon)" },
   { code: "UTM34S", label: "UTM Zone 34S (WGS84)" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { CogoResult, ImportResult, ValidationResult } from "./types";
+import type { CogoResult, ImportResult, TopoResult, ValidationResult, VolumeResult } from "./types";
 
 export interface ProjectConfig {
   name: string;
@@ -22,6 +22,10 @@ interface Store {
   setCogoResult: (r: CogoResult | null) => void;
   validation: ValidationResult | null;
   setValidation: (v: ValidationResult | null) => void;
+  topoResult: TopoResult | null;
+  setTopoResult: (r: TopoResult | null) => void;
+  volumeResult: VolumeResult | null;
+  setVolumeResult: (r: VolumeResult | null) => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
 }
@@ -41,6 +45,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [cogoResult, setCogoResult] = useState<CogoResult | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [topoResult, setTopoResult] = useState<TopoResult | null>(null);
+  const [volumeResult, setVolumeResult] = useState<VolumeResult | null>(null);
   const [activeTab, setActiveTab] = useState("import");
 
   const setConfig = (c: Partial<ProjectConfig>) =>
@@ -57,6 +63,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCogoResult,
         validation,
         setValidation,
+        topoResult,
+        setTopoResult,
+        volumeResult,
+        setVolumeResult,
         activeTab,
         setActiveTab,
       }}
