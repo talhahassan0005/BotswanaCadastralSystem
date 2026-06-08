@@ -18,8 +18,8 @@ export interface DiagramSide {
   distance: number;
 }
 
-/** Which of the four Botswana diagram templates to render. */
-export type DiagramKind = "surveyed" | "compiled" | "framed" | "borehole";
+/** Which Botswana diagram/sketch template to render. */
+export type DiagramKind = "surveyed" | "compiled" | "framed" | "borehole" | "lease";
 
 export interface DiagramMeta {
   lotName: string;        // e.g. "LOT 14182 CHARLESHILL"
@@ -47,6 +47,7 @@ const KIND_CAPTION: Record<DiagramKind, string> = {
   compiled: "COMPILED DIAGRAM",
   framed: "FRAMED DIAGRAM",
   borehole: "BOREHOLE DIAGRAM",
+  lease: "TRIBAL LEASE SKETCH",
 };
 
 /** Certification line wording — differs per diagram type per SG convention. */
