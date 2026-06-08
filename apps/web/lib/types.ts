@@ -1,0 +1,70 @@
+export interface ParsedRow {
+  index: number;
+  beaconId: string | null;
+  east: number | null;
+  north: number | null;
+  bearing: string | null;
+  distance: number | null;
+  status: "valid" | "check" | "error";
+  issues: string[];
+}
+
+export interface ImportResult {
+  filename: string;
+  rows: ParsedRow[];
+  validCount: number;
+  warningCount: number;
+  errorCount: number;
+  detectedColumns: string[];
+}
+
+export interface CogoLeg {
+  index: number;
+  from: string | null;
+  to: string | null;
+  bearing: number;
+  bearing_dms: string;
+  distance: number;
+  d_east_adj: number;
+  d_north_adj: number;
+}
+
+export interface CogoResult {
+  type: string;
+  adjustment: string;
+  closure: {
+    misclose_east: number;
+    misclose_north: number;
+    linear_misclosure: number;
+    total_distance: number;
+    relative_precision: number | null;
+    relative_precision_text: string;
+  };
+  area_m2: number;
+  area_ha: number;
+  sigma0: number;
+  points: { name: string | null; east: number; north: number }[];
+  legs: CogoLeg[];
+  residuals: {
+    leg: number;
+    from: string | null;
+    to: string | null;
+    magnitude: number;
+    correction_east?: number;
+    correction_north?: number;
+    v_distance?: number;
+    v_direction_sec?: number;
+  }[];
+}
+
+export interface ValidationResult {
+  checks: { rule: string; severity: "pass" | "warning" | "error"; message: string }[];
+  passed: number;
+  warnings: number;
+  errors: number;
+  overallScore: number;
+  dsmCompliant: boolean;
+  narrative: string;
+  aiSource: "groq" | "fallback";
+  aiEngine: boolean;
+}

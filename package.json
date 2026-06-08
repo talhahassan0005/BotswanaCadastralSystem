@@ -1,0 +1,21 @@
+{
+  "name": "botswana-cadastral-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Botswana cadastral survey data-processing software (COGO, traverse adjustment, parcel construction, SG/General/Working plan generation).",
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:engine": "cd services/engine && python -m uvicorn app.main:app --reload --port 8000",
+    "dev": "concurrently -n engine,api,web -c green,cyan,magenta \"npm:dev:engine\" \"npm:dev:api\" \"npm:dev:web\"",
+    "test:engine": "cd services/engine && python -m pytest -q"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
