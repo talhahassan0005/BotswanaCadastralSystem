@@ -8,6 +8,7 @@ import { Traverse } from "@/modules/Traverse";
 import { Topographic } from "@/modules/Topographic";
 import { Volume } from "@/modules/Volume";
 import { Editor } from "@/modules/Editor";
+import { RefMarks } from "@/modules/RefMarks";
 import { AiValidate } from "@/modules/AiValidate";
 import { Diagrams } from "@/modules/Diagrams";
 import { Placeholder } from "@/modules/Placeholder";
@@ -25,9 +26,10 @@ function Workspace() {
         {activeTab === "topo" && <Topographic />}
         {activeTab === "volume" && <Volume />}
         {activeTab === "editor" && <Editor />}
+        {activeTab === "gis" && <RefMarks />}
         {activeTab === "validate" && <AiValidate />}
         {activeTab === "diagrams" && <Diagrams />}
-        {["parcels", "gis", "export"].includes(activeTab) && (
+        {["parcels", "export"].includes(activeTab) && (
           <Placeholder tab={activeTab} />
         )}
       </main>
