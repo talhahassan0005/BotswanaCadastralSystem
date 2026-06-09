@@ -7,6 +7,7 @@ import { CogoEngine } from "@/modules/CogoEngine";
 import { Traverse } from "@/modules/Traverse";
 import { Topographic } from "@/modules/Topographic";
 import { Volume } from "@/modules/Volume";
+import { Editor } from "@/modules/Editor";
 import { AiValidate } from "@/modules/AiValidate";
 import { Diagrams } from "@/modules/Diagrams";
 import { Placeholder } from "@/modules/Placeholder";
@@ -23,6 +24,7 @@ function Workspace() {
         {activeTab === "traverse" && <Traverse />}
         {activeTab === "topo" && <Topographic />}
         {activeTab === "volume" && <Volume />}
+        {activeTab === "editor" && <Editor />}
         {activeTab === "validate" && <AiValidate />}
         {activeTab === "diagrams" && <Diagrams />}
         {["parcels", "gis", "export"].includes(activeTab) && (

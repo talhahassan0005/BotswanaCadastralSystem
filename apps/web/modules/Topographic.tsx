@@ -132,9 +132,12 @@ export function Topographic() {
               <Row label="Surveyed area" value={`${(topoResult.stats.planArea / 10000).toFixed(4)} ha`} />
               <Row label="Contour interval" value={`${topoResult.interval} m`} />
             </dl>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-col gap-2">
               <Button variant="ghost" onClick={() => setActiveTab("volume")}>
                 Compute volume from this surface ➜
+              </Button>
+              <Button variant="ghost" onClick={() => setActiveTab("editor")}>
+                Edit / draw manually ➜
               </Button>
             </div>
           </Card>

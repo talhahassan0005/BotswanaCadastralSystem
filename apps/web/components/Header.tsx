@@ -9,6 +9,7 @@ export const TABS = [
   { id: "traverse", label: "Traverse", module: "Traverse Adjustment" },
   { id: "topo", label: "Topo Survey", module: "Topographic Survey" },
   { id: "volume", label: "Volume", module: "Volume Computation" },
+  { id: "editor", label: "Editor", module: "Manual Drafting / Editing" },
   { id: "parcels", label: "Parcels", module: "Parcel Construction" },
   { id: "diagrams", label: "Diagrams", module: "Diagram Generation" },
   { id: "gis", label: "GIS Map", module: "GIS Integration" },
