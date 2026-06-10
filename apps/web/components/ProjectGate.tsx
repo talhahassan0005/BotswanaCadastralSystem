@@ -23,7 +23,7 @@ const DISCIPLINES: { id: Discipline; icon: string; blurb: string }[] = [
  * Shown until `started` is true; the workstation (full tabbed app) renders after.
  */
 export function ProjectGate() {
-  const { user, ready, configured, signIn, signUp } = useAccount();
+  const { user, ready, configured, recovery, signIn, signUp, resetPassword, updatePassword, resendConfirmation } = useAccount();
   const { setConfig, setStarted, resetProject, hydrate } = useStore();
 
   // Online-only for now: if a backend is configured, sign-in is required (no offline bypass).
@@ -39,8 +39,10 @@ export function ProjectGate() {
 
         {!ready ? (
           <Card><p className="text-slate-300">Loading…</p></Card>
+        ) : recovery ? (
+          <SetPasswordStage updatePassword={updatePassword} />
         ) : needAuth ? (
-          <AuthStage signIn={signIn} signUp={signUp} />
+          <AuthStage signIn={signIn} signUp={signUp} resetPassword={resetPassword} resendConfirmation={resendConfirmation} />
         ) : (
           <ChooseStage
             loggedIn={!!user}
@@ -62,47 +64,104 @@ function Card({ children }: { children: React.ReactNode }) {
 
 // --- Stage 1 ---------------------------------------------------------------
 function AuthStage({
-  signIn, signUp,
+  signIn, signUp, resetPassword, resendConfirmation,
 }: {
   signIn: (e: string, p: string) => Promise<{ error?: string }>;
   signUp: (e: string, p: string, n: string) => Promise<{ error?: string; needsConfirm?: boolean }>;
+  resetPassword: (e: string) => Promise<{ error?: string }>;
+  resendConfirmation: (e: string) => Promise<{ error?: string }>;
 }) {
-  const [mode, setMode] = useState<"in" | "up">("in");
+  const [mode, setMode] = useState<"in" | "up" | "reset">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState(false);
+
+  function go(m: "in" | "up" | "reset") { setMode(m); setError(null); setInfo(null); }
 
   async function submit() {
     setBusy(true); setError(null); setInfo(null);
+    if (mode === "reset") {
+      const res = await resetPassword(email);
+      setBusy(false);
+      if (res.error) { setError(res.error); return; }
+      setInfo("If that email has an account, a password-reset link is on its way — check your inbox (and spam).");
+      return;
+    }
     const res = mode === "in" ? await signIn(email, password) : await signUp(email, password, name);
     setBusy(false);
     if (res.error) { setError(res.error); return; }
     if (mode === "up" && (res as { needsConfirm?: boolean }).needsConfirm) {
-      setInfo("Account created — check your email to confirm, then sign in.");
+      setInfo("Account created — check your email to confirm, then log in.");
+      setPendingConfirm(true);
       setMode("in");
     }
     // on success the gate re-renders (user set) and advances to Stage 2 automatically
   }
 
+  async function resend() {
+    setBusy(true); setError(null);
+    const res = await resendConfirmation(email);
+    setBusy(false);
+    setInfo(res.error ?? "Confirmation email re-sent — check your inbox (and spam).");
+  }
+
+  const title = mode === "in" ? "Log in" : mode === "up" ? "Create surveyor account" : "Reset password";
   return (
     <Card>
       <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-dark">Stage 1</div>
-      <h2 className="mb-4 text-xl font-bold">{mode === "in" ? "Log in" : "Create surveyor account"}</h2>
+      <h2 className="mb-4 text-xl font-bold">{title}</h2>
       <div className="space-y-3">
         {mode === "up" && <Field label="Full name"><Input value={name} onChange={setName} placeholder="e.g. G. G. Sesinyi" /></Field>}
         <Field label="Email"><Input value={email} onChange={setEmail} placeholder="you@firm.co.bw" /></Field>
-        <Field label="Password"><Input type="password" value={password} onChange={setPassword} placeholder="••••••••" /></Field>
+        {mode !== "reset" && <Field label="Password"><Input type="password" value={password} onChange={setPassword} placeholder="••••••••" /></Field>}
+        {mode === "in" && (
+          <button className="text-xs text-slate-500 underline" onClick={() => go("reset")}>Forgot password?</button>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         {info && <p className="text-sm text-brand-dark">{info}</p>}
+        {pendingConfirm && mode === "in" && (
+          <button className="block text-xs text-slate-500 underline" onClick={resend} disabled={busy}>Resend confirmation email</button>
+        )}
         <div className="flex items-center justify-between">
-          <button className="text-xs text-slate-500 underline" onClick={() => setMode(mode === "in" ? "up" : "in")}>
-            {mode === "in" ? "Need an account? Sign up" : "Have an account? Log in"}
+          <button className="text-xs text-slate-500 underline" onClick={() => go(mode === "in" ? "up" : "in")}>
+            {mode === "in" ? "Need an account? Sign up" : "← Back to log in"}
           </button>
-          <Button onClick={submit} disabled={busy}>{busy ? "…" : mode === "in" ? "Log in" : "Sign up"}</Button>
+          <Button onClick={submit} disabled={busy}>{busy ? "…" : mode === "in" ? "Log in" : mode === "up" ? "Sign up" : "Send reset link"}</Button>
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function SetPasswordStage({ updatePassword }: { updatePassword: (p: string) => Promise<{ error?: string }> }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (password !== confirm) { setError("Passwords don't match."); return; }
+    setBusy(true); setError(null);
+    const res = await updatePassword(password);
+    setBusy(false);
+    if (res.error) setError(res.error);
+    // on success updatePassword clears recovery → gate advances (user is signed in)
+  }
+
+  return (
+    <Card>
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-dark">Reset password</div>
+      <h2 className="mb-4 text-xl font-bold">Set a new password</h2>
+      <div className="space-y-3">
+        <Field label="New password"><Input type="password" value={password} onChange={setPassword} placeholder="••••••••" /></Field>
+        <Field label="Confirm password"><Input type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" /></Field>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end"><Button onClick={submit} disabled={busy}>{busy ? "…" : "Update password"}</Button></div>
       </div>
     </Card>
   );
