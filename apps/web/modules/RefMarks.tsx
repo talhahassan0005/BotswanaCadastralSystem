@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Input } from "@/components/ui";
 import {
   REF_MARKS,
   directionsUrl,
+  fetchRefMarks,
+  importRefMarks,
   nearestMarks,
+  parseRefMarkCsv,
   searchMarks,
   type RefMark,
 } from "@/lib/refmarks";
+import { useAccount } from "@/lib/account";
 import { transformPoint } from "@/lib/server/crs";
 
 const STATUS_KIND: Record<RefMark["status"], string> = {
@@ -19,12 +23,26 @@ const STATUS_KIND: Record<RefMark["status"], string> = {
 };
 
 export function RefMarks() {
+  const { user: account } = useAccount();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [user, setUser] = useState<{ lat: number; lon: number } | null>(null);
   const [geo, setGeo] = useState<{ state: "idle" | "locating" | "ok" | "error"; msg?: string }>({ state: "idle" });
 
-  const filtered = useMemo(() => searchMarks(query), [query]);
+  // Marks come from the Supabase `ref_marks` table, with the bundled seed as fallback.
+  const [marks, setMarks] = useState<RefMark[]>(REF_MARKS);
+  const [source, setSource] = useState<"database" | "seed">("seed");
+  const [busy, setBusy] = useState<string | null>(null);
+  const csvRef = useRef<HTMLInputElement>(null);
+
+  async function reloadMarks() {
+    const { marks, source } = await fetchRefMarks();
+    setMarks(marks);
+    setSource(source);
+  }
+  useEffect(() => { reloadMarks(); }, []);
+
+  const filtered = useMemo(() => searchMarks(query, marks), [query, marks]);
   const rows = useMemo(
     () =>
       user
@@ -32,7 +50,28 @@ export function RefMarks() {
         : filtered.map((mark) => ({ mark, km: undefined as number | undefined })),
     [filtered, user]
   );
-  const selected = selectedId ? REF_MARKS.find((m) => m.id === selectedId) ?? null : null;
+  const selected = selectedId ? marks.find((m) => m.id === selectedId) ?? null : null;
+
+  async function publishSeed() {
+    setBusy("Publishing seed marks…");
+    const { error } = await importRefMarks(REF_MARKS);
+    setBusy(null);
+    if (error) { setGeo({ state: "error", msg: error }); return; }
+    await reloadMarks();
+  }
+  function onCsv(file: File) {
+    const r = new FileReader();
+    r.onload = async () => {
+      const parsed = parseRefMarkCsv(String(r.result));
+      if (!parsed.length) return;
+      setBusy(`Importing ${parsed.length} marks…`);
+      const { error } = await importRefMarks(parsed);
+      setBusy(null);
+      if (error) { setGeo({ state: "error", msg: error }); return; }
+      await reloadMarks();
+    };
+    r.readAsText(file);
+  }
 
   function locate() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -73,7 +112,22 @@ export function RefMarks() {
             </p>
           )}
           {geo.state === "error" && <p className="mt-2 text-xs text-red-600">{geo.msg}</p>}
-          <p className="mt-2 text-xs text-slate-400">{rows.length} of {REF_MARKS.length} marks</p>
+          <p className="mt-2 text-xs text-slate-400">
+            {rows.length} of {marks.length} marks ·{" "}
+            {source === "database" ? "from database ✓" : "seed (not in database yet)"}
+          </p>
+          {account && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {source === "seed" && <Button variant="ghost" onClick={publishSeed} disabled={!!busy}>⬆ Publish seed to database</Button>}
+              <Button variant="ghost" onClick={() => csvRef.current?.click()} disabled={!!busy}>📥 Import marks (CSV)</Button>
+              <input ref={csvRef} type="file" accept=".csv,.txt" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsv(f); e.target.value = ""; }} />
+            </div>
+          )}
+          {busy && <p className="mt-2 text-xs text-brand-dark">{busy}</p>}
+          {!account && source === "seed" && (
+            <p className="mt-2 text-xs text-slate-400">Sign in to publish the seed or import the official DSM dataset.</p>
+          )}
         </Card>
 
         <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
@@ -102,12 +156,12 @@ export function RefMarks() {
       {/* Map + detail */}
       <div className="space-y-5">
         <Card title="Locator Map" icon={<span>🗺</span>}>
-          <RefMap marks={REF_MARKS} filteredIds={new Set(filtered.map((m) => m.id))} selected={selected} user={user} onSelect={setSelectedId} />
+          <RefMap marks={marks} filteredIds={new Set(filtered.map((m) => m.id))} selected={selected} user={user} onSelect={setSelectedId} />
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1"><Dot c="#0f172a" /> mark</span>
             <span className="flex items-center gap-1"><Dot c="#059669" /> selected</span>
             <span className="flex items-center gap-1"><Dot c="#2563eb" /> you</span>
-            <span className="ml-auto">Seed data — replace with the official DSM dataset.</span>
+            <span className="ml-auto">{source === "database" ? "Live from the reference-mark database." : "Seed — publish/import the official DSM dataset."}</span>
           </div>
         </Card>
 

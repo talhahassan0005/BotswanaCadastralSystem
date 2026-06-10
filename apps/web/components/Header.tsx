@@ -13,6 +13,7 @@ export const TABS = [
   { id: "parcels", label: "Parcels", module: "Parcel Construction" },
   { id: "diagrams", label: "Diagrams", module: "Diagram Generation" },
   { id: "gis", label: "GIS Map", module: "GIS Integration" },
+  { id: "collab", label: "Surveyors", module: "Surveyor Check-in & Collaboration" },
   { id: "export", label: "Export", module: "Export" },
   { id: "validate", label: "AI Validate", module: "AI Validation" },
 ];

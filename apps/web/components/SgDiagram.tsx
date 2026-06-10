@@ -40,6 +40,8 @@ export interface DiagramMeta {
   kind?: DiagramKind;        // template variant (defaults to "surveyed")
   sourceRef?: string;        // Compiled-from / Framed-from source document
   boreholeNo?: string;       // borehole identifier (borehole template)
+  boreholeE?: number;        // surveyed borehole Easting (0 = use centroid)
+  boreholeN?: number;        // surveyed borehole Northing
 }
 
 const KIND_CAPTION: Record<DiagramKind, string> = {

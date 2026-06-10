@@ -189,15 +189,18 @@ function utmInverse(e: number, n: number, zone: number, south = true): [number, 
 // ---------------------------------------------------------------------------
 // Gauss-Conform "Lo" belts: 2° wide, on ODD central meridians. Lo13–Lo29 spans
 // the 12°E–30°E band; Botswana's national survey uses Lo21–Lo29.
-const LO_MERIDIANS = [13, 15, 17, 19, 21, 23, 25, 27, 29];
+// Botswana's official Gauss-Conform "Lo" belts are 2° wide on ODD central
+// meridians (Lo21–Lo29). The client's brief asks for "Lo12 to Lo29", so the
+// full integer span 12–29 is offered and ANY `Lo<cm>` code is accepted by the
+// transformer (the TM maths is valid for any central meridian).
+const LO_MERIDIANS = Array.from({ length: 29 - 12 + 1 }, (_, i) => 12 + i); // 12..29
 const BOTSWANA_LO = new Set([21, 23, 25, 27, 29]);
-const LO_ZONES: Record<string, number> = Object.fromEntries(LO_MERIDIANS.map((m) => [`Lo${m}`, m]));
 const UTM_ZONES: Record<string, number> = { UTM34S: 34, UTM35S: 35 };
 
 export const CRS_LIST = [
   ...LO_MERIDIANS.map((m) => ({
     code: `Lo${m}`,
-    label: `Lo ${m}° (Gauss-Conform${BOTSWANA_LO.has(m) ? ", Botswana" : ""})`,
+    label: `Lo ${m}° (Gauss-Conform${BOTSWANA_LO.has(m) ? ", Botswana belt" : ""})`,
   })),
   { code: "Arc1950", label: "Arc 1950 (geographic lat/lon)" },
   { code: "WGS84", label: "WGS84 (geographic lat/lon)" },
@@ -209,10 +212,19 @@ function normalize(code: string): string {
   return code.replace(/ /g, "").replace("Botswana", "").replace("°", "").trim();
 }
 
+/** Parse a `Lo<cm>` code to its central meridian (any value 10–36), else null. */
+function loCm(code: string): number | null {
+  const m = /^Lo(\d+(?:\.\d+)?)$/.exec(code);
+  if (!m) return null;
+  const cm = Number(m[1]);
+  return cm >= 10 && cm <= 36 ? cm : null;
+}
+
 function toWgs84Geodetic(code: string, a: number, b: number): [number, number] {
   code = normalize(code);
-  if (code in LO_ZONES) {
-    const [lat, lon] = loInverse(a, b, LO_ZONES[code]); // a=Y, b=X
+  const cm = loCm(code);
+  if (cm != null) {
+    const [lat, lon] = loInverse(a, b, cm); // a=Y, b=X
     return arc1950ToWgs84Geodetic(lat, lon);
   }
   if (code in UTM_ZONES) {
@@ -225,9 +237,10 @@ function toWgs84Geodetic(code: string, a: number, b: number): [number, number] {
 
 function fromWgs84Geodetic(code: string, lat: number, lon: number): [number, number] {
   code = normalize(code);
-  if (code in LO_ZONES) {
+  const cm = loCm(code);
+  if (cm != null) {
     const [alat, alon] = wgs84ToArc1950Geodetic(lat, lon);
-    return loForward(alat, alon, LO_ZONES[code]); // (Y, X)
+    return loForward(alat, alon, cm); // (Y, X)
   }
   if (code in UTM_ZONES) {
     return utmForward(lat, lon, UTM_ZONES[code]); // (E, N)

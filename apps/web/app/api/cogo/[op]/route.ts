@@ -3,6 +3,7 @@ import { formatDms, parseBearing, round } from "@/lib/server/angles";
 import {
   areaHectares,
   circularCurve,
+  forward,
   intersectBearingBearing,
   intersectBearingDistance,
   intersectDistanceDistance,
@@ -36,6 +37,8 @@ export async function POST(req: Request, { params }: { params: { op: string } })
         return NextResponse.json(handleTraverse(body));
       case "inverse":
         return NextResponse.json(handleInverse(body));
+      case "forward":
+        return NextResponse.json(handleForward(body));
       case "area":
         return NextResponse.json(handleArea(body));
       case "intersection":
@@ -112,6 +115,12 @@ function handleInverse(req: any) {
     bearing_dms: formatDms(bearing),
     distance: round(distance, 4),
   };
+}
+
+function handleForward(req: any) {
+  // Polar: new point from a start point, bearing and distance.
+  const p = forward(point(req.from_point), parseBearing(req.bearing), Number(req.distance));
+  return { east: round(p.east, 4), north: round(p.north, 4) };
 }
 
 function handleArea(req: any) {

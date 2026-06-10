@@ -54,10 +54,13 @@ export function runValidation(input: ValidateInput): ValidationSummary {
             : `Misclosure ${linear.toFixed(3)} m with undefined precision; review observations.`,
       });
     } else if (rp >= dsmLimit) {
+      const marginal = rp < dsmLimit * 1.5;
       checks.push({
         rule: "Traverse closure",
-        severity: "pass",
-        message: `Precision ${input.closure.relative_precision_text} — within DSM limit of 1:${dsmLimit}.`,
+        severity: marginal ? "warning" : "pass",
+        message: marginal
+          ? `Precision ${input.closure.relative_precision_text} is within the DSM limit (1:${dsmLimit}) but marginal — re-check observations.`
+          : `Precision ${input.closure.relative_precision_text} — within DSM limit of 1:${dsmLimit}.`,
       });
     } else {
       checks.push({
@@ -107,6 +110,15 @@ export function runValidation(input: ValidateInput): ValidationSummary {
             message: "All imported observations have valid coordinates/distances.",
           }
     );
+    // 3b. Rows flagged for review (non-fatal) → warning.
+    const review = input.importRows.filter((r) => r.status === "check");
+    if (review.length) {
+      checks.push({
+        rule: "Observation review",
+        severity: "warning",
+        message: `${review.length} row(s) flagged for review: ${review.map((r) => r.beaconId ?? "?").join(", ")}.`,
+      });
+    }
   }
 
   const passed = checks.filter((c) => c.severity === "pass").length;

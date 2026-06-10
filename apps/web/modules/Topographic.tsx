@@ -38,6 +38,8 @@ export function Topographic() {
   const { topoResult, setTopoResult, setActiveTab } = useStore();
   const [text, setText] = useState("");
   const [interval, setIntervalInput] = useState("0");
+  const [gridOn, setGridOn] = useState(true);
+  const [gridStep, setGridStep] = useState(""); // blank = auto
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -166,7 +168,17 @@ export function Topographic() {
             </div>
 
             <Card title="Surface — TIN, Contours & Spot Heights" icon={<span>🗺</span>}>
-              <TopoMap result={topoResult} />
+              <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-600">
+                <label className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={gridOn} onChange={(e) => setGridOn(e.target.checked)} /> Coordinate grid
+                </label>
+                <label className="flex items-center gap-1.5">
+                  Interval (m, blank = auto)
+                  <input value={gridStep} onChange={(e) => setGridStep(e.target.value)} placeholder="auto"
+                    className="w-20 rounded border border-slate-200 px-2 py-0.5" />
+                </label>
+              </div>
+              <TopoMap result={topoResult} gridOn={gridOn} gridStep={Number(gridStep) || 0} />
               <Legend minZ={topoResult.stats.minZ} maxZ={topoResult.stats.maxZ} />
             </Card>
 
@@ -202,7 +214,7 @@ export function Topographic() {
 // ---------------------------------------------------------------------------
 // SVG surface map
 // ---------------------------------------------------------------------------
-function TopoMap({ result }: { result: TopoResult }) {
+function TopoMap({ result, gridOn, gridStep }: { result: TopoResult; gridOn: boolean; gridStep: number }) {
   const W = 760;
   const H = 560;
   const pad = 40;
@@ -222,12 +234,31 @@ function TopoMap({ result }: { result: TopoResult }) {
   const showLabels = points.length <= 60;
   const majorEvery = 5;
 
+  // Labelled coordinate (E/N) grid.
+  const step = gridStep > 0 ? gridStep : niceStep(Math.max(spanX, spanY) / 6);
+  const gridEls: JSX.Element[] = [];
+  if (gridOn && step > 0 && spanX / step < 200 && spanY / step < 200) {
+    for (let e = Math.ceil(minX / step) * step; e <= maxX + 1e-6; e += step) {
+      const sx = toX(e);
+      gridEls.push(<line key={`gx${e}`} x1={sx} y1={offY} x2={sx} y2={offY + drawH} stroke="#cbd5e1" strokeWidth={0.6} strokeDasharray="2 4" />);
+      gridEls.push(<text key={`gxt${e}`} x={sx} y={offY + drawH + 11} textAnchor="middle" fontSize={8} fill="#64748b">E {Math.round(e)}</text>);
+    }
+    for (let n = Math.ceil(minY / step) * step; n <= maxY + 1e-6; n += step) {
+      const sy = toY(n);
+      gridEls.push(<line key={`gy${n}`} x1={offX} y1={sy} x2={offX + drawW} y2={sy} stroke="#cbd5e1" strokeWidth={0.6} strokeDasharray="2 4" />);
+      gridEls.push(<text key={`gyt${n}`} x={offX - 3} y={sy + 3} textAnchor="end" fontSize={8} fill="#64748b">N {Math.round(n)}</text>);
+    }
+  }
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       xmlns="http://www.w3.org/2000/svg"
       style={{ width: "100%", height: "auto", background: "#f8fafc", borderRadius: 12 }}
     >
+      {/* Coordinate grid (underlay) */}
+      {gridEls}
+
       {/* TIN faces shaded by mean elevation */}
       {triangles.map((t, i) => {
         const a = points[t.a],
@@ -341,6 +372,13 @@ function elevColor(z: number, minZ: number, maxZ: number): string {
 
 function lerp(a: number[], b: number[], t: number): number[] {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+function niceStep(target: number): number {
+  if (!isFinite(target) || target <= 0) return 0;
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const n = target / pow;
+  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * pow;
 }
 
 function contourLength(segments: [[number, number], [number, number]][]): number {

@@ -14,9 +14,9 @@ const TOOL_TITLES: Record<ToolId, string> = {
   transform: "Coordinate Transform (Lo / Arc1950 / WGS84 / UTM)",
 };
 
-// Gauss-Conform "Lo" belts (2° wide, odd central meridians). Lo13–Lo29 covers
-// the 12°E–30°E band; Botswana's territory falls in Lo21–Lo29.
-const LO_MERIDIANS = [13, 15, 17, 19, 21, 23, 25, 27, 29];
+// Gauss-Conform "Lo" belts. Botswana's official belts are odd central meridians
+// (Lo21–Lo29); the full Lo12–Lo29 span is offered per the client brief.
+const LO_MERIDIANS = Array.from({ length: 29 - 12 + 1 }, (_, i) => 12 + i); // 12..29
 const CRS_OPTIONS = [
   ...LO_MERIDIANS.map((m) => ({
     value: `Lo${m}`,
@@ -69,23 +69,40 @@ function useRun() {
 }
 
 function InverseTool() {
+  const [mode, setMode] = useState("inverse");
   const [a, setA] = useState({ e: "0", n: "0" });
   const [b, setB] = useState({ e: "100", n: "100" });
+  const [fwd, setFwd] = useState({ brg: "45.00.00", dist: "100" });
   const { result, error, busy, run } = useRun();
   return (
     <div>
-      <p className="mb-3 text-sm text-slate-500">Join two coordinates — returns bearing and distance.</p>
-      <div className="grid grid-cols-2 gap-3">
+      <Field label="Calculation">
+        <Select value={mode} onChange={setMode} options={[
+          { value: "inverse", label: "Inverse / Join — two points → bearing & distance" },
+          { value: "forward", label: "Forward / Polar — point + bearing + distance → new point" },
+        ]} />
+      </Field>
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="From Easting"><Input value={a.e} onChange={(v) => setA({ ...a, e: v })} /></Field>
         <Field label="From Northing"><Input value={a.n} onChange={(v) => setA({ ...a, n: v })} /></Field>
-        <Field label="To Easting"><Input value={b.e} onChange={(v) => setB({ ...b, e: v })} /></Field>
-        <Field label="To Northing"><Input value={b.n} onChange={(v) => setB({ ...b, n: v })} /></Field>
+        {mode === "inverse" ? (
+          <>
+            <Field label="To Easting"><Input value={b.e} onChange={(v) => setB({ ...b, e: v })} /></Field>
+            <Field label="To Northing"><Input value={b.n} onChange={(v) => setB({ ...b, n: v })} /></Field>
+          </>
+        ) : (
+          <>
+            <Field label="Bearing (DDD.MMSS or decimal)"><Input value={fwd.brg} onChange={(v) => setFwd({ ...fwd, brg: v })} /></Field>
+            <Field label="Distance (m)"><Input value={fwd.dist} onChange={(v) => setFwd({ ...fwd, dist: v })} /></Field>
+          </>
+        )}
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => run("/cogo/inverse", {
-          from_point: { east: +a.e, north: +a.n },
-          to_point: { east: +b.e, north: +b.n },
-        })}>{busy ? "…" : "Compute"}</Button>
+        <Button disabled={busy} onClick={() =>
+          mode === "inverse"
+            ? run("/cogo/inverse", { from_point: { east: +a.e, north: +a.n }, to_point: { east: +b.e, north: +b.n } })
+            : run("/cogo/forward", { from_point: { east: +a.e, north: +a.n }, bearing: fwd.brg, distance: +fwd.dist })
+        }>{busy ? "…" : "Compute"}</Button>
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <Result data={result} />
@@ -163,7 +180,9 @@ function CurveTool() {
 }
 
 function AreaTool() {
+  const [mode, setMode] = useState("polygon");
   const [text, setText] = useState("0,0\n100,0\n100,100\n0,100");
+  const [strip, setStrip] = useState({ len: "100", w: "10" });
   const { result, error, busy, run } = useRun();
   function parse() {
     return text.split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
@@ -171,24 +190,43 @@ function AreaTool() {
       return { east: e, north: n };
     });
   }
+  const len = Number(strip.len) || 0;
+  const w = Number(strip.w) || 0;
+  const stripArea = len * w;
   return (
     <div>
-      <p className="mb-3 text-sm text-slate-500">
-        Parcel / road reserve / servitude area. One vertex per line: <code>easting, northing</code>.
-      </p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={6}
-        className="w-full rounded-lg border border-slate-200 p-3 font-mono text-sm focus:border-brand focus:outline-none"
-      />
-      <div className="mt-4">
-        <Button disabled={busy} onClick={() => run("/cogo/area", { points: parse() })}>
-          {busy ? "…" : "Compute area"}
-        </Button>
-      </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-      <Result data={result} />
+      <Field label="Area type">
+        <Select value={mode} onChange={setMode} options={[
+          { value: "polygon", label: "Polygon — parcel (enter vertices)" },
+          { value: "strip", label: "Strip — road reserve / servitude (length × width)" },
+        ]} />
+      </Field>
+      {mode === "polygon" ? (
+        <>
+          <p className="mb-2 mt-3 text-sm text-slate-500">One vertex per line: <code>easting, northing</code>.</p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            className="w-full rounded-lg border border-slate-200 p-3 font-mono text-sm focus:border-brand focus:outline-none"
+          />
+          <div className="mt-4">
+            <Button disabled={busy} onClick={() => run("/cogo/area", { points: parse() })}>
+              {busy ? "…" : "Compute area"}
+            </Button>
+          </div>
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          <Result data={result} />
+        </>
+      ) : (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Field label="Centre-line length (m)"><Input value={strip.len} onChange={(v) => setStrip({ ...strip, len: v })} /></Field>
+            <Field label="Reserve width (m)"><Input value={strip.w} onChange={(v) => setStrip({ ...strip, w: v })} /></Field>
+          </div>
+          <Result data={{ method: "strip", length_m: len, width_m: w, area_m2: Math.round(stripArea * 1000) / 1000, area_ha: Math.round((stripArea / 10000) * 10000) / 10000 }} />
+        </>
+      )}
     </div>
   );
 }

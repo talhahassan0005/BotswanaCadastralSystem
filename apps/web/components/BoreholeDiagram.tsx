@@ -41,10 +41,10 @@ export const BoreholeDiagram = forwardRef<SVGSVGElement, Props>(function Borehol
   const VB_W = 1400;
   const VB_H = 990;
 
-  // Borehole position: centroid of the supplied reference marks (placeholder
-  // until a dedicated borehole coordinate is entered).
-  const bhE = avg(points.map((p) => p.east));
-  const bhN = avg(points.map((p) => p.north));
+  // Borehole position: the surveyed coordinate if entered, else the centroid of
+  // the supplied reference marks as a placeholder.
+  const bhE = meta.boreholeE ? meta.boreholeE : avg(points.map((p) => p.east));
+  const bhN = meta.boreholeN ? meta.boreholeN : avg(points.map((p) => p.north));
 
   const draw = { x: 24, y: 70, w: 770, h: 850 };
   const pad = 90;

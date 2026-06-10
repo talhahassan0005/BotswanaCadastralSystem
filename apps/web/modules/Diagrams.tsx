@@ -38,6 +38,8 @@ export function Diagrams() {
     areaHa: cogoResult?.area_ha ?? 0,
     sourceRef: "",
     boreholeNo: "",
+    boreholeE: 0,
+    boreholeN: 0,
   });
 
   const points = useMemo(
@@ -116,7 +118,7 @@ export function Diagrams() {
   }
 
   const set = (k: keyof typeof meta) => (v: string) =>
-    setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
+    setMeta((m) => ({ ...m, [k]: k === "scale" || k === "boreholeE" || k === "boreholeN" ? Number(v) || 0 : v }));
 
   if (!cogoResult || points.length < 3) {
     return (
@@ -183,9 +185,15 @@ export function Diagrams() {
                     <Input value={meta.lotName} onChange={set("lotName")} />
                   </Field>
                   {isBorehole ? (
-                    <Field label="Borehole No.">
-                      <Input value={meta.boreholeNo ?? ""} onChange={set("boreholeNo")} />
-                    </Field>
+                    <>
+                      <Field label="Borehole No.">
+                        <Input value={meta.boreholeNo ?? ""} onChange={set("boreholeNo")} />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label="Borehole Easting"><Input type="number" value={meta.boreholeE ?? 0} onChange={set("boreholeE")} /></Field>
+                        <Field label="Borehole Northing"><Input type="number" value={meta.boreholeN ?? 0} onChange={set("boreholeN")} /></Field>
+                      </div>
+                    </>
                   ) : (
                     <Field label="Parent / portion">
                       <Input value={meta.parent} onChange={set("parent")} />

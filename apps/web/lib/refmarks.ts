@@ -1,11 +1,14 @@
 /**
  * Botswana survey reference-mark database (Module: GIS / Reference Marks).
  *
- * NOTE: the marks below are a representative SEED dataset for demonstrating
- * search / nearest / map display. Replace REF_MARKS with the official export
- * from the Department of Surveys & Mapping (DSM) — the UI is data-driven, so no
- * code change is needed beyond swapping this array (or loading it from a file).
+ * The marks live in the Supabase `ref_marks` table (loaded via fetchRefMarks).
+ * The REF_MARKS array below is the SEED used as a fallback when the backend is
+ * not configured or the table is empty — and is what `Publish seed` uploads.
+ * Replace/extend the table with the official Department of Surveys & Mapping
+ * (DSM) export; the UI is fully data-driven.
  */
+
+import { supabase } from "./supabaseClient";
 
 export interface RefMark {
   id: string;
@@ -77,4 +80,48 @@ export function nearestMarks(
 /** Google Maps directions deep-link to a mark (opens the user's Maps app). */
 export function directionsUrl(lat: number, lon: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+}
+
+// ---------------------------------------------------------------------------
+// Backend (Supabase ref_marks) — with graceful fallback to the seed array.
+// ---------------------------------------------------------------------------
+const COLS = "id,number,name,type,lat,lon,description,status,region";
+
+/** Load marks from the `ref_marks` table; falls back to the bundled seed when
+ *  the backend isn't configured, errors, or the table is empty. */
+export async function fetchRefMarks(): Promise<{ marks: RefMark[]; source: "database" | "seed" }> {
+  if (!supabase) return { marks: REF_MARKS, source: "seed" };
+  const { data, error } = await supabase.from("ref_marks").select(COLS).order("number");
+  if (error || !data || data.length === 0) return { marks: REF_MARKS, source: "seed" };
+  return { marks: data as RefMark[], source: "database" };
+}
+
+/** Upsert marks into the table (keyed on `number`). Used by Publish-seed / CSV import. */
+export async function importRefMarks(marks: Omit<RefMark, "id">[]): Promise<{ count: number; error?: string }> {
+  if (!supabase) return { count: 0, error: "Backend not configured." };
+  const rows = marks.map((m) => ({
+    number: m.number, name: m.name, type: m.type, lat: m.lat, lon: m.lon,
+    description: m.description, status: m.status, region: m.region,
+  }));
+  const { data, error } = await supabase.from("ref_marks").upsert(rows, { onConflict: "number" }).select("id");
+  return { count: data?.length ?? 0, error: error?.message };
+}
+
+/** Parse a CSV of marks: number,name,type,lat,lon,description,status,region (header optional). */
+export function parseRefMarkCsv(text: string): Omit<RefMark, "id">[] {
+  const out: Omit<RefMark, "id">[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const c = line.split(",").map((s) => s.trim());
+    if (c.length < 5) continue;
+    const lat = Number(c[3]);
+    const lon = Number(c[4]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue; // skips header row too
+    out.push({
+      number: c[0], name: c[1] ?? "", type: (c[2] || "Reference mark") as RefMark["type"],
+      lat, lon, description: c[5] ?? "", status: (c[6] || "In good order") as RefMark["status"], region: c[7] ?? "",
+    });
+  }
+  return out;
 }

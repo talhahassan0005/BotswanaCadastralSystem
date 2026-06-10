@@ -181,12 +181,23 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
         <text x={40} y={1114} fontSize={11}>not imply any rights to the land.</text>
       </g>
 
-      {/* ---------- Witness blocks ---------- */}
+      {/* ---------- Witness blocks (with signature / name / date lines) ---------- */}
       <g fontSize={11}>
         <line x1={40} y1={1135} x2={W - 40} y2={1135} stroke="black" strokeWidth={0.7} />
         <text x={48} y={1158} fontWeight="bold">LAND BOARD WITNESSES</text>
         <text x={W / 2 + 20} y={1158} fontWeight="bold">LESSEE WITNESSES</text>
         <line x1={W / 2} y1={1135} x2={W / 2} y2={1300} stroke="black" strokeWidth={0.5} />
+        {[0, 1].map((i) => {
+          const y = 1196 + i * 52;
+          return (
+            <g key={`w${i}`}>
+              <line x1={48} y1={y} x2={W / 2 - 30} y2={y} stroke="black" strokeWidth={0.4} />
+              <text x={48} y={y + 12} fontSize={8} fill="#444">Name / Signature / Date</text>
+              <line x1={W / 2 + 20} y1={y} x2={W - 48} y2={y} stroke="black" strokeWidth={0.4} />
+              <text x={W / 2 + 20} y={y + 12} fontSize={8} fill="#444">Name / Signature / Date</text>
+            </g>
+          );
+        })}
         <line x1={40} y1={1300} x2={W - 40} y2={1300} stroke="black" strokeWidth={0.7} />
       </g>
     </svg>
