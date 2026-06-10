@@ -26,8 +26,8 @@ export function ProjectGate() {
   const { user, ready, configured, signIn, signUp } = useAccount();
   const { setConfig, setStarted, resetProject, hydrate } = useStore();
 
-  const [skipAuth, setSkipAuth] = useState(false);
-  const needAuth = configured && !user && !skipAuth;
+  // Online-only for now: if a backend is configured, sign-in is required (no offline bypass).
+  const needAuth = configured && !user;
 
   return (
     <div className="min-h-screen bg-navy-900 text-white">
@@ -40,7 +40,7 @@ export function ProjectGate() {
         {!ready ? (
           <Card><p className="text-slate-300">Loading…</p></Card>
         ) : needAuth ? (
-          <AuthStage signIn={signIn} signUp={signUp} onSkip={() => setSkipAuth(true)} />
+          <AuthStage signIn={signIn} signUp={signUp} />
         ) : (
           <ChooseStage
             loggedIn={!!user}
@@ -62,11 +62,10 @@ function Card({ children }: { children: React.ReactNode }) {
 
 // --- Stage 1 ---------------------------------------------------------------
 function AuthStage({
-  signIn, signUp, onSkip,
+  signIn, signUp,
 }: {
   signIn: (e: string, p: string) => Promise<{ error?: string }>;
   signUp: (e: string, p: string, n: string) => Promise<{ error?: string; needsConfirm?: boolean }>;
-  onSkip: () => void;
 }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -103,11 +102,6 @@ function AuthStage({
             {mode === "in" ? "Need an account? Sign up" : "Have an account? Log in"}
           </button>
           <Button onClick={submit} disabled={busy}>{busy ? "…" : mode === "in" ? "Log in" : "Sign up"}</Button>
-        </div>
-        <div className="border-t border-slate-100 pt-3 text-center">
-          <button className="text-xs text-slate-400 underline hover:text-slate-600" onClick={onSkip}>
-            Continue without an account (work offline) →
-          </button>
         </div>
       </div>
     </Card>
