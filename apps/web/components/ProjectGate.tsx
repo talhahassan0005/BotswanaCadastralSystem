@@ -79,6 +79,16 @@ function AuthStage({
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState(false);
+  const [cooldown, setCooldown] = useState(0); // seconds until an email can be re-sent
+
+  // Tick the resend cooldown down to zero.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setTimeout(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [cooldown]);
+
+  const mmss = `${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(2, "0")}`;
 
   function go(m: "in" | "up" | "reset") { setMode(m); setError(null); setInfo(null); }
 
@@ -89,6 +99,7 @@ function AuthStage({
       setBusy(false);
       if (res.error) { setError(res.error); return; }
       setInfo("If that email has an account, a password-reset link is on its way — check your inbox (and spam).");
+      setCooldown(120); // 2-minute resend cooldown
       return;
     }
     const res = mode === "in" ? await signIn(email, password) : await signUp(email, password, name);
@@ -97,6 +108,7 @@ function AuthStage({
     if (mode === "up" && (res as { needsConfirm?: boolean }).needsConfirm) {
       setInfo("Account created — check your email to confirm, then log in.");
       setPendingConfirm(true);
+      setCooldown(120);
       setMode("in");
     }
     // on success the gate re-renders (user set) and advances to Stage 2 automatically
@@ -107,9 +119,11 @@ function AuthStage({
     const res = await resendConfirmation(email);
     setBusy(false);
     setInfo(res.error ?? "Confirmation email re-sent — check your inbox (and spam).");
+    if (!res.error) setCooldown(120);
   }
 
   const title = mode === "in" ? "Log in" : mode === "up" ? "Create surveyor account" : "Reset password";
+  const onCooldown = cooldown > 0;
   return (
     <Card>
       <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-dark">Stage 1</div>
@@ -124,13 +138,29 @@ function AuthStage({
         {error && <p className="text-sm text-red-600">{error}</p>}
         {info && <p className="text-sm text-brand-dark">{info}</p>}
         {pendingConfirm && mode === "in" && (
-          <button className="block text-xs text-slate-500 underline" onClick={resend} disabled={busy}>Resend confirmation email</button>
+          <button
+            className="block text-xs text-slate-500 underline disabled:no-underline disabled:text-slate-400"
+            onClick={resend}
+            disabled={busy || onCooldown}
+          >
+            {onCooldown ? `Resend confirmation email in ${mmss}` : "Resend confirmation email"}
+          </button>
         )}
         <div className="flex items-center justify-between">
           <button className="text-xs text-slate-500 underline" onClick={() => go(mode === "in" ? "up" : "in")}>
             {mode === "in" ? "Need an account? Sign up" : "← Back to log in"}
           </button>
-          <Button onClick={submit} disabled={busy}>{busy ? "…" : mode === "in" ? "Log in" : mode === "up" ? "Sign up" : "Send reset link"}</Button>
+          <Button onClick={submit} disabled={busy || (mode === "reset" && onCooldown)}>
+            {busy
+              ? "…"
+              : mode === "in"
+              ? "Log in"
+              : mode === "up"
+              ? "Sign up"
+              : onCooldown
+              ? `Resend in ${mmss}`
+              : "Send reset link"}
+          </Button>
         </div>
       </div>
     </Card>

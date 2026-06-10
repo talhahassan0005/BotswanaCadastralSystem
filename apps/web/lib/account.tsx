@@ -30,14 +30,38 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth
-      .getSession()
-      .then(({ data }) => setUser(data.session?.user ?? null))
+    const sb = supabase;
+
+    async function init() {
+      // Email links (password recovery + confirmation) come back with the session
+      // in the URL hash (#access_token=…&type=recovery). We handle it ourselves —
+      // detectSessionInUrl is off — so there is no event-timing race and a reset
+      // link reliably opens the "set new password" screen.
+      if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
+        const p = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const access_token = p.get("access_token");
+        const refresh_token = p.get("refresh_token");
+        const type = p.get("type");
+        // Strip the tokens from the address bar so a refresh can't replay them.
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        if (access_token && refresh_token) {
+          const { data } = await sb.auth.setSession({ access_token, refresh_token });
+          setUser(data.session?.user ?? null);
+          if (type === "recovery") setRecovery(true); // arrived via a reset link
+          return;
+        }
+      }
+      const { data } = await sb.auth.getSession();
+      setUser(data.session?.user ?? null);
+    }
+
+    init()
       .catch(() => {})
       .finally(() => setReady(true)); // always become interactive, even if the network fails
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
-      if (event === "PASSWORD_RECOVERY") setRecovery(true); // arrived via a reset link
+      if (event === "PASSWORD_RECOVERY") setRecovery(true); // belt-and-suspenders
     });
     return () => sub.subscription.unsubscribe();
   }, []);

@@ -12,7 +12,18 @@ const key =
  *  anonymously (local/file save only) — nothing else is disturbed. */
 export const supabaseConfigured = Boolean(url && key);
 
-/** Browser Supabase client, or null when not configured. */
+/** Browser Supabase client, or null when not configured.
+ *  flowType "implicit" → email links (recovery / confirm) return the session in
+ *  the URL hash (#access_token=…), which email scanners can't pre-consume (the
+ *  hash never reaches the server). We process that hash ourselves in
+ *  AccountProvider, so detectSessionInUrl is off to avoid an event-timing race. */
 export const supabase: SupabaseClient | null = supabaseConfigured
-  ? createClient(url!, key!, { auth: { persistSession: true, autoRefreshToken: true } })
+  ? createClient(url!, key!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        flowType: "implicit",
+      },
+    })
   : null;
