@@ -54,8 +54,21 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       password,
       options: { data: { full_name: fullName }, emailRedirectTo: origin() },
     });
+    if (error) {
+      // When email confirmation is OFF, Supabase returns an explicit error here.
+      if (/already|registered|exists/i.test(error.message)) {
+        return { error: "This email already has an account — please log in instead." };
+      }
+      return { error: error.message };
+    }
+    // When email confirmation is ON, Supabase obfuscates a duplicate signup for
+    // anti-enumeration: it returns a user with an EMPTY identities array and no
+    // session (no email is actually sent). Treat that as "already registered".
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      return { error: "This email already has an account — please log in instead." };
+    }
     // If email confirmation is disabled, signUp returns an active session (already signed in).
-    return { error: error?.message, needsConfirm: !error && !data.session };
+    return { needsConfirm: !data.session };
   }
   async function signOut() {
     await supabase?.auth.signOut();
