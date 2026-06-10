@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiHealth } from "@/lib/api";
+import { useStore, type Discipline } from "@/lib/store";
 
 export const TABS = [
   { id: "import", label: "Data Import", module: "Data Import" },
@@ -18,11 +19,22 @@ export const TABS = [
   { id: "validate", label: "AI Validate", module: "AI Validation" },
 ];
 
+// Per-discipline tab sets (Stage-3 branch). Generous overlap — common tools are in all.
+const DISCIPLINE_TABS: Record<Discipline, string[]> = {
+  Cadastral: ["import", "cogo", "traverse", "parcels", "diagrams", "editor", "gis", "collab", "export", "validate"],
+  Engineering: ["import", "cogo", "traverse", "topo", "volume", "editor", "diagrams", "gis", "collab", "export", "validate"],
+  Mining: ["import", "cogo", "topo", "volume", "editor", "gis", "collab", "export", "validate"],
+  GIS: ["import", "gis", "editor", "topo", "collab", "export"],
+};
+
 function Dot({ ok }: { ok: boolean }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-brand" : "bg-slate-500"}`} />;
 }
 
 export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: string) => void }) {
+  const { config } = useStore();
+  const allowed = DISCIPLINE_TABS[config.discipline] ?? TABS.map((t) => t.id);
+  const visibleTabs = TABS.filter((t) => allowed.includes(t.id));
   const active = TABS.find((t) => t.id === activeTab);
   const [health, setHealth] = useState<{ engine: boolean; ai: boolean; db: boolean } | null>(null);
 
@@ -52,7 +64,7 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
       </div>
 
       <nav className="flex gap-1 overflow-x-auto bg-navy-800 px-2 sm:px-4">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.id}
             onClick={() => onTab(t.id)}

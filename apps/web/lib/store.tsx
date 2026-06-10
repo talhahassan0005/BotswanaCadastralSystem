@@ -133,6 +133,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     diagramInputRef.current = s.diagramInput ?? null;
     topoInputRef.current = s.topoInput ?? null;
     volumeInputRef.current = s.volumeInput ?? null;
+    setActiveTab("import"); // land on a tab present in every discipline
     setStarted(true); // opening a project enters the working station
     setLoadVersion((v) => v + 1); // remount modules so they re-read state
   };
@@ -152,6 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
     }
     setCurrentProject(null);
+    setActiveTab("import");
     setStarted(false); // return to the project-setup gate
     setLoadVersion((v) => v + 1);
   };

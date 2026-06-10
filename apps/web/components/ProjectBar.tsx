@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount } from "@/lib/account";
 import { useStore } from "@/lib/store";
 import { deleteProject, listProjects, loadProject, saveProject, type ProjectRow } from "@/lib/projects";
+import { getProfile, upsertProfile } from "@/lib/profile";
 import { Button, Field, Input, Modal } from "@/components/ui";
 
 export function ProjectBar() {
@@ -12,6 +13,7 @@ export function ProjectBar() {
 
   const [authOpen, setAuthOpen] = useState(false);
   const [openOpen, setOpenOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -58,6 +60,7 @@ export function ProjectBar() {
           <Button variant="ghost" onClick={() => resetProject()}>⌂ Projects</Button>
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-500">
             {user.email}
+            <button onClick={() => setProfileOpen(true)} className="text-slate-400 underline hover:text-slate-700">profile</button>
             <button onClick={signOut} className="text-slate-400 underline hover:text-slate-700">sign out</button>
           </span>
         </>
@@ -86,7 +89,46 @@ export function ProjectBar() {
           setMsg(`Opened “${name}”.`);
         }}
       />
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} userId={user?.id ?? ""} email={user?.email ?? ""} />
     </div>
+  );
+}
+
+function ProfileModal({ open, onClose, userId, email }: { open: boolean; onClose: () => void; userId: string; email: string }) {
+  const [fullName, setFullName] = useState("");
+  const [firm, setFirm] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || !userId) return;
+    setMsg(null);
+    getProfile(userId).then(({ profile }) => {
+      if (profile) { setFullName(profile.full_name ?? ""); setFirm(profile.firm ?? ""); setPhone(profile.phone ?? ""); }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, userId]);
+
+  async function save() {
+    setBusy(true); setMsg(null);
+    const { error } = await upsertProfile(userId, { full_name: fullName, firm, phone, email });
+    setBusy(false);
+    setMsg(error ?? "Saved.");
+    if (!error) setTimeout(onClose, 700);
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Surveyor profile">
+      <div className="space-y-3">
+        <Field label="Full name"><Input value={fullName} onChange={setFullName} placeholder="e.g. G. G. Sesinyi" /></Field>
+        <Field label="Firm"><Input value={firm} onChange={setFirm} placeholder="e.g. Sesinyi Surveys (Pty) Ltd" /></Field>
+        <Field label="Phone"><Input value={phone} onChange={setPhone} placeholder="+267 …" /></Field>
+        <p className="text-xs text-slate-400">Email: {email}</p>
+        {msg && <p className="text-sm text-brand-dark">{msg}</p>}
+        <div className="flex justify-end"><Button onClick={save} disabled={busy}>{busy ? "…" : "Save profile"}</Button></div>
+      </div>
+    </Modal>
   );
 }
 
