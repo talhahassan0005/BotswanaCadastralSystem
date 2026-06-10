@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { TopoResult } from "@/lib/types";
@@ -35,14 +35,20 @@ P24,50090,72120,102.5
 P25,50120,72120,101.2`;
 
 export function Topographic() {
-  const { topoResult, setTopoResult, setActiveTab } = useStore();
-  const [text, setText] = useState("");
-  const [interval, setIntervalInput] = useState("0");
-  const [gridOn, setGridOn] = useState(true);
-  const [gridStep, setGridStep] = useState(""); // blank = auto
+  const { topoResult, setTopoResult, setActiveTab, topoInput, setTopoInput } = useStore();
+  const init = (topoInput ?? {}) as { text?: string; interval?: string; gridOn?: boolean; gridStep?: string };
+  const [text, setText] = useState(init.text ?? "");
+  const [interval, setIntervalInput] = useState(init.interval ?? "0");
+  const [gridOn, setGridOn] = useState(init.gridOn ?? true);
+  const [gridStep, setGridStep] = useState(init.gridStep ?? ""); // blank = auto
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Persist inputs into the project bundle (synchronous ref write).
+  useEffect(() => {
+    setTopoInput({ text, interval, gridOn, gridStep });
+  }, [text, interval, gridOn, gridStep, setTopoInput]);
 
   async function process(src?: string) {
     const payload = (src ?? text).trim();

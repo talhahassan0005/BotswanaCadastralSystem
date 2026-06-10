@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { SgDiagram, type DiagramKind, type DiagramMeta } from "@/components/SgDiagram";
@@ -16,12 +16,14 @@ const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
 ];
 
 export function Diagrams() {
-  const { cogoResult, config, setActiveTab } = useStore();
+  const { cogoResult, config, setActiveTab, diagramInput, setDiagramInput } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
-  const [kind, setKind] = useState<DiagramKind>("surveyed");
+  // Restore saved diagram form state from the project, else derive defaults from config.
+  const di = (diagramInput ?? {}) as { kind?: DiagramKind; meta?: Omit<DiagramMeta, "closed" | "kind">; leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem"> };
+  const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
-  const [meta, setMeta] = useState<Omit<DiagramMeta, "closed" | "kind">>({
+  const [meta, setMeta] = useState<Omit<DiagramMeta, "closed" | "kind">>(di.meta ?? {
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 14182 CHARLESHILL",
     parent: "A PORTION OF CADASTRE 243",
     location: "CHARLESHILL",
@@ -65,7 +67,7 @@ export function Diagrams() {
   };
 
   // Tribal-lease sketch carries its own (Land Board) field set.
-  const [leaseMeta, setLeaseMeta] = useState<Omit<LeaseMeta, "areaM2" | "coordinateSystem">>({
+  const [leaseMeta, setLeaseMeta] = useState<Omit<LeaseMeta, "areaM2" | "coordinateSystem">>(di.leaseMeta ?? {
     fileNo: "B",
     date: "16/09/2025",
     compiledBy: "O. Ithuteng",
@@ -79,6 +81,11 @@ export function Diagrams() {
   });
   const setLease = (k: keyof typeof leaseMeta) => (v: string) =>
     setLeaseMeta((m) => ({ ...m, [k]: k === "localityScale" || k === "boundaryScale" ? Number(v) || 0 : v }));
+
+  // Persist diagram form state into the project bundle.
+  useEffect(() => {
+    setDiagramInput({ kind, meta, leaseMeta });
+  }, [kind, meta, leaseMeta, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: meta.coordinateSystem,

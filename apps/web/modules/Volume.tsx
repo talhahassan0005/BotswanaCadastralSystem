@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { VolumeMethod, VolumeResult } from "@/lib/types";
@@ -13,11 +13,33 @@ const METHODS: { id: VolumeMethod; label: string; blurb: string }[] = [
   { id: "contour", label: "Contour-area", blurb: "Volume between successive contour rings (dams, reservoirs)." },
 ];
 
+// Form state lives in the parent so it persists with the project (controlled forms).
+interface VForms {
+  surface: { text: string; mode: string; datum: string; design: string };
+  section: { text: string };
+  grid: { text: string; dx: string; dy: string };
+  contour: { text: string; topHeight: string };
+}
+function defaultForms(): VForms {
+  return {
+    surface: { text: "", mode: "datum", datum: "100", design: "" },
+    section: { text: SECTION_SAMPLE },
+    grid: { text: GRID_SAMPLE, dx: "10", dy: "10" },
+    contour: { text: CONTOUR_SAMPLE, topHeight: "0.6" },
+  };
+}
+
 export function Volume() {
-  const { volumeResult, setVolumeResult } = useStore();
-  const [method, setMethod] = useState<VolumeMethod>("surface");
+  const { volumeResult, setVolumeResult, volumeInput, setVolumeInput } = useStore();
+  const vi = (volumeInput ?? {}) as { method?: VolumeMethod; forms?: VForms };
+  const [method, setMethod] = useState<VolumeMethod>(vi.method ?? "surface");
+  const [forms, setForms] = useState<VForms>(vi.forms ?? defaultForms());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Persist method + form inputs into the project bundle.
+  useEffect(() => { setVolumeInput({ method, forms }); }, [method, forms, setVolumeInput]);
+  const setForm = <K extends keyof VForms>(k: K, v: VForms[K]) => setForms((f) => ({ ...f, [k]: v }));
 
   async function run(body: any) {
     setError(null);
@@ -59,10 +81,10 @@ export function Volume() {
 
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         <div>
-          {method === "surface" && <SurfaceForm busy={busy} onRun={run} />}
-          {method === "section" && <SectionForm busy={busy} onRun={run} />}
-          {method === "grid" && <GridForm busy={busy} onRun={run} />}
-          {method === "contour" && <ContourForm busy={busy} onRun={run} />}
+          {method === "surface" && <SurfaceForm busy={busy} onRun={run} value={forms.surface} onChange={(v) => setForm("surface", v)} />}
+          {method === "section" && <SectionForm busy={busy} onRun={run} value={forms.section} onChange={(v) => setForm("section", v)} />}
+          {method === "grid" && <GridForm busy={busy} onRun={run} value={forms.grid} onChange={(v) => setForm("grid", v)} />}
+          {method === "contour" && <ContourForm busy={busy} onRun={run} value={forms.contour} onChange={(v) => setForm("contour", v)} />}
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </div>
 
@@ -112,29 +134,27 @@ P23,50060,72120,103.0
 P24,50090,72120,102.5
 P25,50120,72120,101.2`;
 
-function SurfaceForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }) {
+function SurfaceForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: any) => void; value: VForms["surface"]; onChange: (v: VForms["surface"]) => void }) {
   const { topoResult } = useStore();
-  const [text, setText] = useState("");
-  const [mode, setMode] = useState("datum");
-  const [datum, setDatum] = useState("100");
-  const [design, setDesign] = useState("");
+  const { text, mode, datum, design } = value;
+  const set = (patch: Partial<VForms["surface"]>) => onChange({ ...value, ...patch });
 
   function useTopo() {
     if (!topoResult) return;
-    setText(topoResult.points.map((p) => `${p.name ?? ""},${p.x},${p.y},${p.z}`).join("\n"));
+    set({ text: topoResult.points.map((p) => `${p.name ?? ""},${p.x},${p.y},${p.z}`).join("\n") });
   }
 
   return (
     <Card title="Existing Surface (E, N, RL)" icon={<span>⛰</span>}>
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => set({ text: e.target.value })}
         rows={8}
         placeholder={"P1, 50000, 72000, 101.2\n…"}
         className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
       />
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button variant="ghost" onClick={() => setText(SURFACE_SAMPLE)}>Load sample</Button>
+        <Button variant="ghost" onClick={() => set({ text: SURFACE_SAMPLE })}>Load sample</Button>
         {topoResult && (
           <Button variant="ghost" onClick={useTopo}>Use topo surface</Button>
         )}
@@ -143,7 +163,7 @@ function SurfaceForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }
         <Field label="Reference">
           <Select
             value={mode}
-            onChange={setMode}
+            onChange={(m) => set({ mode: m })}
             options={[
               { value: "datum", label: "Horizontal datum level" },
               { value: "surface", label: "Design surface (TIN)" },
@@ -152,13 +172,13 @@ function SurfaceForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }
         </Field>
         {mode === "datum" ? (
           <Field label="Datum / base RL (m)">
-            <Input type="number" value={datum} onChange={setDatum} placeholder="100" />
+            <Input type="number" value={datum} onChange={(v) => set({ datum: v })} placeholder="100" />
           </Field>
         ) : (
           <Field label="Design surface points (E, N, RL)">
             <textarea
               value={design}
-              onChange={(e) => setDesign(e.target.value)}
+              onChange={(e) => set({ design: e.target.value })}
               rows={5}
               placeholder={"D1, 50000, 72000, 103\n…"}
               className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
@@ -181,8 +201,8 @@ const SECTION_SAMPLE = `0, 12.5, 0
 60, 9.4, 6.0
 80, 0, 14.0`;
 
-function SectionForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }) {
-  const [text, setText] = useState(SECTION_SAMPLE);
+function SectionForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: any) => void; value: VForms["section"]; onChange: (v: VForms["section"]) => void }) {
+  const text = value.text;
   function parse() {
     return text
       .split(/\r?\n/)
@@ -201,7 +221,7 @@ function SectionForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }
       </p>
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => onChange({ text: e.target.value })}
         rows={8}
         className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
       />
@@ -219,10 +239,9 @@ const GRID_SAMPLE = `1.2 1.5 1.1 0.8
 0.4 0.9 -0.5 -0.9
 -0.8 -0.6 -1.1 -1.4`;
 
-function GridForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }) {
-  const [text, setText] = useState(GRID_SAMPLE);
-  const [dx, setDx] = useState("10");
-  const [dy, setDy] = useState("10");
+function GridForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: any) => void; value: VForms["grid"]; onChange: (v: VForms["grid"]) => void }) {
+  const { text, dx, dy } = value;
+  const set = (patch: Partial<VForms["grid"]>) => onChange({ ...value, ...patch });
   return (
     <Card title="Depth Grid" icon={<span>▦</span>}>
       <p className="mb-2 text-xs text-slate-500">
@@ -230,13 +249,13 @@ function GridForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }) {
       </p>
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => set({ text: e.target.value })}
         rows={6}
         className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
       />
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <Field label="Cell size E (m)"><Input type="number" value={dx} onChange={setDx} /></Field>
-        <Field label="Cell size N (m)"><Input type="number" value={dy} onChange={setDy} /></Field>
+        <Field label="Cell size E (m)"><Input type="number" value={dx} onChange={(v) => set({ dx: v })} /></Field>
+        <Field label="Cell size N (m)"><Input type="number" value={dy} onChange={(v) => set({ dy: v })} /></Field>
       </div>
       <div className="mt-4">
         <Button disabled={busy} onClick={() => onRun({ text, dx: Number(dx), dy: Number(dy) })}>
@@ -253,9 +272,9 @@ const CONTOUR_SAMPLE = `100, 8200
 103, 2600
 104, 900`;
 
-function ContourForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }) {
-  const [text, setText] = useState(CONTOUR_SAMPLE);
-  const [topHeight, setTopHeight] = useState("0.6");
+function ContourForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: any) => void; value: VForms["contour"]; onChange: (v: VForms["contour"]) => void }) {
+  const { text, topHeight } = value;
+  const set = (patch: Partial<VForms["contour"]>) => onChange({ ...value, ...patch });
   function parse() {
     return text
       .split(/\r?\n/)
@@ -274,13 +293,13 @@ function ContourForm({ busy, onRun }: { busy: boolean; onRun: (b: any) => void }
       </p>
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => set({ text: e.target.value })}
         rows={7}
         className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
       />
       <div className="mt-3">
         <Field label="Summit height above top contour (m) — optional">
-          <Input type="number" value={topHeight} onChange={setTopHeight} />
+          <Input type="number" value={topHeight} onChange={(v) => set({ topHeight: v })} />
         </Field>
       </div>
       <div className="mt-4">

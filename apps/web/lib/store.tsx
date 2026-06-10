@@ -32,6 +32,13 @@ interface Store {
   /** Editor drawing — kept here so a project bundle can save/restore it. */
   editorDoc: unknown;
   setEditorDoc: (d: unknown) => void;
+  /** Module input blobs (form state) so projects round-trip the inputs, not just results. */
+  diagramInput: unknown;
+  setDiagramInput: (d: unknown) => void;
+  topoInput: unknown;
+  setTopoInput: (d: unknown) => void;
+  volumeInput: unknown;
+  setVolumeInput: (d: unknown) => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
 
@@ -58,6 +65,9 @@ export interface ProjectState {
   topoResult?: TopoResult | null;
   volumeResult?: VolumeResult | null;
   editorDoc?: unknown;
+  diagramInput?: unknown;
+  topoInput?: unknown;
+  volumeInput?: unknown;
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
@@ -84,6 +94,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // so a Save always captures the latest drawing, and it never re-renders the tree.
   const editorDocRef = useRef<unknown>(null);
   const setEditorDoc = (d: unknown) => { editorDocRef.current = d; };
+  // Module input blobs (also refs — synchronous, captured by Save, no re-render).
+  const diagramInputRef = useRef<unknown>(null);
+  const setDiagramInput = (d: unknown) => { diagramInputRef.current = d; };
+  const topoInputRef = useRef<unknown>(null);
+  const setTopoInput = (d: unknown) => { topoInputRef.current = d; };
+  const volumeInputRef = useRef<unknown>(null);
+  const setVolumeInput = (d: unknown) => { volumeInputRef.current = d; };
   const [activeTab, setActiveTab] = useState("import");
   const [currentProject, setCurrentProject] = useState<{ id: string; name: string } | null>(null);
   const [started, setStarted] = useState(false);
@@ -100,6 +117,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     topoResult,
     volumeResult,
     editorDoc: editorDocRef.current,
+    diagramInput: diagramInputRef.current,
+    topoInput: topoInputRef.current,
+    volumeInput: volumeInputRef.current,
   });
 
   const hydrate = (s: ProjectState) => {
@@ -110,6 +130,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTopoResult(s.topoResult ?? null);
     setVolumeResult(s.volumeResult ?? null);
     editorDocRef.current = s.editorDoc ?? null;
+    diagramInputRef.current = s.diagramInput ?? null;
+    topoInputRef.current = s.topoInput ?? null;
+    volumeInputRef.current = s.volumeInput ?? null;
     setStarted(true); // opening a project enters the working station
     setLoadVersion((v) => v + 1); // remount modules so they re-read state
   };
@@ -122,6 +145,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTopoResult(null);
     setVolumeResult(null);
     editorDocRef.current = null;
+    diagramInputRef.current = null;
+    topoInputRef.current = null;
+    volumeInputRef.current = null;
     if (typeof window !== "undefined") {
       try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
     }
@@ -147,6 +173,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setVolumeResult,
         editorDoc: editorDocRef.current,
         setEditorDoc,
+        diagramInput: diagramInputRef.current,
+        setDiagramInput,
+        topoInput: topoInputRef.current,
+        setTopoInput,
+        volumeInput: volumeInputRef.current,
+        setVolumeInput,
         activeTab,
         setActiveTab,
         currentProject,
