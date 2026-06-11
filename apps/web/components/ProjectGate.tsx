@@ -97,9 +97,19 @@ function AuthStage({
     if (mode === "reset") {
       const res = await resetPassword(email);
       setBusy(false);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) {
+        // Supabase enforces its own email send-rate limit. Don't show a scary
+        // error — start the visible countdown so the user simply waits and retries.
+        if (/rate limit/i.test(res.error)) {
+          setInfo("Too many requests just now — you can send another reset link when the timer ends.");
+          setCooldown(120);
+        } else {
+          setError(res.error);
+        }
+        return;
+      }
       setInfo("If that email has an account, a password-reset link is on its way — check your inbox (and spam).");
-      setCooldown(120); // 2-minute resend cooldown
+      setCooldown(120); // 2-minute visible resend countdown
       return;
     }
     const res = mode === "in" ? await signIn(email, password) : await signUp(email, password, name);
@@ -118,8 +128,13 @@ function AuthStage({
     setBusy(true); setError(null);
     const res = await resendConfirmation(email);
     setBusy(false);
-    setInfo(res.error ?? "Confirmation email re-sent — check your inbox (and spam).");
-    if (!res.error) setCooldown(120);
+    if (res.error && /rate limit/i.test(res.error)) {
+      setInfo("Too many requests just now — you can resend when the timer ends.");
+      setCooldown(120);
+    } else {
+      setInfo(res.error ?? "Confirmation email re-sent — check your inbox (and spam).");
+      if (!res.error) setCooldown(120);
+    }
   }
 
   const title = mode === "in" ? "Log in" : mode === "up" ? "Create surveyor account" : "Reset password";
