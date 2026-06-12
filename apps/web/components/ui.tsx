@@ -137,9 +137,9 @@ export function Input({
           onClick={() => setReveal((v) => !v)}
           aria-label={reveal ? "Hide password" : "Show password"}
           title={reveal ? "Hide password" : "Show password"}
-          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-700"
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-xs font-medium text-slate-400 hover:text-slate-700"
         >
-          {reveal ? "🙈" : "👁"}
+          {reveal ? "Hide" : "Show"}
         </button>
       )}
     </div>
@@ -169,7 +169,7 @@ export function Modal({
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+          <button onClick={onClose} className="text-xs font-medium text-slate-400 hover:text-slate-700" aria-label="Close">Close</button>
         </div>
         <div className="p-5">{children}</div>
       </div>

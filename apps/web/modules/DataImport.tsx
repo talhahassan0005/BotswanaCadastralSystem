@@ -61,12 +61,11 @@ export function DataImport() {
         }`}
       >
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl border-2 border-brand/40 text-2xl text-brand">
-          ⬓
         </div>
         <p className="text-lg font-medium text-brand-dark">Drop your CSV observation file here</p>
         <p className="mt-1 text-sm text-emerald-600">Supports: CSV, TXT — Botswana DSM format</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
-          <Button onClick={() => fileRef.current?.click()}>📁 Browse file</Button>
+          <Button onClick={() => fileRef.current?.click()}>Browse file</Button>
           <Button variant="ghost" onClick={loadSample}>
             Load sample
           </Button>
@@ -139,7 +138,7 @@ export function DataImport() {
             <Chip>{importResult.errorCount} error</Chip>
             <Chip>CRS: {config.coordinateSystem}</Chip>
             <div className="ml-auto">
-              <Button onClick={() => setActiveTab("cogo")}>➜ Proceed to COGO</Button>
+              <Button onClick={() => setActiveTab("cogo")}>Proceed to COGO →</Button>
             </div>
           </div>
         </div>

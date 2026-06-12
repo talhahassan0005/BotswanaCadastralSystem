@@ -41,7 +41,7 @@ export function AiValidate() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-700">Survey QA &amp; DSM compliance</h2>
         <Button onClick={run} disabled={running}>
-          {running ? "Validating…" : "✦ Run AI Validation"}
+          {running ? "Validating…" : "Run AI Validation"}
         </Button>
       </div>
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
@@ -74,7 +74,7 @@ export function AiValidate() {
             ))}
           </div>
 
-          <Card title="Auto-generated survey report" icon={<span>📄</span>}>
+          <Card title="Auto-generated survey report">
             <p className="mb-2 text-xs text-slate-400">
               Source: {validation.aiSource === "groq" ? "Groq AI" : "offline fallback"}
               {validation.aiEngine ? " · AI engine active" : " · set GROQ_API_KEY to enable AI"}

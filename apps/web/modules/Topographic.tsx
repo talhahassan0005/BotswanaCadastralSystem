@@ -90,7 +90,7 @@ export function Topographic() {
     <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
       {/* Controls */}
       <div className="space-y-4">
-        <Card title="Levelled Points" icon={<span>⛰</span>}>
+        <Card title="Levelled Points">
           <p className="mb-2 text-xs text-slate-500">
             One point per line: <code>Name, Easting, Northing, RL</code> (name optional).
           </p>
@@ -108,10 +108,10 @@ export function Topographic() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button disabled={busy} onClick={() => process()}>
-              {busy ? "Processing…" : "▲ Build surface"}
+              {busy ? "Processing…" : "Build surface"}
             </Button>
             <Button variant="ghost" onClick={() => fileRef.current?.click()}>
-              📁 File
+              File
             </Button>
             <Button variant="ghost" onClick={loadSample}>
               Load sample
@@ -131,7 +131,7 @@ export function Topographic() {
         </Card>
 
         {topoResult && (
-          <Card title="Surface Summary" icon={<span>▦</span>}>
+          <Card title="Surface Summary">
             <dl className="space-y-2 text-sm">
               <Row label="Points / triangles" value={`${topoResult.stats.count} / ${topoResult.stats.triangles}`} />
               <Row label="RL range" value={`${topoResult.stats.minZ} – ${topoResult.stats.maxZ} m`} />
@@ -142,10 +142,10 @@ export function Topographic() {
             </dl>
             <div className="mt-4 flex flex-col gap-2">
               <Button variant="ghost" onClick={() => setActiveTab("volume")}>
-                Compute volume from this surface ➜
+                Compute volume from this surface →
               </Button>
               <Button variant="ghost" onClick={() => setActiveTab("editor")}>
-                Edit / draw manually ➜
+                Edit / draw manually →
               </Button>
             </div>
           </Card>
@@ -173,7 +173,7 @@ export function Topographic() {
               <Stat value={(topoResult.stats.planArea / 10000).toFixed(2)} label="Area (ha)" />
             </div>
 
-            <Card title="Surface — TIN, Contours & Spot Heights" icon={<span>🗺</span>}>
+            <Card title="Surface — TIN, Contours & Spot Heights">
               <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-600">
                 <label className="flex items-center gap-1.5">
                   <input type="checkbox" checked={gridOn} onChange={(e) => setGridOn(e.target.checked)} /> Coordinate grid
@@ -188,7 +188,7 @@ export function Topographic() {
               <Legend minZ={topoResult.stats.minZ} maxZ={topoResult.stats.maxZ} />
             </Card>
 
-            <Card title="Contour Index" icon={<span>〰</span>}>
+            <Card title="Contour Index">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase text-slate-500">

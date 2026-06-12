@@ -46,7 +46,7 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
     <div className="bg-navy-900 text-white">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center gap-1.5 text-base font-semibold sm:gap-2 sm:text-xl">
-          <span className="grid h-6 w-6 place-items-center rounded bg-brand/20 text-brand sm:h-7 sm:w-7">▦</span>
+          <span className="grid h-6 w-6 place-items-center rounded bg-brand text-[10px] font-bold text-white sm:h-7 sm:w-7">BC</span>
           <span>Botswana</span>
           <span className="text-brand">Cadastral</span>
           <span>System</span>

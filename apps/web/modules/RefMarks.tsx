@@ -96,11 +96,11 @@ export function RefMarks() {
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       {/* List + search */}
       <div className="space-y-4">
-        <Card title="Reference Marks" icon={<span>📍</span>}>
+        <Card title="Reference Marks">
           <Input value={query} onChange={setQuery} placeholder="Search by number, place, region…" />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button onClick={locate} disabled={geo.state === "locating"}>
-              {geo.state === "locating" ? "Locating…" : "📡 Nearest to me"}
+              {geo.state === "locating" ? "Locating…" : "Nearest to me"}
             </Button>
             {user && (
               <Button variant="ghost" onClick={() => setUser(null)}>Clear location</Button>
@@ -114,12 +114,12 @@ export function RefMarks() {
           {geo.state === "error" && <p className="mt-2 text-xs text-red-600">{geo.msg}</p>}
           <p className="mt-2 text-xs text-slate-400">
             {rows.length} of {marks.length} marks ·{" "}
-            {source === "database" ? "from database ✓" : "seed (not in database yet)"}
+            {source === "database" ? "from database" : "seed (not in database yet)"}
           </p>
           {account && (
             <div className="mt-2 flex flex-wrap gap-2">
               {source === "seed" && <Button variant="ghost" onClick={publishSeed} disabled={!!busy}>⬆ Publish seed to database</Button>}
-              <Button variant="ghost" onClick={() => csvRef.current?.click()} disabled={!!busy}>📥 Import marks (CSV)</Button>
+              <Button variant="ghost" onClick={() => csvRef.current?.click()} disabled={!!busy}>Import marks (CSV)</Button>
               <input ref={csvRef} type="file" accept=".csv,.txt" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsv(f); e.target.value = ""; }} />
             </div>
@@ -155,7 +155,7 @@ export function RefMarks() {
 
       {/* Map + detail */}
       <div className="space-y-5">
-        <Card title="Locator Map" icon={<span>🗺</span>}>
+        <Card title="Locator Map">
           <RefMap marks={marks} filteredIds={new Set(filtered.map((m) => m.id))} selected={selected} user={user} onSelect={setSelectedId} />
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1"><Dot c="#0f172a" /> mark</span>
@@ -178,7 +178,7 @@ function Detail({ mark, user }: { mark: RefMark; user: { lat: number; lon: numbe
   const dist = user ? nearestMarks(user.lat, user.lon, 1, [mark])[0]?.km : undefined;
 
   return (
-    <Card title={`${mark.number} — ${mark.name}`} icon={<span>📍</span>}>
+    <Card title={`${mark.number} — ${mark.name}`}>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
         <Row label="Type" value={mark.type} />
         <Row label="Status" value={mark.status} />
@@ -197,7 +197,7 @@ function Detail({ mark, user }: { mark: RefMark; user: { lat: number; lon: numbe
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark"
         >
-          🧭 Directions
+          Directions
         </a>
         <a
           href={`https://www.google.com/maps?q=${mark.lat},${mark.lon}`}

@@ -88,7 +88,7 @@ export function Collaborate() {
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       {/* My status / check-in */}
       <div className="space-y-4">
-        <Card title="Your Check-in" icon={<span>📍</span>}>
+        <Card title="Your Check-in">
           {mine ? (
             <div className="space-y-2 text-sm">
               <p className="text-emerald-600">You are checked in.</p>
@@ -100,7 +100,7 @@ export function Collaborate() {
             </div>
           ) : (
             <div className="space-y-3">
-              <Button onClick={() => locate()} disabled={busy}>📡 Use my location</Button>
+              <Button onClick={() => locate()} disabled={busy}>Use my location</Button>
               {pos && <p className="text-xs text-emerald-600">Location: {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}</p>}
               {geoMsg && <p className="text-xs text-slate-500">{geoMsg}</p>}
               <Field label="Note (what you're doing)"><Input value={note} onChange={setNote} placeholder="e.g. boundary survey, Lot 14182" /></Field>
@@ -108,14 +108,14 @@ export function Collaborate() {
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} /> Share my contact with other surveyors
               </label>
-              <Button onClick={doCheckIn} disabled={busy || !pos}>✅ Check in here</Button>
+              <Button onClick={doCheckIn} disabled={busy || !pos}>Check in here</Button>
               {!pos && <p className="text-xs text-slate-400">Get your location first to check in.</p>}
             </div>
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </Card>
 
-        <Card title="Active Surveyors" icon={<span>👥</span>}>
+        <Card title="Active Surveyors">
           <p className="mb-2 text-xs text-slate-400">{others.length} other surveyor(s) checked in{pos ? " · sorted by distance" : ""}.</p>
           <div className="max-h-[360px] space-y-2 overflow-y-auto">
             {sortByDistance(others, pos).map((c) => (
@@ -138,7 +138,7 @@ export function Collaborate() {
       </div>
 
       {/* Map */}
-      <Card title="Active Surveyors — Map" icon={<span>🗺</span>}>
+      <Card title="Active Surveyors — Map">
         <PresenceMap checkins={checkins} me={pos} myId={user.id} />
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
           <span className="flex items-center gap-1"><Dot c="#059669" /> you (checked in)</span>
@@ -156,7 +156,7 @@ function ContactLink({ contact }: { contact: string }) {
   const href = isEmail ? `mailto:${contact}` : `tel:${contact.replace(/\s+/g, "")}`;
   return (
     <a href={href} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand-dark underline">
-      {isEmail ? "✉" : "📞"} {contact}
+      {isEmail ? "Email" : "Phone"}: {contact}
     </a>
   );
 }

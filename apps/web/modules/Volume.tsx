@@ -145,7 +145,7 @@ function SurfaceForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
   }
 
   return (
-    <Card title="Existing Surface (E, N, RL)" icon={<span>⛰</span>}>
+    <Card title="Existing Surface (E, N, RL)">
       <textarea
         value={text}
         onChange={(e) => set({ text: e.target.value })}
@@ -188,7 +188,7 @@ function SurfaceForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
       </div>
       <div className="mt-4">
         <Button disabled={busy} onClick={() => onRun({ text, mode, datum: Number(datum), designText: design })}>
-          {busy ? "Computing…" : "▶ Compute volume"}
+          {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
     </Card>
@@ -215,7 +215,7 @@ function SectionForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
       .filter((s) => Number.isFinite(s.chainage)); // skip header / non-numeric lines
   }
   return (
-    <Card title="Cross-sections" icon={<span>⌇</span>}>
+    <Card title="Cross-sections">
       <p className="mb-2 text-xs text-slate-500">
         One section per line: <code>chainage, cut area, fill area</code> (m²).
       </p>
@@ -227,7 +227,7 @@ function SectionForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
       />
       <div className="mt-4">
         <Button disabled={busy} onClick={() => onRun({ sections: parse() })}>
-          {busy ? "Computing…" : "▶ Compute volume"}
+          {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
     </Card>
@@ -243,7 +243,7 @@ function GridForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: 
   const { text, dx, dy } = value;
   const set = (patch: Partial<VForms["grid"]>) => onChange({ ...value, ...patch });
   return (
-    <Card title="Depth Grid" icon={<span>▦</span>}>
+    <Card title="Depth Grid">
       <p className="mb-2 text-xs text-slate-500">
         Grid of depths (rows × cols). +ve = cut, −ve = fill.
       </p>
@@ -259,7 +259,7 @@ function GridForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: 
       </div>
       <div className="mt-4">
         <Button disabled={busy} onClick={() => onRun({ text, dx: Number(dx), dy: Number(dy) })}>
-          {busy ? "Computing…" : "▶ Compute volume"}
+          {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
     </Card>
@@ -287,7 +287,7 @@ function ContourForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
       .filter((r) => Number.isFinite(r.level)); // skip header / non-numeric lines
   }
   return (
-    <Card title="Contour Areas" icon={<span>〰</span>}>
+    <Card title="Contour Areas">
       <p className="mb-2 text-xs text-slate-500">
         One contour per line: <code>RL, enclosed area</code> (m²).
       </p>
@@ -304,7 +304,7 @@ function ContourForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
       </div>
       <div className="mt-4">
         <Button disabled={busy} onClick={() => onRun({ rows: parse(), topHeight: Number(topHeight) })}>
-          {busy ? "Computing…" : "▶ Compute volume"}
+          {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
     </Card>
@@ -325,7 +325,7 @@ function Results({ result }: { result: VolumeResult }) {
       </div>
 
       {(result.prismoidalCut != null || result.prismoidalFill != null) && (
-        <Card title="Prismoidal (Simpson) Check" icon={<span>∑</span>}>
+        <Card title="Prismoidal (Simpson) Check">
           <dl className="space-y-2 text-sm">
             {result.prismoidalCut != null && (
               <Row label={result.method === "contour" ? "Prismoidal volume" : "Prismoidal cut"} value={`${fmt(result.prismoidalCut)} m³`} />
@@ -336,7 +336,7 @@ function Results({ result }: { result: VolumeResult }) {
       )}
 
       {result.faces && result.points && (
-        <Card title="Cut / Fill Map" icon={<span>🗺</span>}>
+        <Card title="Cut / Fill Map">
           <CutFillMap result={result} />
           <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded" style={{ background: "#dc2626" }} /> cut</span>
@@ -348,7 +348,7 @@ function Results({ result }: { result: VolumeResult }) {
       )}
 
       {result.breakdown.length > 0 && (
-        <Card title="Breakdown" icon={<span>▤</span>}>
+        <Card title="Breakdown">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
@@ -368,7 +368,7 @@ function Results({ result }: { result: VolumeResult }) {
         <ul className="space-y-1 text-xs text-slate-500">
           {result.notes.map((n, i) => (
             <li key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 text-brand">◆</span>
+              <span className="mt-0.5 text-brand">-</span>
               {n}
             </li>
           ))}

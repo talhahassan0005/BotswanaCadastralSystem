@@ -11,11 +11,11 @@ const COORD_SYSTEMS = [
   "UTM 34S", "UTM 35S", "WGS84",
 ].map((v) => ({ value: v, label: v }));
 
-const DISCIPLINES: { id: Discipline; icon: string; blurb: string }[] = [
-  { id: "Cadastral", icon: "▦", blurb: "Parcels, beacons, SG diagrams, lease sketches." },
-  { id: "Engineering", icon: "△", blurb: "Topographic surfaces, volumes, set-out." },
-  { id: "Mining", icon: "⛏", blurb: "Pit surveys, stockpile & excavation volumes." },
-  { id: "GIS", icon: "🗺", blurb: "Reference marks, mapping & spatial data." },
+const DISCIPLINES: { id: Discipline; blurb: string }[] = [
+  { id: "Cadastral", blurb: "Parcels, beacons, SG diagrams, lease sketches." },
+  { id: "Engineering", blurb: "Topographic surfaces, volumes, set-out." },
+  { id: "Mining", blurb: "Pit surveys, stockpile & excavation volumes." },
+  { id: "GIS", blurb: "Reference marks, mapping & spatial data." },
 ];
 
 /**
@@ -33,7 +33,7 @@ export function ProjectGate() {
     <div className="min-h-screen bg-navy-900 text-white">
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10">
         <div className="mb-6 flex items-center gap-2 text-2xl font-semibold">
-          <span className="grid h-8 w-8 place-items-center rounded bg-brand/20 text-brand">▦</span>
+          <span className="grid h-8 w-8 place-items-center rounded bg-brand text-xs font-bold text-white">BC</span>
           <span>Botswana</span><span className="text-brand">Cadastral</span><span>System</span>
         </div>
 
@@ -231,13 +231,11 @@ function ChooseStage({
       <h2 className="mb-4 text-xl font-bold">Start a project</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <button onClick={() => setView("new")} className="rounded-xl border-2 border-brand/40 bg-brand-light/20 p-6 text-left transition hover:border-brand">
-          <div className="text-3xl">＋</div>
-          <div className="mt-2 text-lg font-semibold text-brand-dark">New Project</div>
+          <div className="text-lg font-semibold text-brand-dark">New Project</div>
           <div className="mt-1 text-sm text-slate-500">Enter project parameters (name, coordinate system) and choose a discipline.</div>
         </button>
         <button onClick={() => setView("open")} className="rounded-xl border-2 border-slate-200 p-6 text-left transition hover:border-slate-400">
-          <div className="text-3xl">📂</div>
-          <div className="mt-2 text-lg font-semibold text-slate-700">Open Project</div>
+          <div className="text-lg font-semibold text-slate-700">Open Project</div>
           <div className="mt-1 text-sm text-slate-500">{loggedIn ? "Select a saved project to continue." : "Sign in to open saved projects."}</div>
         </button>
       </div>
@@ -261,7 +259,7 @@ function NewProject({
     <Card>
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Stage 2 — New Project</span>
-        <button onClick={onBack} className="text-xs text-slate-400 underline">← back</button>
+        <button onClick={onBack} className="text-xs text-slate-400 underline">← Back</button>
       </div>
       <h2 className="mb-4 text-xl font-bold">Project parameters</h2>
       <div className="space-y-3">
@@ -277,7 +275,7 @@ function NewProject({
         {DISCIPLINES.map((d) => (
           <button key={d.id} onClick={() => setDiscipline(d.id)}
             className={`rounded-lg border p-3 text-left transition ${discipline === d.id ? "border-brand bg-brand-light/40" : "border-slate-200 hover:bg-slate-50"}`}>
-            <div className="font-semibold text-slate-700">{d.icon} {d.id}</div>
+            <div className="font-semibold text-slate-700">{d.id}</div>
             <div className="text-xs text-slate-500">{d.blurb}</div>
           </button>
         ))}
@@ -288,7 +286,7 @@ function NewProject({
           disabled={!name.trim() || !discipline}
           onClick={() => onCreate({ name: name.trim(), coordinateSystem, surveyor: surveyor.trim(), discipline: discipline! })}
         >
-          Create project ➜
+          Create project →
         </Button>
       </div>
       {!loggedIn && <p className="mt-2 text-right text-xs text-slate-400">Working offline — use Save in the workstation to keep a local/file copy.</p>}
@@ -315,7 +313,7 @@ function OpenProject({
     <Card>
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Stage 2 — Open Project</span>
-        <button onClick={onBack} className="text-xs text-slate-400 underline">← back</button>
+        <button onClick={onBack} className="text-xs text-slate-400 underline">← Back</button>
       </div>
       <h2 className="mb-4 text-xl font-bold">Select a project</h2>
       {!loggedIn && <p className="text-sm text-slate-500">You need to sign in to open saved cloud projects. Go back and create a new project, or sign in.</p>}

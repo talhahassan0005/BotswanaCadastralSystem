@@ -646,11 +646,11 @@ export function Editor() {
     <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
       <div className="space-y-4">
         {/* Tools */}
-        <Card title="Tools" icon={<span>✎</span>}>
+        <Card title="Tools">
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             {([
-              ["select", "▭ Select"], ["point", "• Point"], ["line", "／ Line"], ["rect", "▱ Rect"],
-              ["circle", "◯ Circle"], ["text", "T Text"], ["symbol", "✦ Symbol"], ["measure", "📏 Measure"],
+              ["select", "Select"], ["point", "Point"], ["line", "Line"], ["rect", "Rect"],
+              ["circle", "Circle"], ["text", "Text"], ["symbol", "Symbol"], ["measure", "Measure"],
             ] as [Tool, string][]).map(([id, label]) => (
               <button key={id} onClick={() => { setTool(id); setDraft([]); setMeasure(null); }}
                 className={`rounded-md px-2 py-1.5 font-medium transition ${tool === id ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
@@ -679,15 +679,15 @@ export function Editor() {
         </Card>
 
         {/* Layers */}
-        <Card title="Layers" icon={<span>▤</span>}>
+        <Card title="Layers">
           <div className="space-y-1.5">
             {doc.layers.map((l) => (
               <div key={l.id} className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 ${doc.current === l.id ? "border-brand bg-brand-light/30" : "border-slate-200"}`}>
-                <button title={l.visible ? "Hide" : "Show"} onClick={() => updateLayer(l.id, { visible: !l.visible })} className="text-sm">{l.visible ? "👁" : "🚫"}</button>
+                <button title={l.visible ? "Hide" : "Show"} onClick={() => updateLayer(l.id, { visible: !l.visible })} className="text-sm">{l.visible ? "Hide" : "Show"}</button>
                 <input type="color" value={l.color} onChange={(e) => updateLayer(l.id, { color: e.target.value })} className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0" title="Colour" />
-                <button onClick={() => setCurrent(l.id)} className="flex-1 truncate text-left text-xs font-medium text-slate-700" title="Set current layer">{l.name}{doc.current === l.id ? " ✓" : ""}</button>
-                <button title={l.locked ? "Unlock" : "Lock"} onClick={() => updateLayer(l.id, { locked: !l.locked })} className="text-xs">{l.locked ? "🔒" : "🔓"}</button>
-                {doc.layers.length > 1 && <button title="Delete layer" onClick={() => deleteLayer(l.id)} className="text-xs text-red-500 hover:text-red-700">✕</button>}
+                <button onClick={() => setCurrent(l.id)} className="flex-1 truncate text-left text-xs font-medium text-slate-700" title="Set current layer">{l.name}{doc.current === l.id ? " (current)" : ""}</button>
+                <button title={l.locked ? "Unlock" : "Lock"} onClick={() => updateLayer(l.id, { locked: !l.locked })} className="text-xs">{l.locked ? "Unlock" : "Lock"}</button>
+                {doc.layers.length > 1 && <button title="Delete layer" onClick={() => deleteLayer(l.id)} className="text-xs text-red-500 hover:text-red-700">Del</button>}
               </div>
             ))}
           </div>
@@ -696,7 +696,7 @@ export function Editor() {
             <Field label="Linetype"><Select value={layerById(doc.current).linetype} onChange={(v) => updateLayer(doc.current, { linetype: v as Linetype })} options={LTYPES} /></Field>
             <Field label="Lineweight"><Select value={String(layerById(doc.current).lineweight)} onChange={(v) => updateLayer(doc.current, { lineweight: Number(v) })} options={LWEIGHTS.map((w) => ({ value: String(w), label: `${w} px` }))} /></Field>
           </div>
-          <div className="mt-2"><Button variant="ghost" onClick={addLayer}>＋ Add layer</Button></div>
+          <div className="mt-2"><Button variant="ghost" onClick={addLayer}>Add layer</Button></div>
         </Card>
 
         {/* Coordinate grid */}
@@ -711,10 +711,10 @@ export function Editor() {
         {sel && (
           <Card title="Modify">
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="ghost" onClick={() => modify("copy")}>⧉ Copy</Button>
-              <Button variant="ghost" onClick={() => modify("mirrorV")}>◑ Mirror ↔</Button>
-              <Button variant="ghost" onClick={() => modify("mirrorH")}>◓ Mirror ↕</Button>
-              <Button variant="ghost" onClick={deleteSelected}>🗑 Delete</Button>
+              <Button variant="ghost" onClick={() => modify("copy")}>Copy</Button>
+              <Button variant="ghost" onClick={() => modify("mirrorV")}>Mirror ↔</Button>
+              <Button variant="ghost" onClick={() => modify("mirrorH")}>Mirror ↕</Button>
+              <Button variant="ghost" onClick={deleteSelected}>Delete</Button>
             </div>
             <div className="mt-2 flex items-end gap-2">
               <Field label="Rotate °"><Input type="number" value={rot} onChange={setRot} /></Field>
@@ -722,7 +722,7 @@ export function Editor() {
             </div>
             <div className="mt-2 flex items-end gap-2">
               <Field label="Scale ×"><Input type="number" value={scl} onChange={setScl} /></Field>
-              <Button variant="ghost" onClick={() => modify("scale", Number(scl))}>⤢ Scale</Button>
+              <Button variant="ghost" onClick={() => modify("scale", Number(scl))}>Scale</Button>
             </div>
           </Card>
         )}
@@ -772,10 +772,10 @@ export function Editor() {
             <Button variant="ghost" onClick={redo} disabled={!future.current.length}>↷ Redo</Button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="ghost" onClick={() => zoomBy(1.25)}>＋ Zoom</Button>
-            <Button variant="ghost" onClick={() => zoomBy(1 / 1.25)}>－ Zoom</Button>
-            <Button variant="ghost" onClick={fit}>⤢ Fit</Button>
-            <Button variant="ghost" onClick={clearAll}>✕ Clear</Button>
+            <Button variant="ghost" onClick={() => zoomBy(1.25)}>Zoom in</Button>
+            <Button variant="ghost" onClick={() => zoomBy(1 / 1.25)}>Zoom out</Button>
+            <Button variant="ghost" onClick={fit}>Fit</Button>
+            <Button variant="ghost" onClick={clearAll}>Clear</Button>
           </div>
           <div className="mt-2 flex flex-col gap-2">
             <Button variant="ghost" onClick={importTopo} disabled={!topoResult}>⬇ Import topo points</Button>

@@ -167,7 +167,7 @@ export function CogoEngine() {
           </div>
           <div className="mt-4">
             <Button onClick={run} disabled={running} >
-              {running ? "Computing…" : "▶ Run COGO Computation"}
+              {running ? "Computing…" : "Run COGO Computation"}
             </Button>
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
@@ -176,11 +176,11 @@ export function CogoEngine() {
         <Card title="Other Tools">
           <div className="space-y-1.5 text-sm">
             {([
-              ["inverse", "↔ Forward / Inverse calc"],
-              ["intersection", "✛ Intersection methods"],
-              ["curve", "◠ Curve computations"],
-              ["area", "▱ Area calculations"],
-              ["transform", "🌐 Coordinate transform"],
+              ["inverse", "Forward / Inverse calc"],
+              ["intersection", "Intersection methods"],
+              ["curve", "Curve computations"],
+              ["area", "Area calculations"],
+              ["transform", "Coordinate transform"],
             ] as [ToolId, string][]).map(([id, label]) => (
               <button
                 key={id}
@@ -211,7 +211,7 @@ export function CogoEngine() {
         ) : (
           <>
             <div className="grid gap-5 md:grid-cols-2">
-              <Card title="Closure Results" icon={<span>◎</span>}>
+              <Card title="Closure Results">
                 <dl className="space-y-2 text-sm">
                   <Row label="Linear misclosure" value={isOpen ? "—" : `${c!.linear_misclosure.toFixed(3)} m`} />
                   <Row label="ΔE / ΔN misclose" value={isOpen ? "—" : `${c!.misclose_east.toFixed(3)} / ${c!.misclose_north.toFixed(3)} m`} />
@@ -235,7 +235,7 @@ export function CogoEngine() {
                 </div>
               </Card>
 
-              <Card title="Adjustment Summary" icon={<span>▤</span>}>
+              <Card title="Adjustment Summary">
                 <dl className="space-y-2 text-sm">
                   <Row label="Method applied" value={cogoResult.adjustment === "lsq" ? "Least Squares" : cap(cogoResult.adjustment)} />
                   <Row label="Legs adjusted" value={String(cogoResult.legs.length)} />
@@ -252,7 +252,7 @@ export function CogoEngine() {
               </Card>
             </div>
 
-            <Card title="Adjusted Traverse Table" icon={<span>▦</span>}>
+            <Card title="Adjusted Traverse Table">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase text-slate-500">
@@ -283,7 +283,7 @@ export function CogoEngine() {
               </div>
               <div className="mt-4 flex justify-end">
                 <Button variant="ghost" onClick={() => setActiveTab("validate")}>
-                  Run AI Validation ➜
+                  Run AI Validation →
                 </Button>
               </div>
             </Card>

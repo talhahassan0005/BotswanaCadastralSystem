@@ -236,7 +236,7 @@ export function Diagrams() {
           <Card title="Output">
             <div className="flex flex-col gap-2">
               <Button onClick={downloadSvg}>⬇ Download SVG</Button>
-              <Button variant="ghost" onClick={printDiagram}>🖨 Print / Save PDF</Button>
+              <Button variant="ghost" onClick={printDiagram}>Print / Save PDF</Button>
             </div>
           </Card>
         </div>

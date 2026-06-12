@@ -21,7 +21,14 @@ interface Account {
 
 const Ctx = createContext<Account | null>(null);
 
-const origin = () => (typeof window !== "undefined" ? window.location.origin : undefined);
+// Where auth email links (recovery / confirmation) should land. Prefer the
+// configured production domain so links never point at localhost; fall back to
+// the current origin when the env var isn't set (e.g. pure local dev).
+const origin = () => {
+  const configured = process.env.NEXT_PUBLIC_WEBSITE_DOMAIN?.replace(/\/+$/, "");
+  if (configured) return configured;
+  return typeof window !== "undefined" ? window.location.origin : undefined;
+};
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

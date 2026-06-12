@@ -64,7 +64,7 @@ export function Traverse() {
   return (
     <div className="space-y-5">
       {/* 1. Closure Report */}
-      <Card title="Closure Report" icon={<span>◎</span>}>
+      <Card title="Closure Report">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
           <KV label="Traverse type" value={cap(cogoResult.type)} />
           <KV label="Total distance" value={`${c.total_distance.toFixed(3)} m`} />
@@ -78,7 +78,7 @@ export function Traverse() {
       </Card>
 
       {/* 2. Adjustment Report */}
-      <Card title={`Adjustment Report — ${isLsq ? "Least Squares" : cap(cogoResult.adjustment)}`} icon={<span>▤</span>}>
+      <Card title={`Adjustment Report — ${isLsq ? "Least Squares" : cap(cogoResult.adjustment)}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-slate-500">
@@ -117,7 +117,7 @@ export function Traverse() {
       </Card>
 
       {/* 3. Residuals Report */}
-      <Card title="Residuals Report" icon={<span>≈</span>}>
+      <Card title="Residuals Report">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-slate-500">
@@ -163,7 +163,7 @@ export function Traverse() {
       </Card>
 
       {/* 4. Data Consistency Report */}
-      <Card title="Data Consistency Report" icon={<span>✓</span>}>
+      <Card title="Data Consistency Report">
         <div className="space-y-2">
           {consistency.map((chk, i) => (
             <div key={i} className="flex items-center justify-between border-b border-slate-100 pb-2 text-sm last:border-0">
