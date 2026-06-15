@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
-import type { ValidationResult } from "@/lib/types";
+import type { ParcelDoc, ValidationResult } from "@/lib/types";
+import { validateParcels } from "@/lib/server/parcel";
 import { Badge, Button, Card, Stat } from "@/components/ui";
 
 export function AiValidate() {
-  const { cogoResult, importResult, config, validation, setValidation } = useStore();
+  const { cogoResult, importResult, config, validation, setValidation, parcelDoc } = useStore();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,6 +17,11 @@ export function AiValidate() {
     setRunning(true);
     try {
       const beaconNames = importResult?.rows.map((r) => r.beaconId).filter(Boolean) as string[];
+      const pd = parcelDoc as ParcelDoc | null;
+      const parcelChecks =
+        pd && Array.isArray(pd.beacons) && (pd.beacons.length || pd.parcels.length)
+          ? validateParcels(pd.beacons, pd.parcels)
+          : undefined;
       const result = await apiJson<ValidationResult>("/validate", {
         closure: cogoResult?.closure,
         traverseType: cogoResult?.type,
@@ -26,6 +32,7 @@ export function AiValidate() {
           issues: r.issues,
           beaconId: r.beaconId,
         })),
+        parcelChecks,
         project: { name: config.name, surveyor: config.surveyor, crs: config.coordinateSystem },
       });
       setValidation(result);

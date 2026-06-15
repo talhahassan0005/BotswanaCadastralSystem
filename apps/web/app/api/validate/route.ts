@@ -16,8 +16,8 @@ export async function POST(req: Request) {
     body = {};
   }
 
-  const { closure, traverseType, dsmLimit, beaconNames, importRows, project } = body ?? {};
-  const summary = runValidation({ closure, traverseType, dsmLimit, beaconNames, importRows });
+  const { closure, traverseType, dsmLimit, beaconNames, importRows, parcelChecks, project } = body ?? {};
+  const summary = runValidation({ closure, traverseType, dsmLimit, beaconNames, importRows, parcelChecks });
 
   let narrative = "";
   let aiSource: "groq" | "fallback" = "fallback";

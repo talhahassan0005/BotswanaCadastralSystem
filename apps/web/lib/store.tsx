@@ -32,6 +32,9 @@ interface Store {
   /** Editor drawing — kept here so a project bundle can save/restore it. */
   editorDoc: unknown;
   setEditorDoc: (d: unknown) => void;
+  /** Parcel construction doc (beacons + parcels) — saved with the project. */
+  parcelDoc: unknown;
+  setParcelDoc: (d: unknown) => void;
   /** Module input blobs (form state) so projects round-trip the inputs, not just results. */
   diagramInput: unknown;
   setDiagramInput: (d: unknown) => void;
@@ -65,6 +68,7 @@ export interface ProjectState {
   topoResult?: TopoResult | null;
   volumeResult?: VolumeResult | null;
   editorDoc?: unknown;
+  parcelDoc?: unknown;
   diagramInput?: unknown;
   topoInput?: unknown;
   volumeInput?: unknown;
@@ -94,6 +98,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // so a Save always captures the latest drawing, and it never re-renders the tree.
   const editorDocRef = useRef<unknown>(null);
   const setEditorDoc = (d: unknown) => { editorDocRef.current = d; };
+  const parcelDocRef = useRef<unknown>(null);
+  const setParcelDoc = (d: unknown) => { parcelDocRef.current = d; };
   // Module input blobs (also refs — synchronous, captured by Save, no re-render).
   const diagramInputRef = useRef<unknown>(null);
   const setDiagramInput = (d: unknown) => { diagramInputRef.current = d; };
@@ -117,6 +123,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     topoResult,
     volumeResult,
     editorDoc: editorDocRef.current,
+    parcelDoc: parcelDocRef.current,
     diagramInput: diagramInputRef.current,
     topoInput: topoInputRef.current,
     volumeInput: volumeInputRef.current,
@@ -130,6 +137,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTopoResult(s.topoResult ?? null);
     setVolumeResult(s.volumeResult ?? null);
     editorDocRef.current = s.editorDoc ?? null;
+    parcelDocRef.current = s.parcelDoc ?? null;
     diagramInputRef.current = s.diagramInput ?? null;
     topoInputRef.current = s.topoInput ?? null;
     volumeInputRef.current = s.volumeInput ?? null;
@@ -146,6 +154,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTopoResult(null);
     setVolumeResult(null);
     editorDocRef.current = null;
+    parcelDocRef.current = null;
     diagramInputRef.current = null;
     topoInputRef.current = null;
     volumeInputRef.current = null;
@@ -175,6 +184,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setVolumeResult,
         editorDoc: editorDocRef.current,
         setEditorDoc,
+        parcelDoc: parcelDocRef.current,
+        setParcelDoc,
         diagramInput: diagramInputRef.current,
         setDiagramInput,
         topoInput: topoInputRef.current,

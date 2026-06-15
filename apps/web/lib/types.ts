@@ -69,6 +69,41 @@ export interface ValidationResult {
   aiEngine: boolean;
 }
 
+// --- Cadastral parcel construction (Module D) -----------------------------
+export interface Beacon {
+  id: string; // beacon / station label, unique
+  east: number;
+  north: number;
+}
+
+export interface Parcel {
+  id: string; // internal id
+  number: string; // Erf / Lot / parcel number (cadastral label)
+  name: string; // optional description
+  beaconIds: string[]; // ordered ring of beacon ids (do NOT repeat first)
+}
+
+export interface ParcelDoc {
+  beacons: Beacon[];
+  parcels: Parcel[];
+}
+
+export interface ParcelSide {
+  from: string;
+  to: string;
+  bearing: number;
+  bearing_dms: string;
+  distance: number;
+}
+
+export interface ParcelMetrics {
+  area_m2: number;
+  area_ha: number;
+  perimeter: number;
+  sides: ParcelSide[];
+  closed: boolean; // ring has >= 3 distinct beacons
+}
+
 // --- Topographic survey processing ---------------------------------------
 export interface TopoPoint {
   name: string | null;

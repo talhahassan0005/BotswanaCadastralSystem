@@ -266,7 +266,7 @@ function NewProject({
         <Field label="Project name"><Input value={name} onChange={setName} placeholder="e.g. Subdivision of Lot 14182" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Coordinate system"><Select value={coordinateSystem} onChange={setCoord} options={COORD_SYSTEMS} /></Field>
-          <Field label="Surveyor (optional)"><Input value={surveyor} onChange={setSurveyor} placeholder="e.g. G. G. Sesinyi" /></Field>
+          <Field label="Surveyor (optional)"><Input value={surveyor} onChange={setSurveyor} placeholder="Initials & Surname" /></Field>
         </div>
       </div>
 

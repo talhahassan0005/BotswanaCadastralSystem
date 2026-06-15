@@ -28,6 +28,8 @@ interface ValidateInput {
   dsmLimit?: number;
   beaconNames?: string[];
   importRows?: { status: string; issues: string[]; beaconId: string | null }[];
+  /** Pre-computed parcel-topology checks (overlaps, closure, coordinate consistency). */
+  parcelChecks?: Check[];
 }
 
 export function runValidation(input: ValidateInput): ValidationSummary {
@@ -120,6 +122,9 @@ export function runValidation(input: ValidateInput): ValidationSummary {
       });
     }
   }
+
+  // 4. Parcel-topology checks (overlaps, polygon closure, coordinate consistency).
+  if (input.parcelChecks?.length) checks.push(...input.parcelChecks);
 
   const passed = checks.filter((c) => c.severity === "pass").length;
   const warnings = checks.filter((c) => c.severity === "warning").length;

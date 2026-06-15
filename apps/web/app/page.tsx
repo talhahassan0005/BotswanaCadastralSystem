@@ -16,6 +16,7 @@ import { RefMarks } from "@/modules/RefMarks";
 import { Collaborate } from "@/modules/Collaborate";
 import { AiValidate } from "@/modules/AiValidate";
 import { Diagrams } from "@/modules/Diagrams";
+import { Parcels } from "@/modules/Parcels";
 import { Placeholder } from "@/modules/Placeholder";
 
 function Workspace() {
@@ -52,7 +53,8 @@ function Workspace() {
           {activeTab === "collab" && <Collaborate />}
           {activeTab === "validate" && <AiValidate />}
           {activeTab === "diagrams" && <Diagrams />}
-          {["parcels", "export"].includes(activeTab) && <Placeholder tab={activeTab} />}
+          {activeTab === "parcels" && <Parcels />}
+          {activeTab === "export" && <Placeholder tab={activeTab} />}
         </div>
       </main>
     </div>
