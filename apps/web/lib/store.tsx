@@ -35,6 +35,9 @@ interface Store {
   /** Parcel construction doc (beacons + parcels) — saved with the project. */
   parcelDoc: unknown;
   setParcelDoc: (d: unknown) => void;
+  /** Sectional-title doc (building sections + quotas) — saved with the project. */
+  sectionalDoc: unknown;
+  setSectionalDoc: (d: unknown) => void;
   /** Module input blobs (form state) so projects round-trip the inputs, not just results. */
   diagramInput: unknown;
   setDiagramInput: (d: unknown) => void;
@@ -69,6 +72,7 @@ export interface ProjectState {
   volumeResult?: VolumeResult | null;
   editorDoc?: unknown;
   parcelDoc?: unknown;
+  sectionalDoc?: unknown;
   diagramInput?: unknown;
   topoInput?: unknown;
   volumeInput?: unknown;
@@ -100,6 +104,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setEditorDoc = (d: unknown) => { editorDocRef.current = d; };
   const parcelDocRef = useRef<unknown>(null);
   const setParcelDoc = (d: unknown) => { parcelDocRef.current = d; };
+  const sectionalDocRef = useRef<unknown>(null);
+  const setSectionalDoc = (d: unknown) => { sectionalDocRef.current = d; };
   // Module input blobs (also refs — synchronous, captured by Save, no re-render).
   const diagramInputRef = useRef<unknown>(null);
   const setDiagramInput = (d: unknown) => { diagramInputRef.current = d; };
@@ -124,6 +130,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     volumeResult,
     editorDoc: editorDocRef.current,
     parcelDoc: parcelDocRef.current,
+    sectionalDoc: sectionalDocRef.current,
     diagramInput: diagramInputRef.current,
     topoInput: topoInputRef.current,
     volumeInput: volumeInputRef.current,
@@ -138,6 +145,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setVolumeResult(s.volumeResult ?? null);
     editorDocRef.current = s.editorDoc ?? null;
     parcelDocRef.current = s.parcelDoc ?? null;
+    sectionalDocRef.current = s.sectionalDoc ?? null;
     diagramInputRef.current = s.diagramInput ?? null;
     topoInputRef.current = s.topoInput ?? null;
     volumeInputRef.current = s.volumeInput ?? null;
@@ -155,6 +163,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setVolumeResult(null);
     editorDocRef.current = null;
     parcelDocRef.current = null;
+    sectionalDocRef.current = null;
     diagramInputRef.current = null;
     topoInputRef.current = null;
     volumeInputRef.current = null;
@@ -186,6 +195,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setEditorDoc,
         parcelDoc: parcelDocRef.current,
         setParcelDoc,
+        sectionalDoc: sectionalDocRef.current,
+        setSectionalDoc,
         diagramInput: diagramInputRef.current,
         setDiagramInput,
         topoInput: topoInputRef.current,

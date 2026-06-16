@@ -23,7 +23,7 @@ const DISCIPLINES: { id: Discipline; blurb: string }[] = [
  * Shown until `started` is true; the workstation (full tabbed app) renders after.
  */
 export function ProjectGate() {
-  const { user, ready, configured, recovery, signIn, signUp, resetPassword, updatePassword, resendConfirmation } = useAccount();
+  const { user, ready, configured, recovery, signIn, signUp, signOut, resetPassword, updatePassword, resendConfirmation } = useAccount();
   const { setConfig, setStarted, resetProject, hydrate } = useStore();
 
   // Online-only for now: if a backend is configured, sign-in is required (no offline bypass).
@@ -44,14 +44,21 @@ export function ProjectGate() {
         ) : needAuth ? (
           <AuthStage signIn={signIn} signUp={signUp} resetPassword={resetPassword} resendConfirmation={resendConfirmation} />
         ) : (
-          <ChooseStage
-            loggedIn={!!user}
-            onNew={(cfg) => { resetProject(); setConfig(cfg); setStarted(true); }}
-            onOpen={async (id) => {
-              const { state } = await loadProject(id);
-              if (state) hydrate(state); // sets started=true + remounts
-            }}
-          />
+          <>
+            <ChooseStage
+              loggedIn={!!user}
+              onNew={(cfg) => { resetProject(); setConfig(cfg); setStarted(true); }}
+              onOpen={async (id) => {
+                const { state } = await loadProject(id);
+                if (state) hydrate(state); // sets started=true + remounts
+              }}
+            />
+            {configured && user && (
+              <p className="mt-4 text-center text-xs text-slate-400">
+                Signed in as {user.email} · <button onClick={signOut} className="underline hover:text-white">Sign out</button>
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

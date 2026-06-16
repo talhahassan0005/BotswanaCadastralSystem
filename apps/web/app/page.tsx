@@ -13,11 +13,16 @@ import { Topographic } from "@/modules/Topographic";
 import { Volume } from "@/modules/Volume";
 import { Editor } from "@/modules/Editor";
 import { RefMarks } from "@/modules/RefMarks";
+import { GisMap } from "@/modules/GisMap";
 import { Collaborate } from "@/modules/Collaborate";
 import { AiValidate } from "@/modules/AiValidate";
 import { Diagrams } from "@/modules/Diagrams";
 import { Parcels } from "@/modules/Parcels";
-import { Placeholder } from "@/modules/Placeholder";
+import { WorkingPlanView } from "@/modules/WorkingPlanView";
+import { GeneralPlanView } from "@/modules/GeneralPlanView";
+import { SectionalTitle } from "@/modules/SectionalTitle";
+import { SurveyRecord } from "@/modules/SurveyRecord";
+import { Export } from "@/modules/Export";
 
 function Workspace() {
   const { activeTab, setActiveTab, loadVersion, resetProject, started } = useStore();
@@ -49,12 +54,21 @@ function Workspace() {
           {activeTab === "topo" && <Topographic />}
           {activeTab === "volume" && <Volume />}
           {activeTab === "editor" && <Editor />}
-          {activeTab === "gis" && <RefMarks />}
+          {activeTab === "gis" && (
+            <div className="space-y-4">
+              <GisMap />
+              <RefMarks />
+            </div>
+          )}
           {activeTab === "collab" && <Collaborate />}
           {activeTab === "validate" && <AiValidate />}
           {activeTab === "diagrams" && <Diagrams />}
           {activeTab === "parcels" && <Parcels />}
-          {activeTab === "export" && <Placeholder tab={activeTab} />}
+          {activeTab === "workingplan" && <WorkingPlanView />}
+          {activeTab === "generalplan" && <GeneralPlanView />}
+          {activeTab === "sectional" && <SectionalTitle />}
+          {activeTab === "records" && <SurveyRecord />}
+          {activeTab === "export" && <Export />}
         </div>
       </main>
     </div>

@@ -1,0 +1,22 @@
+Cadastral ✅ (≈100% — complete for delivery)
+✅ Complete: COGO, coordinate systems, CSV import, traverse + adjustment, parcels (construct/subdivide/consolidate/boundary-edit), validation + smart warnings, diagrams (Surveyed/Compiled/Framed/Borehole/Lease/Mutation), Working Plan, Survey Record docs, File menu, Export (CSV/DXF/JSON/PDF)
+✅Remaining (v2): Multi-sheet General Plan, Sectional Title (client "future")
+
+
+Engineering ⚠️ (≈70%)
+✅ Complete: Topographic survey (TIN, contours, spot heights), Volume (cut/fill, 4 methods), CAD Editor
+❌ Remaining: Set-out / stake-out, Road Design (client "future"), engineering drawing outputs
+
+
+Mining ⚠️ (≈60%)
+✅ Complete: Volume calculation (pit / stockpile / excavation)
+❌ Remaining: Mining-specific reports/outputs
+
+
+
+GIS ⚠️ (≈60% — v1 done)
+✅ Complete (v1): GIS Map (satellite basemap + beacons/parcels overlay + KML + Open in Google Earth), Reference-mark DB + nearest-to-me
+⚠️ Partial: Ref-mark data = 16 seed marks (real DSM dataset pending); DXF + SHP import (in Editor)
+❌ Remaining (v2): .mpk ingestion, DGN import (paid SDK), SHP export/write, real Leaflet vector layers
+CAD Editor (cross-branch): ✅ layers, line types/weights, ruler, grid, draw (polyline/circle/rect), modify (move/copy/mirror/scale/rotate), autosave · ❌ Arc, Stretch, Trim pending (v2)
+Bottom line: Cadastral = delivery-ready (complete). Engineering/Mining/GIS = core built, branch-specific extras = billable v2 (client ki apni sequence: Cadastral pehle, baaki baad mein).

@@ -49,15 +49,19 @@ export function ProjectBar() {
       </span>
 
       {!configured ? (
-        <Button variant="ghost" onClick={() => resetProject()}>Projects</Button>
+        <FileMenu items={[{ label: "Projects (home)", onClick: () => resetProject() }]} />
       ) : !ready ? (
         <span className="text-xs text-slate-400">…</span>
       ) : user ? (
         <>
-          <Button variant="ghost" onClick={() => doSave(false)} disabled={busy}>Save</Button>
-          <Button variant="ghost" onClick={() => doSave(true)} disabled={busy}>Save as…</Button>
-          <Button variant="ghost" onClick={() => setOpenOpen(true)}>Open</Button>
-          <Button variant="ghost" onClick={() => resetProject()}>Projects</Button>
+          <FileMenu
+            items={[
+              { label: "Save", onClick: () => doSave(false), disabled: busy },
+              { label: "Save as…", onClick: () => doSave(true), disabled: busy },
+              { label: "Open…", onClick: () => setOpenOpen(true) },
+              { label: "Projects (home)", onClick: () => resetProject() },
+            ]}
+          />
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-500">
             {user.email}
             <button onClick={() => setProfileOpen(true)} className="text-slate-400 underline hover:text-slate-700">profile</button>
@@ -66,9 +70,13 @@ export function ProjectBar() {
         </>
       ) : (
         <>
-          <span className="text-xs text-slate-500">Sign in to save & revisit projects from any device.</span>
-          <Button variant="ghost" onClick={() => setAuthOpen(true)}>Sign in</Button>
-          <Button variant="ghost" onClick={() => resetProject()}>Projects</Button>
+          <FileMenu
+            items={[
+              { label: "Sign in", onClick: () => setAuthOpen(true) },
+              { label: "Projects (home)", onClick: () => resetProject() },
+            ]}
+          />
+          <span className="text-xs text-slate-500">Sign in to save &amp; revisit projects from any device.</span>
         </>
       )}
 
@@ -90,6 +98,33 @@ export function ProjectBar() {
         }}
       />
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} userId={user?.id ?? ""} email={user?.email ?? ""} />
+    </div>
+  );
+}
+
+/** Desktop-style "File" menu — groups Save / Save as / Open / Projects (client request). */
+function FileMenu({ items }: { items: { label: string; onClick: () => void; disabled?: boolean }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <Button variant="ghost" onClick={() => setOpen((o) => !o)}>File ▾</Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 z-20 mt-1 min-w-[170px] rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+            {items.map((it) => (
+              <button
+                key={it.label}
+                disabled={it.disabled}
+                onClick={() => { setOpen(false); it.onClick(); }}
+                className="block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

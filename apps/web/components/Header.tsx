@@ -13,6 +13,10 @@ export const TABS = [
   { id: "editor", label: "Editor", module: "Manual Drafting / Editing" },
   { id: "parcels", label: "Parcels", module: "Parcel Construction" },
   { id: "diagrams", label: "Diagrams", module: "Diagram Generation" },
+  { id: "workingplan", label: "Working Plan", module: "Working Plan" },
+  { id: "generalplan", label: "General Plan", module: "General Plan" },
+  { id: "sectional", label: "Sectional Title", module: "Sectional Title" },
+  { id: "records", label: "Survey Record", module: "Cadastral Survey Record" },
   { id: "gis", label: "GIS Map", module: "GIS Integration" },
   { id: "collab", label: "Surveyors", module: "Surveyor Check-in & Collaboration" },
   { id: "export", label: "Export", module: "Export" },
@@ -21,8 +25,8 @@ export const TABS = [
 
 // Per-discipline tab sets (Stage-3 branch). Generous overlap — common tools are in all.
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
-  Cadastral: ["import", "cogo", "traverse", "parcels", "diagrams", "editor", "gis", "collab", "export", "validate"],
-  Engineering: ["import", "cogo", "traverse", "topo", "volume", "editor", "diagrams", "gis", "collab", "export", "validate"],
+  Cadastral: ["import", "cogo", "traverse", "parcels", "diagrams", "workingplan", "generalplan", "sectional", "records", "editor", "gis", "collab", "export", "validate"],
+  Engineering: ["import", "cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "export", "validate"],
   Mining: ["import", "cogo", "topo", "volume", "editor", "gis", "collab", "export", "validate"],
   GIS: ["import", "gis", "editor", "topo", "collab", "export"],
 };
