@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
+import { displayCrs } from "@/lib/crsOptions";
 import type { Beacon, ParcelDoc } from "@/lib/types";
 
 const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -14,7 +15,7 @@ const H = 707; // A4 landscape ratio
 /** Multi-sheet General Plan (Module D / M3): the whole layout of all parcels on
  *  sheet 1, with the beacon coordinate schedule paginated onto continuation sheets. */
 export function GeneralPlanView() {
-  const { parcelDoc, config, setActiveTab } = useStore();
+  const { parcelDoc, config, setActiveTab, generalPlanInput, setGeneralPlanInput } = useStore();
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
 
@@ -29,14 +30,21 @@ export function GeneralPlanView() {
     return list.length ? list : beacons;
   }, [beacons, parcels]);
 
+  const savedGp = (generalPlanInput ?? null) as Partial<{ name: string; location: string; surveyor: string; gpNo: string; scale: number }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
     location: "",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
     gpNo: "",
     scale: 2000,
+    ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
+
+  // Persist the General Plan title-block (G.P. No., scale, etc.) with the project.
+  useEffect(() => {
+    setGeneralPlanInput(meta);
+  }, [meta, setGeneralPlanInput]);
 
   // Pagination: sheet 0 = layout; following sheets = coordinate chunks.
   const coordChunks = useMemo(() => {
@@ -46,12 +54,12 @@ export function GeneralPlanView() {
   }, [usedBeacons]);
   const sheetCount = 1 + Math.max(coordChunks.length, 0);
 
-  if (parcels.length === 0) {
+  if (parcels.length === 0 || usedBeacons.length === 0) {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
-          <p className="text-lg">No parcels yet</p>
-          <p className="mt-1 text-sm">A General Plan shows the whole layout of parcels. Build parcels first.</p>
+          <p className="text-lg">{parcels.length === 0 ? "No parcels yet" : "No beacons for these parcels"}</p>
+          <p className="mt-1 text-sm">A General Plan shows the whole layout of parcels. Build parcels (with beacons) first.</p>
           <div className="mt-4"><Button onClick={() => setActiveTab("parcels")}>Go to Parcels</Button></div>
         </div>
       </Card>
@@ -99,7 +107,10 @@ export function GeneralPlanView() {
       if (svg) all.push(`<div style="page-break-after:always">${svg}</div>`);
     }
     const w = window.open("", "_blank", "width=1200,height=850");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     w.document.write(
       `<html><head><title>General Plan — ${meta.name}</title>` +
         `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +
@@ -173,7 +184,7 @@ export function GeneralPlanView() {
       {/* surveyor / approval block */}
       <line x1={690} y1={H - 130} x2={970} y2={H - 130} stroke="#0f172a" strokeWidth={0.6} />
       <text x={690} y={H - 112} fontSize={10} fill="#334155">Surveyor: {meta.surveyor || "—"}</text>
-      <text x={690} y={H - 96} fontSize={10} fill="#334155">Coordinate system: {config.coordinateSystem}</text>
+      <text x={690} y={H - 96} fontSize={10} fill="#334155">Coordinate system: {displayCrs(config.coordinateSystem)}</text>
       <rect x={690} y={H - 86} width={280} height={56} fill="none" stroke="#0f172a" strokeWidth={0.6} />
       <text x={830} y={H - 66} textAnchor="middle" fontSize={9.5}>Approved</text>
       <line x1={700} y1={H - 46} x2={960} y2={H - 46} stroke="#0f172a" strokeWidth={0.4} />
@@ -209,7 +220,7 @@ export function GeneralPlanView() {
             </g>
           );
         })}
-        <text x={30} y={H - 16} fontSize={9} fill="#64748b">System {config.coordinateSystem}</text>
+        <text x={30} y={H - 16} fontSize={9} fill="#64748b">System {displayCrs(config.coordinateSystem)}</text>
       </svg>
     );
   };

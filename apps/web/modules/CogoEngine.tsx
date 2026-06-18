@@ -6,12 +6,15 @@ import { useStore } from "@/lib/store";
 import type { CogoResult } from "@/lib/types";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { CogoTools, type ToolId } from "@/components/CogoTools";
+import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
 
 export function CogoEngine() {
   const { config, setConfig, importResult, cogoResult, setCogoResult, setActiveTab } = useStore();
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [tool, setTool] = useState<ToolId | null>(null);
+  const [endE, setEndE] = useState(""); // known end-station coords (link traverse)
+  const [endN, setEndN] = useState("");
 
   // Build traverse legs from the imported rows (each row carries the leg leaving it).
   const legs = useMemo(() => {
@@ -19,6 +22,9 @@ export function CogoEngine() {
     const rows = importResult.rows;
     // Beacons that carry a usable leg (have bearing + non-zero distance).
     const valid = rows.filter((r) => r.bearing && r.distance && r.distance > 0);
+    // The closing leg returns to the beacon that actually anchors the geometry
+    // (the first row WITH coordinates) — not necessarily rows[0].
+    const startName = rows.find((x) => x.east != null && x.north != null)?.beaconId ?? rows[0]?.beaconId ?? "start";
     const out: { bearing: string; distance: number; from_name: string; to_name: string }[] = [];
     for (let i = 0; i < valid.length; i++) {
       const r = valid[i];
@@ -27,7 +33,7 @@ export function CogoEngine() {
       // open/link traverse it ends at the last station (no wrap-around).
       const toName =
         next?.beaconId ??
-        (config.traverseType === "closed" ? rows[0]?.beaconId ?? "start" : "end");
+        (config.traverseType === "closed" ? startName : "end");
       out.push({
         bearing: r.bearing!,
         distance: r.distance!,
@@ -43,20 +49,54 @@ export function CogoEngine() {
     return r ? { east: r.east!, north: r.north!, name: r.beaconId } : null;
   }, [importResult]);
 
+  // Points that already have coordinates (for coordinate-only imports, e.g. an X,Y(,Z) list).
+  const coordPoints = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null)
+        .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
+    [importResult]
+  );
+
   async function run() {
     setError(null);
-    if (!startPoint || legs.length < 2) {
-      setError("Import data with at least a start coordinate and 2 valid legs first.");
-      return;
-    }
     setRunning(true);
     try {
-      const result = await apiJson<CogoResult>("/cogo/traverse", {
-        start: startPoint,
-        legs,
-        type: config.traverseType,
-        adjustment: config.adjustment,
-      });
+      let result: CogoResult;
+      if (startPoint && legs.length >= 2) {
+        // Observation traverse: compute coordinates from bearing + distance.
+        const endEastNum = Number(endE);
+        const endNorthNum = Number(endN);
+        const endKnown =
+          config.traverseType === "link" &&
+          endE.trim() !== "" &&
+          endN.trim() !== "" &&
+          Number.isFinite(endEastNum) &&
+          Number.isFinite(endNorthNum)
+            ? { east: endEastNum, north: endNorthNum }
+            : undefined;
+        if (config.traverseType === "link" && !endKnown) {
+          setError("Link traverse needs valid numeric END station coordinates (East and North) — enter them in the 'Known end station' fields below.");
+          setRunning(false);
+          return;
+        }
+        result = await apiJson<CogoResult>("/cogo/traverse", {
+          start: startPoint,
+          legs,
+          type: config.traverseType,
+          adjustment: config.adjustment,
+          end_known: endKnown,
+        });
+      } else if (coordPoints.length >= 3) {
+        // Coordinate-only import (X,Y[,Z]): build the figure directly from the points.
+        result = await apiJson<CogoResult>("/cogo/coordinates", { points: coordPoints, type: config.traverseType });
+      } else {
+        setError(
+          "Import either bearing + distance observations (at least 2 legs) for a traverse, or at least 3 point coordinates (East, North) to compute the figure directly."
+        );
+        setRunning(false);
+        return;
+      }
       setCogoResult(result);
     } catch (e: any) {
       setError(e.message);
@@ -70,6 +110,11 @@ export function CogoEngine() {
   const isOpen = cogoResult?.type === "open";
   const precision = c?.relative_precision ?? null;
   const linear = c?.linear_misclosure ?? 0;
+  // Largest correction any leg received. When this is below display resolution
+  // (~5 mm), every adjustment method lands on the same coordinates — the reason
+  // a near-perfect traverse looks unchanged when the method is switched.
+  const maxResidual = Math.max(0, ...(cogoResult?.residuals.map((r) => r.magnitude) ?? [0]));
+  const adjustmentNegligible = !isOpen && cogoResult?.adjustment !== "none" && maxResidual < 0.005;
 
   // Closure status:
   //  - open traverse has no closure concept            -> "na"
@@ -133,6 +178,12 @@ export function CogoEngine() {
                 ]}
               />
             </Field>
+            {config.traverseType === "link" && (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Known end East"><Input type="number" value={endE} onChange={setEndE} placeholder="end Y" /></Field>
+                <Field label="Known end North"><Input type="number" value={endN} onChange={setEndN} placeholder="end X" /></Field>
+              </div>
+            )}
             <Field label="Adjustment method">
               <Select
                 value={config.adjustment}
@@ -149,15 +200,12 @@ export function CogoEngine() {
               <Select
                 value={config.coordinateSystem}
                 onChange={(v) => setConfig({ coordinateSystem: v })}
-                options={[
-                  { value: "Lo 21 Botswana", label: "Lo 21° Botswana" },
-                  { value: "Lo 23 Botswana", label: "Lo 23° Botswana" },
-                  { value: "Lo 25 Botswana", label: "Lo 25° Botswana" },
-                  { value: "Lo 27 Botswana", label: "Lo 27° Botswana" },
-                  { value: "UTM 34S", label: "UTM 34S" },
-                  { value: "UTM 35S", label: "UTM 35S" },
-                ]}
+                options={COORDINATE_SYSTEM_OPTIONS}
               />
+              <p className="mt-1 text-xs text-slate-400">
+                Labels the survey documents (diagram, general plan). The planar traverse
+                arithmetic — bearings, distances and area — is identical across systems.
+              </p>
             </Field>
             <Field label="Starting beacon">
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
@@ -239,16 +287,20 @@ export function CogoEngine() {
                 <dl className="space-y-2 text-sm">
                   <Row label="Method applied" value={cogoResult.adjustment === "lsq" ? "Least Squares" : cap(cogoResult.adjustment)} />
                   <Row label="Legs adjusted" value={String(cogoResult.legs.length)} />
-                  <Row
-                    label="Max residual"
-                    value={`${Math.max(0, ...cogoResult.residuals.map((r) => r.magnitude)).toFixed(3)} m`}
-                  />
+                  <Row label="Max residual" value={`${maxResidual.toFixed(3)} m`} />
                   {cogoResult.adjustment === "lsq" && (
                     <Row label="Reference σ₀" value={cogoResult.sigma0.toFixed(3)} />
                   )}
                   <Row label="Total perimeter" value={`${c!.total_distance.toFixed(2)} m`} />
                   <Row label="Computed area" value={`${cogoResult.area_ha.toFixed(4)} ha`} />
                 </dl>
+                {adjustmentNegligible && (
+                  <p className="mt-3 text-xs text-slate-400">
+                    Misclosure is negligible ({linear.toFixed(3)} m) — Bowditch, Transit and
+                    Least-Squares all land on the same coordinates here. The method choice only
+                    changes the result on traverses with larger misclosure.
+                  </p>
+                )}
               </Card>
             </div>
 

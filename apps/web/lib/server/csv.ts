@@ -26,6 +26,8 @@ export interface ParseResult {
   warningCount: number;
   errorCount: number;
   detectedColumns: string[];
+  /** Top-level diagnostic shown to the user when the file looks wrong. */
+  notice?: string;
 }
 
 const HEADER_ALIASES: Record<string, keyof Omit<ParsedRow, "index" | "status" | "issues">> = {
@@ -55,33 +57,76 @@ function parseNum(raw: string): number | null {
 }
 
 function splitLine(line: string): string[] {
+  // Delimiter precedence: an explicit ';' or tab wins over comma, so European
+  // files ("A;93205,88;2464520,65" — semicolon delimiter + decimal comma) split
+  // correctly instead of breaking on the decimal comma. Comma is the fallback
+  // delimiter only when no ';'/tab is present.
+  if (line.includes(";")) return line.split(";").map((c) => c.trim());
+  if (line.includes("\t")) return line.split("\t").map((c) => c.trim());
   if (line.includes(",") && line.split(",").length >= line.split(/\s+/).length) {
     return line.split(",").map((c) => c.trim());
   }
-  if (line.includes(";")) return line.split(";").map((c) => c.trim());
-  if (line.includes("\t")) return line.split("\t").map((c) => c.trim());
   return line.split(/\s{2,}|\s/).map((c) => c.trim()).filter(Boolean);
 }
 
+/** Heuristic: does this text look like a binary / non-text file?
+ *  Any NUL byte, or more than 10% control / replacement characters. */
+function looksBinary(text: string): boolean {
+  const sample = text.slice(0, 4000);
+  if (!sample) return false;
+  let nulls = 0;
+  let bad = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample.charCodeAt(i);
+    if (c === 0) nulls++;
+    if (c === 9 || c === 10 || c === 13) continue; // tab / LF / CR are fine
+    if (c < 32 || c === 0xfffd) bad++; // control chars or UTF-8 replacement char
+  }
+  if (nulls > 0) return true;
+  return bad / sample.length > 0.1;
+}
+
 export function parseSurveyCsv(text: string): ParseResult {
+  if (looksBinary(text)) {
+    throw new Error(
+      "This file isn't readable text — it looks like a binary or non-CSV file (e.g. DWG, DGN, an image, or a ZIP). " +
+        "Please upload a CSV or TXT file with columns such as: Beacon, East, North [, Bearing, Distance]."
+    );
+  }
+
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith("#"));
 
   if (lines.length === 0) {
-    return { rows: [], validCount: 0, warningCount: 0, errorCount: 0, detectedColumns: [] };
+    return {
+      rows: [], validCount: 0, warningCount: 0, errorCount: 0, detectedColumns: [],
+      notice: "The file has no data rows (it is empty, or only blank/comment lines).",
+    };
   }
 
   const firstCells = splitLine(lines[0]).map((c) => c.toLowerCase());
-  const hasHeader = firstCells.some((c) => c in HEADER_ALIASES);
+  // A real header row has >=2 recognised column names AND no numeric coordinates.
+  // This stops a headerless data row whose first id happens to be an alias token
+  // (e.g. a beacon literally named "E" or "Point") from being eaten as a header.
+  const aliasHits = firstCells.filter((c) => c in HEADER_ALIASES).length;
+  const firstRowHasNumbers = firstCells.some((c) => parseNum(c) != null);
+  const hasHeader = aliasHits >= 2 && !firstRowHasNumbers;
 
-  let colMap: (keyof Omit<ParsedRow, "index" | "status" | "issues">)[] = [];
+  type Field = keyof Omit<ParsedRow, "index" | "status" | "issues">;
+  let colMap: (Field | undefined)[] = [];
   let dataLines = lines;
   const detectedColumns: string[] = [];
 
   if (hasHeader) {
-    colMap = firstCells.map((c) => HEADER_ALIASES[c] ?? ("beaconId" as const));
+    // Map known headers; UNKNOWN columns (e.g. Z / elevation / code / remarks) are
+    // ignored — not dumped into the beacon id (which previously corrupted X,Y,Z files).
+    colMap = firstCells.map((c) => HEADER_ALIASES[c]);
+    if (!colMap.includes("beaconId")) {
+      const firstFree = colMap.findIndex((f) => f === undefined);
+      if (firstFree >= 0) colMap[firstFree] = "beaconId";
+    }
     detectedColumns.push(...firstCells);
     dataLines = lines.slice(1);
   } else {
@@ -143,5 +188,22 @@ export function parseSurveyCsv(text: string): ParseResult {
     rows.push(row);
   });
 
-  return { rows, validCount, warningCount, errorCount, detectedColumns };
+  // Top-level diagnostic when nothing usable parsed.
+  let notice: string | undefined;
+  const anyCoords = rows.some((r) => r.east != null && r.north != null);
+  const anyNumeric = rows.some((r) => r.east != null || r.north != null || r.distance != null);
+  if (!anyNumeric) {
+    const recognised = detectedColumns.some((c) => /east|north/.test(c));
+    notice = recognised
+      ? `Recognised the columns (${detectedColumns.join(", ")}) but couldn't read any numbers — this usually means the field delimiter or decimal format wasn't handled (e.g. a semicolon ';' file with European decimal commas like 93205,88). Check the delimiter / decimal separator and re-upload.`
+      : `No numeric values were detected in any column — this doesn't look like a coordinate/observation file. Expected columns like Beacon, East, North, Bearing, Distance. Detected columns: ${detectedColumns.join(", ") || "none"}.`;
+  } else if (validCount === 0 && !anyCoords) {
+    notice =
+      "No East/North coordinates were detected. Check that the file has Easting and Northing columns with numeric values. " +
+      `Detected columns: ${detectedColumns.join(", ") || "none"}.`;
+  } else if (validCount === 0) {
+    notice = "No fully valid rows — see the Issues column for what each row is missing.";
+  }
+
+  return { rows, validCount, warningCount, errorCount, detectedColumns, notice };
 }

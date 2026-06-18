@@ -121,7 +121,10 @@ export function MutationDiagram({
     const svg = serialize();
     if (!svg) return;
     const w = window.open("", "_blank", "width=1200,height=850");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     w.document.write(
       `<html><head><title>Mutation diagram — ${meta.title}</title>` +
         `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +

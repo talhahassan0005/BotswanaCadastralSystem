@@ -60,7 +60,7 @@ export function GisMap() {
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map…");
 
-  const { beacons, parcels } = useMemo(() => {
+  const { beacons, parcels, inputCount } = useMemo(() => {
     const src = config.coordinateSystem;
     const toLL = (e: number, n: number): [number, number] | null => {
       try {
@@ -74,8 +74,10 @@ export function GisMap() {
     const pd = parcelDoc as ParcelDoc | null;
     const beacons: LLBeacon[] = [];
     const parcels: LLParcel[] = [];
+    let inputCount = 0;
 
     if (pd?.beacons?.length) {
+      inputCount = pd.beacons.length;
       const by = new Map(pd.beacons.map((b) => [b.id, b] as const));
       for (const b of pd.beacons) {
         const ll = toLL(b.east, b.north);
@@ -93,6 +95,7 @@ export function GisMap() {
         if (ring.length >= 3) parcels.push({ number: p.number || "parcel", ring });
       }
     } else if (cogoResult?.points?.length) {
+      inputCount = cogoResult.points.length;
       const ring: [number, number][] = [];
       for (const p of cogoResult.points) {
         const ll = toLL(p.east, p.north);
@@ -103,7 +106,7 @@ export function GisMap() {
       }
       if (ring.length >= 3 && cogoResult.type === "closed") parcels.push({ number: config.name || "figure", ring });
     }
-    return { beacons, parcels };
+    return { beacons, parcels, inputCount };
   }, [cogoResult, parcelDoc, config.coordinateSystem, config.name]);
 
   const centroid = useMemo<[number, number]>(() => {
@@ -143,14 +146,20 @@ export function GisMap() {
         }
         if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
         else map.setView(BOTSWANA_CENTER, 6);
-        setStatus(bounds.length ? `${beacons.length} beacon(s), ${parcels.length} parcel(s) overlaid.` : "No survey data yet — basemap centred on Botswana.");
+        setStatus(
+          bounds.length
+            ? `${beacons.length} beacon(s), ${parcels.length} parcel(s) overlaid.`
+            : inputCount > 0
+            ? `Could not place ${inputCount} point(s) on the map — the project coordinate system (${config.coordinateSystem}) doesn't match the stored coordinates (out of lat/lon range). Check the project CRS.`
+            : "No survey data yet — basemap centred on Botswana."
+        );
       })
       .catch((e) => setErr(e.message));
     return () => {
       cancelled = true;
       if (map) map.remove();
     };
-  }, [beacons, parcels]);
+  }, [beacons, parcels, inputCount, config.coordinateSystem]);
 
   function exportKml() {
     const marks: string[] = [];

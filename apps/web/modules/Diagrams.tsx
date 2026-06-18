@@ -16,8 +16,11 @@ const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
 ];
 
 export function Diagrams() {
-  const { cogoResult, config, setActiveTab, diagramInput, setDiagramInput } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
+  // Prefer a parcel-derived figure (set from Parcels "Generate SG Diagram"); fall
+  // back to the real COGO traverse so a parcel never clobbers the traverse result.
+  const fig = diagramFigure ?? cogoResult;
   // Restore saved diagram form state from the project, else derive defaults from config.
   const di = (diagramInput ?? {}) as { kind?: DiagramKind; meta?: Omit<DiagramMeta, "closed" | "kind">; leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem"> };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
@@ -36,8 +39,9 @@ export function Diagrams() {
     srNo: "",
     gpNo: "",
     degreeSquare: "",
+    parentDiagram: "",
     beaconDescription: "ALL: 12mm iron peg",
-    areaHa: cogoResult?.area_ha ?? 0,
+    areaHa: fig?.area_ha ?? 0,
     sourceRef: "",
     boreholeNo: "",
     boreholeE: 0,
@@ -45,25 +49,25 @@ export function Diagrams() {
   });
 
   const points = useMemo(
-    () => (cogoResult?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
-    [cogoResult]
+    () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
+    [fig]
   );
   const sides = useMemo(
     () =>
-      (cogoResult?.legs ?? []).map((l) => ({
+      (fig?.legs ?? []).map((l) => ({
         from: l.from,
         to: l.to,
         bearing_dms: l.bearing_dms,
         distance: l.distance,
       })),
-    [cogoResult]
+    [fig]
   );
 
   const fullMeta: DiagramMeta = {
     ...meta,
     kind,
-    areaHa: cogoResult?.area_ha ?? meta.areaHa,
-    closed: cogoResult?.type === "closed",
+    areaHa: fig?.area_ha ?? meta.areaHa,
+    closed: fig?.type === "closed",
   };
 
   // Tribal-lease sketch carries its own (Land Board) field set.
@@ -89,7 +93,7 @@ export function Diagrams() {
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: meta.coordinateSystem,
-    areaM2: cogoResult?.area_m2 ?? 0,
+    areaM2: fig?.area_m2 ?? 0,
   };
 
   function serializeSvg(): string | null {
@@ -115,7 +119,10 @@ export function Diagrams() {
     const svg = serializeSvg();
     if (!svg) return;
     const w = window.open("", "_blank", "width=1200,height=850");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +
@@ -127,7 +134,7 @@ export function Diagrams() {
   const set = (k: keyof typeof meta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" || k === "boreholeE" || k === "boreholeN" ? Number(v) || 0 : v }));
 
-  if (!cogoResult || points.length < 3) {
+  if (!fig || points.length < 3) {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
@@ -229,6 +236,15 @@ export function Diagrams() {
                     <Field label="General Plan No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
                   )}
                   <Field label="Degree Square"><Input value={meta.degreeSquare} onChange={set("degreeSquare")} /></Field>
+                  <Field label="D.S.M File"><Input value={meta.dsmFile ?? ""} onChange={set("dsmFile")} placeholder="e.g. CAD T9" /></Field>
+                  <Field label="Comp."><Input value={meta.comp ?? ""} onChange={set("comp")} /></Field>
+                  <Field label="LIR No."><Input value={meta.lirNo ?? ""} onChange={set("lirNo")} /></Field>
+                  <Field label="Immediate parent diagram No. (subdivisions)"><Input value={meta.parentDiagramNo ?? meta.parentDiagram ?? ""} onChange={set("parentDiagramNo")} placeholder="e.g. SR 1087/2014" /></Field>
+                  <Field label="Annexed to (Deeds Registry No.)"><Input value={meta.annexedToNo ?? ""} onChange={set("annexedToNo")} /></Field>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Annexed — dated"><Input value={meta.annexedDate ?? ""} onChange={set("annexedDate")} /></Field>
+                    <Field label="In favour of"><Input value={meta.annexedInFavourOf ?? ""} onChange={set("annexedInFavourOf")} /></Field>
+                  </div>
                 </div>
               </Card>
             </>
@@ -256,7 +272,7 @@ export function Diagrams() {
               <>Boundary sketch &amp; coordinate schedule are drawn from the COGO figure. The locality sketch
               (surrounding lots) is populated once a base map is imported (DXF / Shapefile).</>
             ) : (
-              <>Drawn from the COGO-computed figure ({points.length} beacons, area {cogoResult.area_ha.toFixed(4)} ha).
+              <>Drawn from the computed figure ({points.length} beacons, area {fig.area_ha.toFixed(4)} ha).
               Template wording follows standard SG convention — verify against the official Botswana
               {" "}{KINDS.find((k) => k.id === kind)?.label.toLowerCase()} sample before lodging.</>
             )}

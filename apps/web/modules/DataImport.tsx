@@ -62,8 +62,8 @@ export function DataImport() {
       >
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl border-2 border-brand/40 text-2xl text-brand">
         </div>
-        <p className="text-lg font-medium text-brand-dark">Drop your CSV observation file here</p>
-        <p className="mt-1 text-sm text-emerald-600">Supports: CSV, TXT — Botswana DSM format</p>
+        <p className="text-lg font-medium text-brand-dark">Drop your survey file here</p>
+        <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT observations, or a DXF / Shapefile parent diagram</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <Button onClick={() => fileRef.current?.click()}>Browse file</Button>
           <Button variant="ghost" onClick={loadSample}>
@@ -73,7 +73,7 @@ export function DataImport() {
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.txt"
+          accept=".csv,.txt,.dxf,.shp"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -86,9 +86,22 @@ export function DataImport() {
 
       {importResult && (
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Preview — {importResult.filename} ({importResult.rows.length} rows detected)
-          </p>
+          {importResult.notice && (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <strong>Heads up:</strong> {importResult.notice}
+            </div>
+          )}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Preview — {importResult.filename} ({importResult.rows.length} rows detected · columns: {importResult.detectedColumns.join(", ")})
+            </p>
+            <button
+              onClick={() => { setImportResult(null); setError(null); if (fileRef.current) fileRef.current.value = ""; }}
+              className="whitespace-nowrap text-xs font-medium text-red-500 underline hover:text-red-700"
+            >
+              ✕ Remove / unload file
+            </button>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full min-w-[640px] text-sm">
               <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
@@ -100,6 +113,7 @@ export function DataImport() {
                   <th className="px-4 py-3">Bearing</th>
                   <th className="px-4 py-3">Distance</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Issues</th>
                 </tr>
               </thead>
               <tbody>
@@ -126,6 +140,7 @@ export function DataImport() {
                         {r.status === "valid" ? "Valid" : r.status === "check" ? "Check" : "Error"}
                       </Badge>
                     </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{r.issues.length ? r.issues.join(", ") : "—"}</td>
                   </tr>
                 ))}
               </tbody>

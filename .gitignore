@@ -32,3 +32,9 @@ apps/api/exports/
 
 # Private proposal / milestone doc — not for GitHub
 MILESTONES.md
+
+# Raw client source data / reference material — kept locally, not in the repo.
+# (The app ships the generated apps/web/lib/refMarksData.ts; regenerate with
+#  scripts/genRefMarks.ts when the CONTROL POINTS source changes.)
+CONTROL POINTS/
+screenshot/

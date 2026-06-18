@@ -45,6 +45,15 @@ interface Store {
   setTopoInput: (d: unknown) => void;
   volumeInput: unknown;
   setVolumeInput: (d: unknown) => void;
+  workingPlanInput: unknown;
+  setWorkingPlanInput: (d: unknown) => void;
+  generalPlanInput: unknown;
+  setGeneralPlanInput: (d: unknown) => void;
+  recordInput: unknown;
+  setRecordInput: (d: unknown) => void;
+  /** Parcel→diagram figure: kept SEPARATE so a parcel never clobbers the real COGO traverse. */
+  diagramFigure: CogoResult | null;
+  setDiagramFigure: (r: CogoResult | null) => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
 
@@ -76,6 +85,9 @@ export interface ProjectState {
   diagramInput?: unknown;
   topoInput?: unknown;
   volumeInput?: unknown;
+  workingPlanInput?: unknown;
+  generalPlanInput?: unknown;
+  recordInput?: unknown;
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
@@ -113,6 +125,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setTopoInput = (d: unknown) => { topoInputRef.current = d; };
   const volumeInputRef = useRef<unknown>(null);
   const setVolumeInput = (d: unknown) => { volumeInputRef.current = d; };
+  const workingPlanInputRef = useRef<unknown>(null);
+  const setWorkingPlanInput = (d: unknown) => { workingPlanInputRef.current = d; };
+  const generalPlanInputRef = useRef<unknown>(null);
+  const setGeneralPlanInput = (d: unknown) => { generalPlanInputRef.current = d; };
+  const recordInputRef = useRef<unknown>(null);
+  const setRecordInput = (d: unknown) => { recordInputRef.current = d; };
+  const [diagramFigure, setDiagramFigure] = useState<CogoResult | null>(null);
   const [activeTab, setActiveTab] = useState("import");
   const [currentProject, setCurrentProject] = useState<{ id: string; name: string } | null>(null);
   const [started, setStarted] = useState(false);
@@ -134,6 +153,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     diagramInput: diagramInputRef.current,
     topoInput: topoInputRef.current,
     volumeInput: volumeInputRef.current,
+    workingPlanInput: workingPlanInputRef.current,
+    generalPlanInput: generalPlanInputRef.current,
+    recordInput: recordInputRef.current,
   });
 
   const hydrate = (s: ProjectState) => {
@@ -149,6 +171,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     diagramInputRef.current = s.diagramInput ?? null;
     topoInputRef.current = s.topoInput ?? null;
     volumeInputRef.current = s.volumeInput ?? null;
+    workingPlanInputRef.current = s.workingPlanInput ?? null;
+    generalPlanInputRef.current = s.generalPlanInput ?? null;
+    recordInputRef.current = s.recordInput ?? null;
+    setDiagramFigure(null); // derived from a parcel; not persisted
     setActiveTab("import"); // land on a tab present in every discipline
     setStarted(true); // opening a project enters the working station
     setLoadVersion((v) => v + 1); // remount modules so they re-read state
@@ -167,6 +193,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     diagramInputRef.current = null;
     topoInputRef.current = null;
     volumeInputRef.current = null;
+    workingPlanInputRef.current = null;
+    generalPlanInputRef.current = null;
+    recordInputRef.current = null;
+    setDiagramFigure(null);
     if (typeof window !== "undefined") {
       try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
     }
@@ -203,6 +233,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setTopoInput,
         volumeInput: volumeInputRef.current,
         setVolumeInput,
+        workingPlanInput: workingPlanInputRef.current,
+        setWorkingPlanInput,
+        generalPlanInput: generalPlanInputRef.current,
+        setGeneralPlanInput,
+        recordInput: recordInputRef.current,
+        setRecordInput,
+        diagramFigure,
+        setDiagramFigure,
         activeTab,
         setActiveTab,
         currentProject,

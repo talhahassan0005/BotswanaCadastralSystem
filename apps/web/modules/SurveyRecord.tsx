@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Badge, Button, Card, Field, Input, Stat } from "@/components/ui";
+import { displayCrs } from "@/lib/crsOptions";
 import type { ParcelDoc } from "@/lib/types";
 
 type DocId = "submission" | "report" | "consistency" | "coordinates" | "comparison";
@@ -25,13 +26,20 @@ function severityLabel(sev: "pass" | "warning" | "error"): string {
 }
 
 export function SurveyRecord() {
-  const { config, cogoResult, validation, importResult, parcelDoc } = useStore();
+  const { config, cogoResult, validation, importResult, parcelDoc, recordInput, setRecordInput } = useStore();
   const pd = parcelDoc as ParcelDoc | null;
+  const ri = (recordInput ?? {}) as { doc?: DocId; date?: string; fileNo?: string; addressee?: string };
 
-  const [doc, setDoc] = useState<DocId>("submission");
-  const [date, setDate] = useState(() => new Date().toLocaleDateString());
-  const [fileNo, setFileNo] = useState("");
-  const [addressee, setAddressee] = useState("The Director, Department of Surveys and Mapping");
+  const [doc, setDoc] = useState<DocId>(ri.doc ?? "submission");
+  const [date, setDate] = useState(() => ri.date ?? new Date().toLocaleDateString());
+  const [fileNo, setFileNo] = useState(ri.fileNo ?? "");
+  const [addressee, setAddressee] = useState(ri.addressee ?? "The Director, Department of Surveys and Mapping");
+
+  // Persist the letter/report fields so the date/file-no/addressee round-trip
+  // with the project (instead of resetting the date to "today" on every reopen).
+  useEffect(() => {
+    setRecordInput({ doc, date, fileNo, addressee });
+  }, [doc, date, fileNo, addressee, setRecordInput]);
 
   const docRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +50,10 @@ export function SurveyRecord() {
   function printDoc() {
     if (!docRef.current) return;
     const w = window.open("", "_blank", "width=900,height=1100");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     const title = DOCS.find((d) => d.id === doc)?.label ?? "Survey Record";
     w.document.write(
       `<html><head><title>${title} — ${lotName}</title>` +
@@ -150,7 +161,7 @@ export function SurveyRecord() {
           )}
           {doc === "consistency" && <DataConsistency validation={validation} />}
           {doc === "coordinates" && (
-            <CoordinateList rows={coordRows} coordinateSystem={config.coordinateSystem} lotName={lotName} />
+            <CoordinateList rows={coordRows} coordinateSystem={displayCrs(config.coordinateSystem)} lotName={lotName} />
           )}
           {doc === "comparison" && <DataComparison cogoResult={cogoResult} />}
         </div>
@@ -245,7 +256,7 @@ function ReportOnSurvey({
       <h2 className="text-sm font-semibold text-slate-800">1. Introduction</h2>
       <p>
         This report describes the {config.discipline.toLowerCase()} survey of <strong>{lotName}</strong>. The survey
-        was computed on the <strong>{config.coordinateSystem}</strong> coordinate system.
+        was computed on the <strong>{displayCrs(config.coordinateSystem)}</strong> coordinate system.
       </p>
 
       <h2 className="text-sm font-semibold text-slate-800">2. Method of Survey</h2>

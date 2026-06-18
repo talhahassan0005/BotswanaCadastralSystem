@@ -111,11 +111,13 @@ export function Input({
   onChange,
   placeholder,
   type = "text",
+  onFocus,
 }: {
   value: string | number;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  onFocus?: () => void;
 }) {
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
@@ -126,6 +128,7 @@ export function Input({
         type={inputType}
         value={value}
         placeholder={placeholder}
+        onFocus={onFocus}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${
           isPassword ? "pr-10" : ""

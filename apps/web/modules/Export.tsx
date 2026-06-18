@@ -34,8 +34,11 @@ export function Export() {
   const baseName = (config.name || "survey").replace(/\s+/g, "_");
 
   function exportCsv() {
+    // Quote any beacon id that contains a comma, quote or newline so it can't
+    // shift the CSV columns (RFC-4180 style escaping).
+    const cell = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     const header = "Beacon,East,North";
-    const body = coords.map((c) => `${c.id},${c.e.toFixed(3)},${c.n.toFixed(3)}`).join("\n");
+    const body = coords.map((c) => `${cell(String(c.id))},${c.e.toFixed(3)},${c.n.toFixed(3)}`).join("\n");
     downloadText(`${baseName}_coordinates.csv`, `${header}\n${body}\n`, "text/csv");
   }
 

@@ -16,7 +16,8 @@
     "test:engine": "cd services/engine && python -m pytest -q"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "xlsx": "^0.18.5"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

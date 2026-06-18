@@ -71,7 +71,10 @@ export function SectionalTitle() {
     const svg = serialize();
     if (!svg) return;
     const w = window.open("", "_blank", "width=1100,height=850");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     w.document.write(
       `<html><head><title>Sectional Plan — ${doc.building}</title>` +
         `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +
@@ -90,7 +93,7 @@ export function SectionalTitle() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat value={doc.sections.length} label="Sections" tone="brand" />
         <Stat value={total.toFixed(2)} label="Total floor area (m²)" />
-        <Stat value={doc.sections.length ? "1.0000" : "—"} label="Σ participation quota" />
+        <Stat value={doc.sections.length && total > 0 ? "1.0000" : "—"} label="Σ participation quota" />
         <Stat value={config.coordinateSystem.replace(" Botswana", "")} label="System" />
       </div>
 
@@ -153,7 +156,7 @@ export function SectionalTitle() {
               );
             })}
             <line x1={30} y1={130 + Math.min(doc.sections.length, 30) * 15} x2={590} y2={130 + Math.min(doc.sections.length, 30) * 15} stroke="#cbd5e1" />
-            <text x={42} y={130 + Math.min(doc.sections.length, 30) * 15 + 16} fontSize={10} fontWeight={700}>TOTAL: {total.toFixed(2)} m² · Σ quota 1.0000</text>
+            <text x={42} y={130 + Math.min(doc.sections.length, 30) * 15 + 16} fontSize={10} fontWeight={700}>TOTAL: {total.toFixed(2)} m² · Σ quota {total > 0 ? "1.0000" : "0.0000"}</text>
 
             {/* schematic (right): proportional stacked bars */}
             <text x={barX} y={92} fontSize={12} fontWeight={700}>SECTIONS (by floor area)</text>

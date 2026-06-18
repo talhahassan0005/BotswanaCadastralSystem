@@ -5,11 +5,9 @@ import { useAccount } from "@/lib/account";
 import { useStore, type Discipline } from "@/lib/store";
 import { listProjects, loadProject, type ProjectRow } from "@/lib/projects";
 import { Button, Field, Input, Select } from "@/components/ui";
+import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
 
-const COORD_SYSTEMS = [
-  "Lo 21 Botswana", "Lo 23 Botswana", "Lo 25 Botswana", "Lo 27 Botswana", "Lo 29 Botswana",
-  "UTM 34S", "UTM 35S", "WGS84",
-].map((v) => ({ value: v, label: v }));
+const COORD_SYSTEMS = COORDINATE_SYSTEM_OPTIONS;
 
 const DISCIPLINES: { id: Discipline; blurb: string }[] = [
   { id: "Cadastral", blurb: "Parcels, beacons, SG diagrams, lease sketches." },

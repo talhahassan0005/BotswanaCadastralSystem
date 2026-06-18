@@ -16,6 +16,7 @@ export interface ImportResult {
   warningCount: number;
   errorCount: number;
   detectedColumns: string[];
+  notice?: string;
 }
 
 export interface CogoLeg {
@@ -74,6 +75,7 @@ export interface Beacon {
   id: string; // beacon / station label, unique
   east: number;
   north: number;
+  computed?: boolean; // true for COGO-computed subdivision points (shown highlighted)
 }
 
 export interface Parcel {

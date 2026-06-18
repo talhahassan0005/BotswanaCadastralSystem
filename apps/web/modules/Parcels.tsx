@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Badge, Button, Card, Field, Input, Stat } from "@/components/ui";
 import { MutationDiagram } from "@/components/MutationDiagram";
+import { displayCrs } from "@/lib/crsOptions";
 import type { Beacon, Parcel, ParcelDoc } from "@/lib/types";
 import type { CogoResult } from "@/lib/types";
 import {
@@ -14,6 +15,15 @@ import {
   subdivide,
   validateParcels,
 } from "@/lib/server/parcel";
+import {
+  forward,
+  inverse,
+  intersectBearingBearing,
+  intersectBearingDistance,
+  intersectDistanceDistance,
+  type Point,
+} from "@/lib/server/geometry";
+import { parseBearing } from "@/lib/server/angles";
 
 const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
 
@@ -37,7 +47,7 @@ function uid(prefix: string): string {
 }
 
 export function Parcels() {
-  const { parcelDoc, setParcelDoc, cogoResult, importResult, topoResult, config, setCogoResult, setActiveTab } =
+  const { parcelDoc, setParcelDoc, cogoResult, importResult, topoResult, config, setDiagramFigure, setActiveTab } =
     useStore();
 
   const [doc, setDoc] = useState<ParcelDoc>(() => {
@@ -47,6 +57,8 @@ export function Parcels() {
   const [selId, setSelId] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[]>([]); // beacon ids for a new parcel
   const [msg, setMsg] = useState<string | null>(null);
+  // The line the user is currently working on in "Compute subdivision point" (drawn on the plot).
+  const [activeLine, setActiveLine] = useState<{ from: string; to: string } | null>(null);
 
   // Persist into the project bundle (synchronous ref write — no re-render).
   useEffect(() => {
@@ -78,6 +90,37 @@ export function Parcels() {
       parcels: d.parcels.map((p) => ({ ...p, beaconIds: p.beaconIds.filter((x) => x !== id) })),
     }));
     setBuilding((b) => b.filter((x) => x !== id));
+  }
+
+  /** Add a beacon at COMPUTED coordinates (subdivision points). Returns true on success. */
+  function addComputedBeacon(id: string, east: number, north: number): boolean {
+    const clean = id.trim();
+    if (!clean) { flash("Enter a name for the new point."); return false; }
+    if (doc.beacons.some((b) => b.id === clean)) { flash(`Beacon "${clean}" already exists — choose another name.`); return false; }
+    if (!Number.isFinite(east) || !Number.isFinite(north)) { flash("Computation failed — check the inputs."); return false; }
+    const e3 = Math.round(east * 1000) / 1000;
+    const n3 = Math.round(north * 1000) / 1000;
+    setDoc((d) => ({ ...d, beacons: [...d.beacons, { id: clean, east: e3, north: n3, computed: true }] }));
+    flash(`Computed "${clean}" at E ${e3}, N ${n3} — now include it in a parcel.`);
+    return true;
+  }
+
+  /** Add several computed points at once (radial / consecutive polar). */
+  function addComputedBeacons(points: { id: string; east: number; north: number }[]): boolean {
+    const ids = points.map((p) => p.id.trim());
+    if (ids.some((id) => !id)) { flash("Each computed point needs a name."); return false; }
+    const dup = ids.find((id, i) => ids.indexOf(id) !== i);
+    if (dup) { flash(`Duplicate point name in the list: "${dup}".`); return false; }
+    const existing = new Set(doc.beacons.map((b) => b.id));
+    const clash = ids.find((id) => existing.has(id));
+    if (clash) { flash(`Beacon "${clash}" already exists — choose another name.`); return false; }
+    if (points.some((p) => !Number.isFinite(p.east) || !Number.isFinite(p.north))) { flash("Computation failed — check the inputs."); return false; }
+    setDoc((d) => ({
+      ...d,
+      beacons: [...d.beacons, ...points.map((p) => ({ id: p.id.trim(), east: Math.round(p.east * 1000) / 1000, north: Math.round(p.north * 1000) / 1000, computed: true }))],
+    }));
+    flash(`Added ${points.length} computed point(s) — now include them in portions.`);
+    return true;
   }
 
   function importBeacons(source: { id: string; east: number; north: number }[], label: string) {
@@ -174,7 +217,7 @@ export function Parcels() {
       })),
       residuals: [],
     };
-    setCogoResult(figure);
+    setDiagramFigure(figure); // separate slot — does NOT clobber the real COGO traverse
     setActiveTab("diagrams");
   }
 
@@ -230,10 +273,19 @@ export function Parcels() {
 
         {/* Plot */}
         <Card title="Parcel Plot">
-          <ParcelPlot doc={doc} by={by} selId={selId} building={building} />
+          <ParcelPlot doc={doc} by={by} selId={selId} building={building} activeLine={activeLine} />
           <p className="mt-2 text-xs text-slate-400">Coordinates in {config.coordinateSystem} (survey metres). North is up.</p>
         </Card>
       </div>
+
+      {/* Compute subdivision points from the parent figure (COGO) */}
+      <Card title="Compute subdivision point (COGO)">
+        <p className="mb-2 text-sm text-slate-500">
+          Create new boundary points from existing beacons — polar (bearing + distance), a point on a line, or an
+          intersection — then include them in a portion. This is how a parent plot is split into sub-plots.
+        </p>
+        <ComputePoint beacons={doc.beacons} by={by} onAdd={addComputedBeacon} onAddMany={addComputedBeacons} onActiveLine={setActiveLine} />
+      </Card>
 
       {/* Build a parcel */}
       <Card title="Construct Parcel">
@@ -342,10 +394,236 @@ export function Parcels() {
             title: config.name,
             surveyor: config.surveyor,
             date: "",
-            coordinateSystem: config.coordinateSystem,
+            coordinateSystem: displayCrs(config.coordinateSystem),
           }}
         />
       </Card>
+    </div>
+  );
+}
+
+// --- compute a new point from existing beacons (polar / point-on-line / intersection) ---
+function ComputePoint({
+  beacons, by, onAdd, onAddMany, onActiveLine,
+}: {
+  beacons: Beacon[];
+  by: Map<string, Beacon>;
+  onAdd: (id: string, east: number, north: number) => boolean;
+  onAddMany: (points: { id: string; east: number; north: number }[]) => boolean;
+  onActiveLine: (line: { from: string; to: string } | null) => void;
+}) {
+  const [method, setMethod] = useState<"polar" | "online" | "intersection">("polar");
+  const [polarMode, setPolarMode] = useState<"single" | "radial" | "consecutive">("single");
+  const [legs, setLegs] = useState<{ name: string; bearing: string; distance: string }[]>([{ name: "", bearing: "", distance: "" }]);
+  const [imethod, setImethod] = useState<"bb" | "bd" | "dd">("bb");
+  const [newId, setNewId] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  // shared beacon pickers + params
+  const [fromId, setFromId] = useState("");
+  const [toId, setToId] = useState("");
+  const [bearing, setBearing] = useState("");
+  const [distance, setDistance] = useState("");
+  const [pa, setPa] = useState(""); // bearing/radius at A
+  const [pb, setPb] = useState(""); // bearing/radius at B
+
+  // Report the line we're working on so the plot can draw it (point-on-line / intersection).
+  useEffect(() => {
+    if ((method === "online" || method === "intersection") && fromId && toId && fromId !== toId) {
+      onActiveLine({ from: fromId, to: toId });
+    } else {
+      onActiveLine(null);
+    }
+  }, [method, fromId, toId, onActiveLine]);
+
+  const pt = (id: string): Point | null => {
+    const b = by.get(id);
+    return b ? { east: b.east, north: b.north, name: id } : null;
+  };
+  const BeaconSelect = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => (
+    <Field label={label}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+        <option value="">—</option>
+        {beacons.map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}
+      </select>
+    </Field>
+  );
+
+  const posNum = (v: string, label: string): number => {
+    const n = Number((v ?? "").trim());
+    if (!Number.isFinite(n) || n <= 0) throw new Error(`Enter ${label} greater than 0.`);
+    return n;
+  };
+
+  function compute() {
+    setErr(null);
+    try {
+      if (!newId.trim()) throw new Error("Enter a name for the new point (e.g. X1).");
+      let res: Point;
+      if (method === "polar") {
+        const f = pt(fromId);
+        if (!f) throw new Error("Pick the 'from' beacon.");
+        if (!bearing.trim()) throw new Error("Enter a bearing.");
+        res = forward(f, parseBearing(bearing), posNum(distance, "a distance (m)"));
+      } else if (method === "online") {
+        const a = pt(fromId), b = pt(toId);
+        if (!a || !b) throw new Error("Pick both line beacons (from / to).");
+        if (fromId === toId) throw new Error("'From' and 'to' must be different beacons.");
+        const [brg] = inverse(a, b);
+        res = forward(a, brg, posNum(distance, "a distance (m)")); // distance along line from 'from'
+      } else {
+        const a = pt(fromId), b = pt(toId);
+        if (!a || !b) throw new Error("Pick both reference beacons (A / B).");
+        if (fromId === toId) throw new Error("Beacon A and B must be different.");
+        if (imethod === "bb") {
+          if (!pa.trim() || !pb.trim()) throw new Error("Enter both bearings (from A and from B).");
+          res = intersectBearingBearing(a, parseBearing(pa), b, parseBearing(pb));
+        } else if (imethod === "bd") {
+          if (!pa.trim()) throw new Error("Enter the bearing from A.");
+          res = intersectBearingDistance(a, parseBearing(pa), b, posNum(pb, "a radius (m) from B"));
+        } else {
+          res = intersectDistanceDistance(a, posNum(pa, "a radius (m) from A"), b, posNum(pb, "a radius (m) from B"));
+        }
+      }
+      if (onAdd(newId, res.east, res.north)) {
+        setNewId(""); setBearing(""); setDistance(""); setPa(""); setPb("");
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  // ---- radial / consecutive polar (multiple points from one station) ----
+  const setLeg = (i: number, patch: Partial<{ name: string; bearing: string; distance: string }>) =>
+    setLegs((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const addLeg = () => setLegs((ls) => [...ls, { name: "", bearing: "", distance: "" }]);
+  const removeLeg = (i: number) => setLegs((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
+
+  function computeMulti() {
+    setErr(null);
+    try {
+      const start = pt(fromId);
+      if (!start) throw new Error("Pick the 'from' station.");
+      const rows = legs.filter((l) => l.name.trim() || l.bearing.trim() || l.distance.trim());
+      if (!rows.length) throw new Error("Add at least one leg (name, bearing, distance).");
+      let base: Point = start;
+      const out: { id: string; east: number; north: number }[] = [];
+      for (const l of rows) {
+        if (!l.name.trim()) throw new Error("Each leg needs a point name.");
+        if (!l.bearing.trim()) throw new Error(`Point "${l.name}": enter a bearing.`);
+        const d = Number(l.distance);
+        if (!Number.isFinite(d) || d <= 0) throw new Error(`Point "${l.name}": distance must be greater than 0.`);
+        const p = forward(base, parseBearing(l.bearing), d);
+        out.push({ id: l.name.trim(), east: p.east, north: p.north });
+        if (polarMode === "consecutive") base = { east: p.east, north: p.north, name: l.name };
+      }
+      if (onAddMany(out)) setLegs([{ name: "", bearing: "", distance: "" }]);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  // Length of the selected line (point-on-line mode) — shown as a range hint.
+  const lineLen = (() => {
+    if (method !== "online") return null;
+    const a = pt(fromId), b = pt(toId);
+    return a && b && fromId !== toId ? inverse(a, b)[1] : null;
+  })();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {([
+          ["polar", "Polar (bearing + distance)"],
+          ["online", "Point on line"],
+          ["intersection", "Intersection"],
+        ] as [typeof method, string][]).map(([m, lbl]) => (
+          <button
+            key={m}
+            onClick={() => { setMethod(m); setErr(null); }}
+            className={`rounded-md border px-3 py-1.5 text-sm ${method === m ? "border-brand bg-brand-light/50 font-semibold text-brand-dark" : "border-slate-200 hover:bg-slate-50"}`}
+          >
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {method === "polar" && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["single", "Single"],
+              ["radial", "Radial (one station → many points)"],
+              ["consecutive", "Consecutive (chained)"],
+            ] as [typeof polarMode, string][]).map(([m, lbl]) => (
+              <button key={m} type="button" onClick={() => { setPolarMode(m); setErr(null); }} className={`rounded-md border px-2.5 py-1 text-xs ${polarMode === m ? "border-brand bg-brand-light/50 text-brand-dark" : "border-slate-200 hover:bg-slate-50"}`}>{lbl}</button>
+            ))}
+          </div>
+          {polarMode === "single" ? (
+            <div className="grid gap-2 sm:grid-cols-3">
+              <BeaconSelect value={fromId} onChange={setFromId} label="From beacon" />
+              <Field label="Bearing (DMS / decimal)"><Input value={bearing} onChange={setBearing} placeholder="e.g. 272.36.20" /></Field>
+              <Field label="Distance (m)"><Input type="number" value={distance} onChange={setDistance} placeholder="e.g. 50" /></Field>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <BeaconSelect value={fromId} onChange={setFromId} label={polarMode === "radial" ? "From station (all points radiate from here)" : "Start station (first leg from here, then chained)"} />
+              <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs text-slate-500">
+                <span>Point name</span><span>Bearing</span><span>Distance (m)</span><span />
+              </div>
+              {legs.map((l, i) => (
+                <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2">
+                  <Input value={l.name} onChange={(v) => setLeg(i, { name: v })} placeholder="X1" />
+                  <Input value={l.bearing} onChange={(v) => setLeg(i, { bearing: v })} placeholder="90" />
+                  <Input type="number" value={l.distance} onChange={(v) => setLeg(i, { distance: v })} placeholder="50" />
+                  <button type="button" className="px-2 text-sm text-red-500 hover:text-red-700 disabled:opacity-30" onClick={() => removeLeg(i)} disabled={legs.length <= 1} title="Remove leg">×</button>
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <Button variant="ghost" onClick={addLeg}>+ Add leg</Button>
+                <Button onClick={computeMulti}>Compute &amp; add all points</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {method === "online" && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          <BeaconSelect value={fromId} onChange={setFromId} label="Line from" />
+          <BeaconSelect value={toId} onChange={setToId} label="Line to" />
+          <Field label="Distance from 'from' (m)"><Input type="number" value={distance} onChange={setDistance} placeholder="e.g. 25" /></Field>
+        </div>
+      )}
+      {method === "online" && lineLen != null && (
+        <p className="text-xs text-slate-500">
+          Line {fromId}→{toId} is <strong>{lineLen.toFixed(2)} m</strong> long (distance from {fromId} must be 0–{lineLen.toFixed(0)}).{" "}
+          <button type="button" className="underline hover:text-slate-700" onClick={() => setDistance((lineLen / 2).toFixed(2))}>
+            use midpoint ({(lineLen / 2).toFixed(1)} m)
+          </button>
+        </p>
+      )}
+      {method === "intersection" && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {([["bb", "Bearing–Bearing"], ["bd", "Bearing–Distance"], ["dd", "Distance–Distance"]] as [typeof imethod, string][]).map(([m, lbl]) => (
+              <button key={m} onClick={() => setImethod(m)} className={`rounded-md border px-2.5 py-1 text-xs ${imethod === m ? "border-brand bg-brand-light/50 text-brand-dark" : "border-slate-200 hover:bg-slate-50"}`}>{lbl}</button>
+            ))}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <BeaconSelect value={fromId} onChange={setFromId} label="Beacon A" />
+            <BeaconSelect value={toId} onChange={setToId} label="Beacon B" />
+            <Field label={imethod === "dd" ? "Radius from A (m)" : "Bearing from A"}><Input value={pa} onChange={setPa} placeholder={imethod === "dd" ? "e.g. 40" : "e.g. 90"} /></Field>
+            <Field label={imethod === "bb" ? "Bearing from B" : "Radius/Distance from B (m)"}><Input value={pb} onChange={setPb} placeholder={imethod === "bb" ? "e.g. 180" : "e.g. 40"} /></Field>
+          </div>
+        </div>
+      )}
+
+      {!(method === "polar" && polarMode !== "single") && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="New point name"><Input value={newId} onChange={setNewId} placeholder="e.g. X1" /></Field>
+          <Button onClick={compute}>Compute &amp; add point</Button>
+        </div>
+      )}
+      {err && <p className="text-sm text-red-600">{err}</p>}
     </div>
   );
 }
@@ -388,15 +666,25 @@ function ParcelDetail({
   function doSubdivide() {
     try {
       const { childA, childB } = subdivide(parcel.beaconIds, splitFrom, splitTo);
+      const base = parcel.number || "LOT";
+      // The "root" is the original parent number with any -N portion suffixes stripped,
+      // so we can count how many portions now descend from the same parent.
+      const root = base.replace(/(-\d+)+$/, "") || base;
+      let portions = 0;
       setDoc((d) => {
         const others = d.parcels.filter((p) => p.id !== parcel.id);
-        const base = parcel.number || "LOT";
         const a: Parcel = { id: `${parcel.id}_a`, number: `${base}-1`, name: parcel.name, beaconIds: childA };
         const b: Parcel = { id: `${parcel.id}_b`, number: `${base}-2`, name: parcel.name, beaconIds: childB };
-        return { ...d, parcels: [...others, a, b] };
+        const next = [...others, a, b];
+        portions = next.filter((p) => p.number === root || p.number.startsWith(`${root}-`)).length;
+        return { ...d, parcels: next };
       });
       setSelId(`${parcel.id}_a`);
-      flash("Parcel subdivided into two.");
+      flash(
+        portions > 4
+          ? `Parcel subdivided into two — this parent now has ${portions} portions. Botswana practice limits a subdivision to 4 portions; beyond that a General Plan is normally required. Please confirm before lodging.`
+          : "Parcel subdivided into two."
+      );
     } catch (e) {
       flash((e as Error).message);
     }
@@ -548,12 +836,13 @@ function ConsolidatePanel({
 
 // --- SVG plot -------------------------------------------------------------
 function ParcelPlot({
-  doc, by, selId, building,
+  doc, by, selId, building, activeLine,
 }: {
   doc: ParcelDoc;
   by: Map<string, Beacon>;
   selId: string | null;
   building: string[];
+  activeLine: { from: string; to: string } | null;
 }) {
   const W = 460, H = 320, pad = 28;
   if (doc.beacons.length === 0) {
@@ -593,11 +882,19 @@ function ParcelPlot({
           fill="none" stroke="#0d9488" strokeWidth={1.5} strokeDasharray="4 3"
         />
       )}
-      {/* beacons */}
+      {/* active line being worked on in "Compute subdivision point" (point-on-line / intersection) */}
+      {activeLine && by.get(activeLine.from) && by.get(activeLine.to) && (
+        <line
+          x1={sx(by.get(activeLine.from)!.east)} y1={sy(by.get(activeLine.from)!.north)}
+          x2={sx(by.get(activeLine.to)!.east)} y2={sy(by.get(activeLine.to)!.north)}
+          stroke="#db2777" strokeWidth={1.8} strokeDasharray="5 3"
+        />
+      )}
+      {/* beacons (computed subdivision points highlighted) */}
       {doc.beacons.map((b) => (
         <g key={b.id}>
-          <circle cx={sx(b.east)} cy={sy(b.north)} r={3} fill="#0f172a" />
-          <text x={sx(b.east) + 5} y={sy(b.north) - 4} fontSize={9} fill="#334155">{b.id}</text>
+          <circle cx={sx(b.east)} cy={sy(b.north)} r={b.computed ? 3.5 : 3} fill={b.computed ? "#db2777" : "#0f172a"} />
+          <text x={sx(b.east) + 5} y={sy(b.north) - 4} fontSize={9} fontWeight={b.computed ? 700 : 400} fill={b.computed ? "#db2777" : "#334155"}>{b.id}</text>
         </g>
       ))}
       {/* north arrow */}

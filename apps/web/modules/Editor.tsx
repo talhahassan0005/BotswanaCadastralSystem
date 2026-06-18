@@ -513,6 +513,7 @@ export function Editor() {
     setDoc((d) => ({ ...d, layers: [...d.layers, l], current: l.id }));
   }
   function updateLayer(id: string, patch: Partial<Layer>) {
+    snapshot(); // layer color / visibility / lock / linetype / lineweight is now undoable
     setDoc((d) => ({ ...d, layers: d.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
   }
   function deleteLayer(id: string) {
@@ -570,8 +571,8 @@ export function Editor() {
     setDoc({ ...doc, layers, points, lines, texts });
     setTimeout(fit, 0);
   }
-  function importDxf(file: File) { const r = new FileReader(); r.onload = () => { try { mergeDrawing(parseDxf(String(r.result))); } catch { /* */ } }; r.readAsText(file); }
-  function importShp(file: File) { const r = new FileReader(); r.onload = () => { try { mergeDrawing(parseShp(r.result as ArrayBuffer)); } catch { /* */ } }; r.readAsArrayBuffer(file); }
+  function importDxf(file: File) { const r = new FileReader(); r.onload = () => { try { mergeDrawing(parseDxf(String(r.result))); } catch { alert("Could not read this DXF file — it may be corrupted or an unsupported format."); } }; r.readAsText(file); }
+  function importShp(file: File) { const r = new FileReader(); r.onload = () => { try { mergeDrawing(parseShp(r.result as ArrayBuffer)); } catch { alert("Could not read this Shapefile — make sure it is a valid .shp file."); } }; r.readAsArrayBuffer(file); }
   function exportDxf() {
     const lname = (id: string) => layerById(id).name;
     const g: ImportedDrawing = {
@@ -623,7 +624,7 @@ export function Editor() {
   }
   function importJsonFile(file: File) {
     const r = new FileReader();
-    r.onload = () => { try { const parsed = migrate(JSON.parse(String(r.result))); snapshot(); setDoc(parsed); bumpIds(parsed); setSel(null); setTimeout(fit, 0); } catch { /* */ } };
+    r.onload = () => { try { const parsed = migrate(JSON.parse(String(r.result))); snapshot(); setDoc(parsed); bumpIds(parsed); setSel(null); setTimeout(fit, 0); } catch { alert("Could not open this drawing — it is not a valid saved drawing (JSON) file."); } };
     r.readAsText(file);
   }
   function bumpIds(d: Doc) {
@@ -702,9 +703,9 @@ export function Editor() {
         {/* Coordinate grid */}
         <Card title="Coordinate Grid">
           <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={doc.grid.show} onChange={(e) => setDoc((d) => ({ ...d, grid: { ...d.grid, show: e.target.checked } }))} /> Show labelled grid
+            <input type="checkbox" checked={doc.grid.show} onChange={(e) => { snapshot(); setDoc((d) => ({ ...d, grid: { ...d.grid, show: e.target.checked } })); }} /> Show labelled grid
           </label>
-          <div className="mt-2"><Field label="Grid interval (m)"><Input type="number" value={doc.grid.interval} onChange={(v) => setDoc((d) => ({ ...d, grid: { ...d.grid, interval: Number(v) || 0 } }))} /></Field></div>
+          <div className="mt-2"><Field label="Grid interval (m)"><Input type="number" value={doc.grid.interval} onFocus={snapshot} onChange={(v) => setDoc((d) => ({ ...d, grid: { ...d.grid, interval: Number(v) || 0 } }))} /></Field></div>
         </Card>
 
         {/* Modify (when something selected) */}
@@ -734,20 +735,20 @@ export function Editor() {
               <Select value={(getSelLayer() ?? doc.current)} onChange={(v) => setSelLayer(v)} options={doc.layers.map((l) => ({ value: l.id, label: l.name }))} />
             </Field>
             {sel.type === "point" && (
-              <div className="mt-2"><Field label="Label"><Input value={doc.points.find((p) => p.id === sel.id)?.label ?? ""} onChange={(v) => setDoc((d) => ({ ...d, points: d.points.map((p) => (p.id === sel.id ? { ...p, label: v } : p)) }))} /></Field></div>
+              <div className="mt-2"><Field label="Label"><Input value={doc.points.find((p) => p.id === sel.id)?.label ?? ""} onFocus={snapshot} onChange={(v) => setDoc((d) => ({ ...d, points: d.points.map((p) => (p.id === sel.id ? { ...p, label: v } : p)) }))} /></Field></div>
             )}
             {sel.type === "text" && (
               <div className="mt-2 space-y-2">
-                <Field label="Text"><Input value={doc.texts.find((t) => t.id === sel.id)?.text ?? ""} onChange={(v) => setDoc((d) => ({ ...d, texts: d.texts.map((t) => (t.id === sel.id ? { ...t, text: v } : t)) }))} /></Field>
-                <Field label="Size"><Input type="number" value={doc.texts.find((t) => t.id === sel.id)?.size ?? 14} onChange={(v) => setDoc((d) => ({ ...d, texts: d.texts.map((t) => (t.id === sel.id ? { ...t, size: Number(v) || 12 } : t)) }))} /></Field>
+                <Field label="Text"><Input value={doc.texts.find((t) => t.id === sel.id)?.text ?? ""} onFocus={snapshot} onChange={(v) => setDoc((d) => ({ ...d, texts: d.texts.map((t) => (t.id === sel.id ? { ...t, text: v } : t)) }))} /></Field>
+                <Field label="Size"><Input type="number" value={doc.texts.find((t) => t.id === sel.id)?.size ?? 14} onFocus={snapshot} onChange={(v) => setDoc((d) => ({ ...d, texts: d.texts.map((t) => (t.id === sel.id ? { ...t, size: Number(v) || 12 } : t)) }))} /></Field>
               </div>
             )}
             {sel.type === "symbol" && (
-              <div className="mt-2"><Field label="Symbol"><Select value={doc.symbols.find((s) => s.id === sel.id)?.kind ?? "beacon"} onChange={(v) => setDoc((d) => ({ ...d, symbols: d.symbols.map((s) => (s.id === sel.id ? { ...s, kind: v as SymbolKind } : s)) }))} options={SYMBOLS.map((s) => ({ value: s.kind, label: s.label }))} /></Field></div>
+              <div className="mt-2"><Field label="Symbol"><Select value={doc.symbols.find((s) => s.id === sel.id)?.kind ?? "beacon"} onChange={(v) => { snapshot(); setDoc((d) => ({ ...d, symbols: d.symbols.map((s) => (s.id === sel.id ? { ...s, kind: v as SymbolKind } : s)) })); }} options={SYMBOLS.map((s) => ({ value: s.kind, label: s.label }))} /></Field></div>
             )}
             {sel.type === "line" && (
               <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={!!doc.lines.find((l) => l.id === sel.id)?.closed} onChange={(e) => setDoc((d) => ({ ...d, lines: d.lines.map((l) => (l.id === sel.id ? { ...l, closed: e.target.checked } : l)) }))} /> Closed polygon
+                <input type="checkbox" checked={!!doc.lines.find((l) => l.id === sel.id)?.closed} onChange={(e) => { snapshot(); setDoc((d) => ({ ...d, lines: d.lines.map((l) => (l.id === sel.id ? { ...l, closed: e.target.checked } : l)) })); }} /> Closed polygon
               </label>
             )}
             {selStyleEntity && (

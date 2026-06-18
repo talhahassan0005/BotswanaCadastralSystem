@@ -9,6 +9,7 @@
  */
 
 import { supabase } from "./supabaseClient";
+import { REF_MARKS_DATA } from "./refMarksData";
 
 export interface RefMark {
   id: string;
@@ -22,8 +23,9 @@ export interface RefMark {
   region: string;
 }
 
-// Seed marks across Botswana (approximate WGS84 positions of the towns/areas).
-export const REF_MARKS: RefMark[] = [
+// Hand fallback (approximate town positions) — used only if the generated
+// client dataset is empty. The real seed is REF_MARKS_DATA (CONTROL POINTS).
+const SEED_FALLBACK: RefMark[] = [
   { id: "1", number: "T 24/101", name: "Gaborone", type: "Trigonometrical beacon", lat: -24.6282, lon: 25.9231, description: "Concrete pillar, brass bolt", status: "In good order", region: "South-East" },
   { id: "2", number: "T 25/044", name: "Lobatse", type: "Trigonometrical beacon", lat: -25.2210, lon: 25.6770, description: "Concrete beacon on hill", status: "In good order", region: "South-East" },
   { id: "3", number: "T 24/318", name: "Molepolole", type: "Town survey mark", lat: -24.4067, lon: 25.4951, description: "Standard iron peg in kerb", status: "In good order", region: "Kweneng" },
@@ -41,6 +43,10 @@ export const REF_MARKS: RefMark[] = [
   { id: "15", number: "T 26/011", name: "Tsabong", type: "Trigonometrical beacon", lat: -26.0167, lon: 22.4000, description: "Pillar, sand dune ridge", status: "Not visited", region: "Kgalagadi" },
   { id: "16", number: "T 24/660", name: "Ramotswa", type: "Town survey mark", lat: -24.8667, lon: 25.8167, description: "Standard mark in pavement", status: "In good order", region: "South-East" },
 ];
+
+/** Reference-mark seed: the client's CONTROL POINTS dataset (1481 marks across 23
+ *  localities, converted to WGS84), falling back to the hand list if empty. */
+export const REF_MARKS: RefMark[] = REF_MARKS_DATA.length ? REF_MARKS_DATA : SEED_FALLBACK;
 
 const R_KM = 6371.0088;
 const toRad = (d: number) => (d * Math.PI) / 180;

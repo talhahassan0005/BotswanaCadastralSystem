@@ -77,10 +77,16 @@ export function parseBearing(text: string | number): number {
   throw new Error(`unrecognized bearing format: ${JSON.stringify(text)}`);
 }
 
-/** Format decimal degrees as DMS string, e.g. 45.2083 -> 45°12'30". */
+/** Format decimal degrees as DMS string, e.g. 45.2083 -> 45°12'30".
+ *  Rounds seconds to an integer and carries the overflow so seconds never
+ *  render as 60 (e.g. 12°34'60" -> 12°35'00"). */
 export function formatDms(deg: number, sep: [string, string, string] = ["°", "'", '"']): string {
-  const [d, m, s] = degToDms(normalizeDeg(deg));
-  return `${d}${sep[0]}${pad2(m)}${sep[1]}${pad2(Math.round(s))}${sep[2]}`;
+  let [d, m, s] = degToDms(normalizeDeg(deg));
+  let sec = Math.round(s);
+  if (sec === 60) { sec = 0; m += 1; }
+  if (m === 60) { m = 0; d += 1; }
+  if (d === 360) d = 0;
+  return `${d}${sep[0]}${pad2(m)}${sep[1]}${pad2(sec)}${sep[2]}`;
 }
 
 function pad2(n: number): string {

@@ -35,6 +35,8 @@ export async function POST(req: Request, { params }: { params: { op: string } })
     switch (op) {
       case "traverse":
         return NextResponse.json(handleTraverse(body));
+      case "coordinates":
+        return NextResponse.json(handleCoordinates(body));
       case "inverse":
         return NextResponse.json(handleInverse(body));
       case "forward":
@@ -105,6 +107,57 @@ function handleTraverse(req: any) {
       }
       return out;
     }),
+  };
+}
+
+/** Build a figure directly from known point coordinates (no bearing/distance
+ *  observations): inverse-compute each side + polygon area. Closure is exact
+ *  because the coordinates are given. */
+function handleCoordinates(req: any) {
+  const pts: Point[] = (req.points ?? []).map(point);
+  if (pts.length < 3) throw new Error("need at least 3 point coordinates to form a figure");
+  const closed = (req.type ?? "closed") !== "open";
+  const n = pts.length;
+  const legCount = closed ? n : n - 1;
+  const legs = [];
+  for (let i = 0; i < legCount; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const [bearing, distance] = inverse(a, b);
+    legs.push({
+      index: i + 1,
+      from: a.name ?? `P${i + 1}`,
+      to: b.name ?? `P${((i + 1) % n) + 1}`,
+      bearing: round(bearing, 6),
+      bearing_dms: formatDms(bearing),
+      distance: round(distance, 3),
+      d_east_adj: round(b.east - a.east, 3),
+      d_north_adj: round(b.north - a.north, 3),
+    });
+  }
+  const area = closed ? Math.abs(polygonArea(pts)) : 0;
+  // Flag a degenerate ring (collinear or duplicated points → zero enclosed area)
+  // so the UI doesn't present it as a perfect "exact" figure.
+  const degenerate = closed && pts.length >= 3 && area < 1e-6;
+  return {
+    type: closed ? "closed" : "open",
+    adjustment: "none",
+    closure: {
+      misclose_east: 0,
+      misclose_north: 0,
+      linear_misclosure: 0,
+      total_distance: round(perimeter(pts, closed), 3),
+      relative_precision: null,
+      relative_precision_text: degenerate
+        ? "degenerate figure — zero enclosed area (check point order / duplicate or collinear points)"
+        : "exact (from given coordinates)",
+    },
+    area_m2: round(area, 3),
+    area_ha: round(area / 10_000, 4),
+    points: pts.map((p) => ({ name: p.name ?? null, east: round(p.east, 3), north: round(p.north, 3) })),
+    legs,
+    sigma0: 0,
+    residuals: [],
   };
 }
 

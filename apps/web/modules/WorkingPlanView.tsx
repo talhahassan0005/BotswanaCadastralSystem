@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
@@ -10,18 +10,21 @@ import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
  * style, drawn from the computed figure (COGO result or a parcel sent to it).
  */
 export function WorkingPlanView() {
-  const { cogoResult, config, setActiveTab } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
+  const fig = diagramFigure ?? cogoResult;
 
   const points = useMemo(
-    () => (cogoResult?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
-    [cogoResult]
+    () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
+    [fig]
   );
   const sides = useMemo(
-    () => (cogoResult?.legs ?? []).map((l) => ({ from: l.from, to: l.to, bearing_dms: l.bearing_dms, distance: l.distance })),
-    [cogoResult]
+    () => (fig?.legs ?? []).map((l) => ({ from: l.from, to: l.to, bearing_dms: l.bearing_dms, distance: l.distance })),
+    [fig]
   );
 
+  // Restore saved title-block from the project, else derive defaults from config.
+  const saved = (workingPlanInput ?? null) as Partial<WorkingPlanMeta> | null;
   const [meta, setMeta] = useState<WorkingPlanMeta>({
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 2773 TLOKWENG",
     tribalArea: "BATLOKWA TRIBAL TERRITORY",
@@ -32,9 +35,15 @@ export function WorkingPlanView() {
     referenceMarkDescription: "All Reference Marks: 20mm Iron Peg in Concrete",
     workingStationDescription: "WP1: 12mm Iron Peg",
     placedBeaconDescription: "ALL: 12mm Iron Peg",
+    ...(saved ?? {}),
   });
   const set = (k: keyof WorkingPlanMeta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
+
+  // Persist the title-block into the project bundle so it round-trips on save/open.
+  useEffect(() => {
+    setWorkingPlanInput(meta);
+  }, [meta, setWorkingPlanInput]);
 
   function serialize(): string | null {
     if (!svgRef.current) return null;
@@ -57,7 +66,10 @@ export function WorkingPlanView() {
     const svg = serialize();
     if (!svg) return;
     const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) return;
+    if (!w) {
+      alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
+      return;
+    }
     w.document.write(
       `<html><head><title>Working Plan — ${meta.lotName}</title>` +
         `<style>@page{size:portrait}body{margin:0}svg{width:100%;height:auto}</style></head>` +
@@ -66,7 +78,7 @@ export function WorkingPlanView() {
     w.document.close();
   }
 
-  if (!cogoResult || points.length < 3) {
+  if (!fig || points.length < 3) {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">

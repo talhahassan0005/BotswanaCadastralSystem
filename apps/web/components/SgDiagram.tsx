@@ -42,6 +42,15 @@ export interface DiagramMeta {
   boreholeNo?: string;       // borehole identifier (borehole template)
   boreholeE?: number;        // surveyed borehole Easting (0 = use centroid)
   boreholeN?: number;        // surveyed borehole Northing
+  parentDiagram?: string;    // subdivision: "annexed to original / immediate parent diagram" No.
+  // Deeds-registration block (bottom annexure table — Botswana SG template).
+  dsmFile?: string;          // "D.S.M File:" e.g. "CAD T9"
+  comp?: string;             // "Comp." (compilation reference)
+  lirNo?: string;            // "LIR No:"
+  annexedToNo?: string;      // "This diagram is annexed to ... No."
+  annexedDate?: string;      // "Dated"
+  annexedInFavourOf?: string;// "in favour of"
+  parentDiagramNo?: string;  // "The immediate parent diagram is annexed to No."
 }
 
 const KIND_CAPTION: Record<DiagramKind, string> = {
@@ -56,11 +65,11 @@ const KIND_CAPTION: Record<DiagramKind, string> = {
 export function certificationLine(meta: DiagramMeta): string {
   switch (meta.kind) {
     case "compiled":
-      return `Compiled in ${meta.surveyedDate} by me${meta.sourceRef ? ` from ${meta.sourceRef}` : ""}`;
+      return `Compiled${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me,`;
     case "framed":
-      return `Framed${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me`;
+      return `Framed${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me,`;
     default:
-      return `Surveyed in ${meta.surveyedDate} by me`;
+      return `Surveyed in ${meta.surveyedDate} by me,`;
   }
 }
 
@@ -111,7 +120,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const VB_H = 990;
 
   // ---- Figure transform (north-up, fit to drawing panel) ----
-  const draw = { x: 24, y: 70, w: 770, h: 850 };
+  const draw = { x: 24, y: 70, w: 770, h: 740 };
   const pad = 70;
   const es = points.map((p) => p.east);
   const ns = points.map((p) => p.north);
@@ -287,7 +296,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ---------- Beacon description ---------- */}
       <g>
         <text x={tbl.x} y={dataTop + nRows * rowH + 30} fontSize={11} fontWeight="bold" textDecoration="underline">
-          Description of Beacons
+          BEACON DESCRIPTION
         </text>
         <text x={tbl.x} y={dataTop + nRows * rowH + 48} fontSize={11}>
           {meta.beaconDescription}
@@ -309,29 +318,51 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         </text>
       </g>
 
-      {/* ---------- Legal description (bottom-center) ---------- */}
+      {/* ---------- Legal description (bottom-center, below the figure) ---------- */}
       <g textAnchor="middle" fontSize={12}>
-        <text x={420} y={VB_H - 150} fontWeight="bold">
+        <text x={420} y={828} fontWeight="bold">
           THE FIGURE {figureLetters} REPRESENTS {meta.areaHa.toFixed(4)} HECTARES OF LAND CALLED
         </text>
-        <text x={420} y={VB_H - 132} fontWeight="bold" textDecoration="underline">{meta.lotName}</text>
-        <text x={420} y={VB_H - 114} fontSize={11}>({meta.parent})</text>
-        <text x={420} y={VB_H - 96} fontSize={11}>
+        <text x={420} y={846} fontWeight="bold" textDecoration="underline">{meta.lotName}</text>
+        <text x={420} y={862} fontSize={11}>({meta.parent})</text>
+        <text x={420} y={878} fontSize={11}>
           SITUATE AT {meta.location} IN THE {meta.tribalArea}
         </text>
       </g>
 
-      {/* ---------- Surveyor + registration block (bottom) ---------- */}
+      {/* ---------- Certification + surveyor ---------- */}
       <g fontSize={10}>
-        <line x1={24} y1={VB_H - 80} x2={VB_W - 24} y2={VB_H - 80} stroke="black" strokeWidth={0.7} />
-        <text x={36} y={VB_H - 60}>{certificationLine(meta)}</text>
-        <text x={VB_W - 260} y={VB_H - 62} fontWeight="bold">{meta.surveyor}</text>
-        <text x={VB_W - 260} y={VB_H - 48} fontSize={9}>Land Surveyor</text>
-        <line x1={24} y1={VB_H - 44} x2={VB_W - 24} y2={VB_H - 44} stroke="black" strokeWidth={0.5} />
-        <text x={36} y={VB_H - 26} fontSize={9.5}>S.R No. {meta.srNo || "—"}</text>
-        <text x={300} y={VB_H - 26} fontSize={9.5}>General Plan No. {meta.gpNo || "—"}</text>
-        <text x={640} y={VB_H - 26} fontSize={9.5}>Degree Square: {meta.degreeSquare || "—"}</text>
-        <text x={980} y={VB_H - 26} fontSize={9.5}>System: {meta.coordinateSystem}</text>
+        <text x={36} y={902}>{certificationLine(meta)}</text>
+        <text x={VB_W - 330} y={898} fontWeight="bold">{meta.surveyor}</text>
+        <text x={VB_W - 330} y={912} fontSize={9}>LAND SURVEYOR</text>
+      </g>
+
+      {/* ---------- Annexure / deeds-registration table (bottom strip) ---------- */}
+      <g fontSize={8.5}>
+        <text x={32} y={916} fontSize={8}>DEDUCTIONS FROM THE AREA ARE MADE ON THE BACK HEREOF</text>
+        <rect x={24} y={920} width={VB_W - 48} height={62} fill="none" stroke="black" strokeWidth={0.7} />
+        <line x1={470} y1={920} x2={470} y2={982} stroke="black" strokeWidth={0.5} />
+        <line x1={930} y1={920} x2={930} y2={982} stroke="black" strokeWidth={0.5} />
+
+        {/* Left: Deeds Registry annexure */}
+        <text x={32} y={934}>This diagram is annexed to</text>
+        <text x={32} y={948}>No. {meta.annexedToNo || "—"}    Dated {meta.annexedDate || "—"}</text>
+        <text x={32} y={962}>in favour of {meta.annexedInFavourOf || "—"}</text>
+        <line x1={250} y1={974} x2={462} y2={974} stroke="black" strokeWidth={0.5} />
+        <text x={356} y={980} textAnchor="middle" fontSize={8}>Registrar of Deeds</text>
+
+        {/* Middle: immediate parent diagram */}
+        <text x={478} y={934}>The immediate parent diagram is</text>
+        <text x={478} y={950}>Annexed to No. {meta.parentDiagramNo || meta.parentDiagram || "—"}</text>
+
+        {/* Right: registration numbers */}
+        <text x={938} y={934}>General Plan No. {meta.gpNo || "—"}</text>
+        <text x={938} y={946}>S.R No. {meta.srNo || "—"}</text>
+        <text x={938} y={958}>D.S.M File: {meta.dsmFile || "—"}</text>
+        <text x={938} y={970}>Comp. {meta.comp || "—"}</text>
+        <text x={1180} y={946}>Degree Square: {meta.degreeSquare || "—"}</text>
+        <text x={1180} y={958}>LIR No: {meta.lirNo || "—"}</text>
+        <text x={1180} y={970}>System {meta.coordinateSystem}</text>
       </g>
     </svg>
   );
