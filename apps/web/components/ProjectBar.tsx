@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount } from "@/lib/account";
 import { useStore } from "@/lib/store";
 import { deleteProject, listProjects, loadProject, saveProject, type ProjectRow } from "@/lib/projects";
@@ -37,9 +37,37 @@ export function ProjectBar() {
     setBusy(false);
     if (error) { setMsg(error); return; }
     if (id) setCurrentProject({ id, name });
+    lastSavedRef.current = JSON.stringify(snapshot());
     setMsg(`Saved “${name}”.`);
     setTimeout(() => setMsg(null), 2500);
   }
+
+  // --- Auto-save: a saved project persists automatically so closing it never
+  // loses work (client request). Saves on a short interval when the snapshot
+  // changed, when the tab is hidden/closed, and before leaving the project. ---
+  const lastSavedRef = useRef<string>("");
+  const autoSave = useCallback(async () => {
+    if (!user || !currentProject) return;
+    const snap = snapshot();
+    const json = JSON.stringify(snap);
+    if (json === lastSavedRef.current) return; // nothing changed
+    const { error } = await saveProject({ id: currentProject.id, name: currentProject.name, state: snap, owner: user.id });
+    if (!error) lastSavedRef.current = json;
+  }, [user, currentProject, snapshot]);
+
+  useEffect(() => {
+    if (!user || !currentProject) return;
+    const id = setInterval(() => { void autoSave(); }, 8000);
+    const onHide = () => { if (document.visibilityState === "hidden") void autoSave(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onHide);
+      void autoSave(); // unmount (e.g. project closed) — final save
+    };
+  }, [user, currentProject, autoSave]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm sm:px-6">
@@ -59,13 +87,13 @@ export function ProjectBar() {
               { label: "Save", onClick: () => doSave(false), disabled: busy },
               { label: "Save as…", onClick: () => doSave(true), disabled: busy },
               { label: "Open…", onClick: () => setOpenOpen(true) },
-              { label: "Projects (home)", onClick: () => resetProject() },
+              { label: "Projects (home)", onClick: async () => { await autoSave(); resetProject(); } },
             ]}
           />
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-500">
             {user.email}
             <button onClick={() => setProfileOpen(true)} className="text-slate-400 underline hover:text-slate-700">profile</button>
-            <button onClick={signOut} className="text-slate-400 underline hover:text-slate-700">sign out</button>
+            <button onClick={async () => { await autoSave(); signOut(); }} className="text-slate-400 underline hover:text-slate-700">sign out</button>
           </span>
         </>
       ) : (
@@ -88,11 +116,13 @@ export function ProjectBar() {
         onClose={() => setOpenOpen(false)}
         onPick={async (id, name) => {
           setBusy(true);
+          await autoSave(); // save the current project before switching away
           const { state, error } = await loadProject(id);
           setBusy(false);
           if (error || !state) { setMsg(error ?? "Load failed."); return; }
           hydrate(state);
           setCurrentProject({ id, name });
+          lastSavedRef.current = JSON.stringify(state); // avoid an immediate redundant auto-save
           setOpenOpen(false);
           setMsg(`Opened “${name}”.`);
         }}

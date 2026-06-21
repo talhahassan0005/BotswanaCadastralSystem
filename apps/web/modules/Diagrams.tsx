@@ -125,7 +125,7 @@ export function Diagrams() {
     }
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
-        `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +
+        `<style>@page{size:A4 portrait;margin:8mm}body{margin:0}svg{width:100%;height:auto}</style></head>` +
         `<body onload="window.print()">${svg}</body></html>`
     );
     w.document.close();
