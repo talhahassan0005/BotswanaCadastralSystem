@@ -88,11 +88,19 @@ export function CogoEngine() {
           end_known: endKnown,
         });
       } else if (coordPoints.length >= 3) {
-        // Coordinate-only import (X,Y[,Z]): build the figure directly from the points.
-        result = await apiJson<CogoResult>("/cogo/coordinates", { points: coordPoints, type: config.traverseType });
+        // Coordinate-only import (no bearings/distances) — this is not a traverse.
+        // The correct tool is Parcels, where the user picks which points form the
+        // plot (a file often mixes plot beacons with the station + reference marks).
+        setError(
+          `This import has ${coordPoints.length} point coordinates but no bearing/distance observations, so it isn't a traverse. ` +
+            `Open the Parcels tab → "From Import" to build the plot: select the plot beacons in boundary order; the working station and reference marks can stay in the list.`
+        );
+        setRunning(false);
+        return;
       } else {
         setError(
-          "Import either bearing + distance observations (at least 2 legs) for a traverse, or at least 3 point coordinates (East, North) to compute the figure directly."
+          "The COGO Engine computes traverses from bearing + distance observations (at least 2 legs). " +
+            "If you have point coordinates instead, build the plot in the Parcels tab."
         );
         setRunning(false);
         return;
@@ -219,6 +227,11 @@ export function CogoEngine() {
             </Button>
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          {coordPoints.length >= 3 && legs.length < 2 && (
+            <div className="mt-2">
+              <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels →</Button>
+            </div>
+          )}
         </Card>
 
         <Card title="Other Tools">
