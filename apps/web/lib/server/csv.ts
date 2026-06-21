@@ -142,8 +142,22 @@ export function parseSurveyCsv(text: string): ParseResult {
     detectedColumns.push(...firstCells);
     dataLines = lines.slice(1);
   } else {
-    colMap = ["beaconId", "east", "north", "bearing", "distance"];
-    detectedColumns.push("(positional: id, east, north, bearing, distance)");
+    // Positional (no header). Decide the layout from the column count:
+    //   >= 5 cols -> observation file (id, east, north, bearing, distance)
+    //   3-4 cols  -> coordinate list (id, east, north[, elevation/description])
+    // The 4th column of a coordinate file is Z/elevation or a beacon description —
+    // NOT a bearing — so it must not be mapped to bearing (which would otherwise
+    // show a Z like "994.89" under the Bearing column).
+    const maxCols = Math.max(3, ...dataLines.map((l) => splitLine(l).length));
+    if (maxCols >= 5) {
+      colMap = ["beaconId", "east", "north", "bearing", "distance"];
+      detectedColumns.push("(positional: id, east, north, bearing, distance)");
+    } else {
+      colMap = ["beaconId", "east", "north"];
+      detectedColumns.push(
+        maxCols >= 4 ? "(positional: id, east, north [+ elevation/description])" : "(positional: id, east, north)"
+      );
+    }
   }
 
   const rows: ParsedRow[] = [];

@@ -93,19 +93,15 @@ export function CogoEngine() {
           end_known: endKnown,
         });
       } else if (coordPoints.length >= 3) {
-        // Coordinate-only import (no bearings/distances) — this is not a traverse.
-        // The correct tool is Parcels, where the user picks which points form the
-        // plot (a file often mixes plot beacons with the station + reference marks).
-        setError(
-          `This import has ${coordPoints.length} point coordinates but no bearing/distance observations, so it isn't a traverse. ` +
-            `Open the Parcels tab → "From Import" to build the plot: select the plot beacons in boundary order; the working station and reference marks can stay in the list.`
-        );
-        setRunning(false);
-        return;
+        // Coordinate-only import (X,Y[,Z]) — no bearings/distances needed. Build the
+        // figure directly from the points (sides via inverse, exact closure).
+        result = await apiJson<CogoResult>("/cogo/coordinates", {
+          points: coordPoints,
+          type: config.traverseType,
+        });
       } else {
         setError(
-          "The COGO Engine computes traverses from bearing + distance observations (at least 2 legs). " +
-            "If you have point coordinates instead, build the plot in the Parcels tab."
+          "Import survey data first — either bearing + distance observations (a traverse) or at least 3 point coordinates (East, North)."
         );
         setRunning(false);
         return;
@@ -226,23 +222,20 @@ export function CogoEngine() {
               </div>
             </Field>
           </div>
-          {coordinateOnly ? (
-            <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-              <p className="font-medium">This file is a coordinate list, not a traverse.</p>
-              <p className="mt-1">
-                It has point coordinates but no bearings or distances. Build your plot in the Parcels
-                tab — pick the plot beacons in boundary order; the working station and reference marks
-                can stay in the list.
-              </p>
-              <div className="mt-2">
-                <Button onClick={() => setActiveTab("parcels")}>Go to Parcels →</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4">
-              <Button onClick={run} disabled={running}>
-                {running ? "Computing…" : "Run COGO Computation"}
-              </Button>
+          <div className="mt-4">
+            <Button onClick={run} disabled={running}>
+              {running ? "Computing…" : "Run COGO Computation"}
+            </Button>
+          </div>
+          {coordinateOnly && (
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              These are point coordinates (no bearings or distances) — the figure is computed directly from
+              the points. If the file also contains a working station or reference marks, load only the plot
+              coordinates, or build the plot in the{" "}
+              <button type="button" onClick={() => setActiveTab("parcels")} className="font-medium text-brand underline">
+                Parcels
+              </button>{" "}
+              tab.
             </div>
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
