@@ -58,6 +58,11 @@ export function CogoEngine() {
     [importResult]
   );
 
+  // A coordinate list (points, no bearing/distance legs) is a Parcels job, not a
+  // COGO traverse — guide the user there with a friendly notice instead of a red
+  // error or a wrong polygon built from every point.
+  const coordinateOnly = legs.length < 2 && coordPoints.length >= 3;
+
   async function run() {
     setError(null);
     setRunning(true);
@@ -221,17 +226,26 @@ export function CogoEngine() {
               </div>
             </Field>
           </div>
-          <div className="mt-4">
-            <Button onClick={run} disabled={running} >
-              {running ? "Computing…" : "Run COGO Computation"}
-            </Button>
-          </div>
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          {coordPoints.length >= 3 && legs.length < 2 && (
-            <div className="mt-2">
-              <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels →</Button>
+          {coordinateOnly ? (
+            <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              <p className="font-medium">This file is a coordinate list, not a traverse.</p>
+              <p className="mt-1">
+                It has point coordinates but no bearings or distances. Build your plot in the Parcels
+                tab — pick the plot beacons in boundary order; the working station and reference marks
+                can stay in the list.
+              </p>
+              <div className="mt-2">
+                <Button onClick={() => setActiveTab("parcels")}>Go to Parcels →</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <Button onClick={run} disabled={running}>
+                {running ? "Computing…" : "Run COGO Computation"}
+              </Button>
             </div>
           )}
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </Card>
 
         <Card title="Other Tools">
