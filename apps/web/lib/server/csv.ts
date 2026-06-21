@@ -39,6 +39,18 @@ const HEADER_ALIASES: Record<string, keyof Omit<ParsedRow, "index" | "status" | 
   distance: "distance", dist: "distance", length: "distance", side: "distance",
 };
 
+/** Does a token look like a survey bearing (decimal, dotted DDD.MMSS or DMS)?
+ *  Used to tell a real bearing apart from a beacon-description column such as
+ *  "75MM CFP" or "IPC12", which must NOT be shown/used as a bearing. */
+function looksLikeBearing(raw: string): boolean {
+  const t = (raw ?? "").trim();
+  if (!t) return false;
+  // Strip quadrant letters (N/S/E/W); a genuine bearing then has no other letters.
+  const core = t.replace(/[NSEW]/gi, "");
+  if (/[A-Za-z]/.test(core)) return false; // "75MM CFP", "IPC12", "75mm peg" -> description
+  return /\d/.test(core);
+}
+
 /** Parse a European/grouped numeric token. Returns null if not numeric. */
 function parseNum(raw: string): number | null {
   if (raw == null) return null;
@@ -155,8 +167,12 @@ export function parseSurveyCsv(text: string): ParseResult {
     cells.forEach((cell, ci) => {
       const field = colMap[ci];
       if (!field) return;
-      if (field === "beaconId" || field === "bearing") {
-        (row[field] as string | null) = cell || null;
+      if (field === "beaconId") {
+        row.beaconId = cell || null;
+      } else if (field === "bearing") {
+        // Only accept a real bearing here; a beacon-description column (e.g.
+        // "75MM CFP", "IPC12") is ignored rather than mislabelled as a bearing.
+        row.bearing = cell && looksLikeBearing(cell) ? cell : null;
       } else {
         (row[field] as number | null) = parseNum(cell);
       }

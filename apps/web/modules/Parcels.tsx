@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Badge, Button, Card, Field, Input, Stat } from "@/components/ui";
 import { MutationDiagram } from "@/components/MutationDiagram";
@@ -845,6 +845,39 @@ function ParcelPlot({
   activeLine: { from: string; to: string } | null;
 }) {
   const W = 460, H = 320, pad = 28;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState({ x: 0, y: 0, w: W, h: H });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
+
+  const zoomBy = (factor: number, fx?: number, fy?: number) =>
+    setView((v) => {
+      const nw = Math.min(Math.max(v.w / factor, W / 40), W * 2); // clamp 40x in … 2x out
+      const nh = nw * (H / W);
+      const cx = fx ?? v.x + v.w / 2;
+      const cy = fy ?? v.y + v.h / 2;
+      return { x: cx - ((cx - v.x) / v.w) * nw, y: cy - ((cy - v.y) / v.h) * nh, w: nw, h: nh };
+    });
+  const fit = () => setView({ x: 0, y: 0, w: W, h: H });
+
+  // Wheel-zoom toward the cursor. Bound non-passively so the page doesn't scroll.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const v = viewRef.current;
+      const rect = svg.getBoundingClientRect();
+      const fx = v.x + ((e.clientX - rect.left) / rect.width) * v.w;
+      const fy = v.y + ((e.clientY - rect.top) / rect.height) * v.h;
+      zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, fx, fy);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
+
   if (doc.beacons.length === 0) {
     return <div className="grid h-48 place-items-center text-sm text-slate-400">Nothing to plot yet.</div>;
   }
@@ -858,51 +891,84 @@ function ParcelPlot({
   const sx = (e: number) => ox + (e - minX) * s;
   const sy = (n: number) => H - (oy + (n - minY) * s); // flip: north up
 
+  // Keep dot radius / label size roughly constant on screen as the user zooms.
+  const k = view.w / W;
+  const onDown = (e: React.PointerEvent) => {
+    drag.current = { x: e.clientX, y: e.clientY };
+    setGrabbing(true);
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const dx = ((e.clientX - drag.current.x) * view.w) / rect.width;
+    const dy = ((e.clientY - drag.current.y) * view.h) / rect.height;
+    drag.current = { x: e.clientX, y: e.clientY };
+    setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
+  };
+  const onUp = () => { drag.current = null; setGrabbing(false); };
+  const btn = "grid h-7 w-7 place-items-center rounded border border-slate-300 bg-white leading-none text-slate-700 shadow-sm hover:bg-slate-100";
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-md border border-slate-200 bg-slate-50">
-      {/* parcels */}
-      {doc.parcels.map((p, i) => {
-        const pts = ringPoints(p.beaconIds, by);
-        if (pts.length < 3) return null;
-        const d = pts.map((pp) => `${sx(pp.east)},${sy(pp.north)}`).join(" ");
-        const cx = pts.reduce((a, pp) => a + sx(pp.east), 0) / pts.length;
-        const cy = pts.reduce((a, pp) => a + sy(pp.north), 0) / pts.length;
-        const col = PALETTE[i % PALETTE.length];
-        return (
-          <g key={p.id}>
-            <polygon points={d} fill={col} fillOpacity={selId === p.id ? 0.32 : 0.16} stroke={col} strokeWidth={selId === p.id ? 2 : 1.3} />
-            <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={600} fill={col}>{p.number}</text>
+    <div className="relative">
+      <svg
+        ref={svgRef}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerLeave={onUp}
+        className="w-full touch-none select-none rounded-md border border-slate-200 bg-slate-50"
+        style={{ cursor: grabbing ? "grabbing" : "grab" }}
+      >
+        {/* parcels */}
+        {doc.parcels.map((p, i) => {
+          const pts = ringPoints(p.beaconIds, by);
+          if (pts.length < 3) return null;
+          const d = pts.map((pp) => `${sx(pp.east)},${sy(pp.north)}`).join(" ");
+          const cx = pts.reduce((a, pp) => a + sx(pp.east), 0) / pts.length;
+          const cy = pts.reduce((a, pp) => a + sy(pp.north), 0) / pts.length;
+          const col = PALETTE[i % PALETTE.length];
+          return (
+            <g key={p.id}>
+              <polygon points={d} fill={col} fillOpacity={selId === p.id ? 0.32 : 0.16} stroke={col} strokeWidth={selId === p.id ? 2 : 1.3} vectorEffect="non-scaling-stroke" />
+              <text x={cx} y={cy} textAnchor="middle" fontSize={10 * k} fontWeight={600} fill={col}>{p.number}</text>
+            </g>
+          );
+        })}
+        {/* building ring preview */}
+        {building.length >= 2 && (
+          <polyline
+            points={building.map((id) => by.get(id)).filter(Boolean).map((b) => `${sx(b!.east)},${sy(b!.north)}`).join(" ")}
+            fill="none" stroke="#0d9488" strokeWidth={1.5} strokeDasharray="4 3" vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {/* active line being worked on in "Compute subdivision point" (point-on-line / intersection) */}
+        {activeLine && by.get(activeLine.from) && by.get(activeLine.to) && (
+          <line
+            x1={sx(by.get(activeLine.from)!.east)} y1={sy(by.get(activeLine.from)!.north)}
+            x2={sx(by.get(activeLine.to)!.east)} y2={sy(by.get(activeLine.to)!.north)}
+            stroke="#db2777" strokeWidth={1.8} strokeDasharray="5 3" vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {/* beacons (computed subdivision points highlighted) */}
+        {doc.beacons.map((b) => (
+          <g key={b.id}>
+            <circle cx={sx(b.east)} cy={sy(b.north)} r={(b.computed ? 3.5 : 3) * k} fill={b.computed ? "#db2777" : "#0f172a"} />
+            <text x={sx(b.east) + 5 * k} y={sy(b.north) - 4 * k} fontSize={9 * k} fontWeight={b.computed ? 700 : 400} fill={b.computed ? "#db2777" : "#334155"}>{b.id}</text>
           </g>
-        );
-      })}
-      {/* building ring preview */}
-      {building.length >= 2 && (
-        <polyline
-          points={building.map((id) => by.get(id)).filter(Boolean).map((b) => `${sx(b!.east)},${sy(b!.north)}`).join(" ")}
-          fill="none" stroke="#0d9488" strokeWidth={1.5} strokeDasharray="4 3"
-        />
-      )}
-      {/* active line being worked on in "Compute subdivision point" (point-on-line / intersection) */}
-      {activeLine && by.get(activeLine.from) && by.get(activeLine.to) && (
-        <line
-          x1={sx(by.get(activeLine.from)!.east)} y1={sy(by.get(activeLine.from)!.north)}
-          x2={sx(by.get(activeLine.to)!.east)} y2={sy(by.get(activeLine.to)!.north)}
-          stroke="#db2777" strokeWidth={1.8} strokeDasharray="5 3"
-        />
-      )}
-      {/* beacons (computed subdivision points highlighted) */}
-      {doc.beacons.map((b) => (
-        <g key={b.id}>
-          <circle cx={sx(b.east)} cy={sy(b.north)} r={b.computed ? 3.5 : 3} fill={b.computed ? "#db2777" : "#0f172a"} />
-          <text x={sx(b.east) + 5} y={sy(b.north) - 4} fontSize={9} fontWeight={b.computed ? 700 : 400} fill={b.computed ? "#db2777" : "#334155"}>{b.id}</text>
-        </g>
-      ))}
-      {/* north arrow */}
-      <g transform={`translate(${W - 22},22)`}>
-        <line x1={0} y1={10} x2={0} y2={-8} stroke="#0f172a" strokeWidth={1.5} />
-        <polygon points="0,-12 -4,-4 4,-4" fill="#0f172a" />
-        <text x={0} y={22} textAnchor="middle" fontSize={9} fill="#0f172a">N</text>
-      </g>
-    </svg>
+        ))}
+      </svg>
+
+      {/* Zoom controls */}
+      <div className="absolute right-2 top-2 flex flex-col gap-1">
+        <button type="button" title="Zoom in" onClick={() => zoomBy(1.3)} className={`${btn} text-lg`}>+</button>
+        <button type="button" title="Zoom out" onClick={() => zoomBy(1 / 1.3)} className={`${btn} text-lg`}>−</button>
+        <button type="button" title="Fit to all points" onClick={fit} className={`${btn} text-[10px] font-medium`}>Fit</button>
+      </div>
+      {/* North + hint */}
+      <div className="pointer-events-none absolute left-2 top-2 select-none text-[10px] font-medium text-slate-500">N ↑</div>
+      <div className="pointer-events-none absolute bottom-1.5 right-2 select-none text-[9px] text-slate-400">scroll / drag to pan · Fit to reset</div>
+    </div>
   );
 }
