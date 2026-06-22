@@ -211,7 +211,7 @@ function ProfileModal({ open, onClose, userId, email }: { open: boolean; onClose
         <Field label="Phone"><Input value={phone} onChange={setPhone} placeholder="+267 …" /></Field>
         <p className="text-xs text-slate-400">Email: {email}</p>
         {msg && <p className="text-sm text-brand-dark">{msg}</p>}
-        <div className="flex justify-end"><Button onClick={save} disabled={busy}>{busy ? "…" : "Save profile"}</Button></div>
+        <div className="flex justify-end"><Button onClick={save} disabled={busy} loading={busy}>{busy ? "…" : "Save profile"}</Button></div>
       </div>
     </Modal>
   );
@@ -260,7 +260,7 @@ function AuthModal({
           <button className="text-xs text-slate-500 underline" onClick={() => setMode(mode === "in" ? "up" : "in")}>
             {mode === "in" ? "Need an account? Sign up" : "Have an account? Sign in"}
           </button>
-          <Button onClick={submit} disabled={busy}>{busy ? "…" : mode === "in" ? "Sign in" : "Sign up"}</Button>
+          <Button onClick={submit} disabled={busy} loading={busy}>{busy ? "…" : mode === "in" ? "Sign in" : "Sign up"}</Button>
         </div>
       </div>
     </Modal>

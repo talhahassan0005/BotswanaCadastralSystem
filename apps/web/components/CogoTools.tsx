@@ -98,7 +98,7 @@ function InverseTool() {
         )}
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() =>
+        <Button disabled={busy} loading={busy} onClick={() =>
           mode === "inverse"
             ? run("/cogo/inverse", { from_point: { east: +a.e, north: +a.n }, to_point: { east: +b.e, north: +b.n } })
             : run("/cogo/forward", { from_point: { east: +a.e, north: +a.n }, bearing: fwd.brg, distance: +fwd.dist })
@@ -143,7 +143,7 @@ function IntersectionTool() {
         )}
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => run("/cogo/intersection", {
+        <Button disabled={busy} loading={busy} onClick={() => run("/cogo/intersection", {
           method,
           a: { east: +a.e, north: +a.n },
           b: { east: +b.e, north: +b.n },
@@ -169,7 +169,7 @@ function CurveTool() {
         <Field label="Deflection / central angle (°)"><Input value={defl} onChange={setDefl} /></Field>
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => run("/cogo/curve", { radius: +radius, deflection_deg: +defl })}>
+        <Button disabled={busy} loading={busy} onClick={() => run("/cogo/curve", { radius: +radius, deflection_deg: +defl })}>
           {busy ? "…" : "Compute"}
         </Button>
       </div>
@@ -211,7 +211,7 @@ function AreaTool() {
             className="w-full rounded-lg border border-slate-200 p-3 font-mono text-sm focus:border-brand focus:outline-none"
           />
           <div className="mt-4">
-            <Button disabled={busy} onClick={() => run("/cogo/area", { points: parse() })}>
+            <Button disabled={busy} loading={busy} onClick={() => run("/cogo/area", { points: parse() })}>
               {busy ? "…" : "Compute area"}
             </Button>
           </div>
@@ -263,7 +263,7 @@ function TransformTool() {
         </Field>
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => run("/crs/transform", { src, dst, points: parse() })}>
+        <Button disabled={busy} loading={busy} onClick={() => run("/crs/transform", { src, dst, points: parse() })}>
           {busy ? "…" : "Transform"}
         </Button>
       </div>

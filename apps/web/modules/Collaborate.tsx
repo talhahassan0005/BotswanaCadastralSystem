@@ -96,11 +96,11 @@ export function Collaborate() {
               <Row label="Project" value={mine.project_name ?? "—"} />
               {mine.note && <Row label="Note" value={mine.note} />}
               <Row label="Contact shared" value={mine.share_contact ? "Yes" : "No"} />
-              <div className="mt-3"><Button onClick={doCheckOut} disabled={busy}>Check out</Button></div>
+              <div className="mt-3"><Button onClick={doCheckOut} disabled={busy} loading={busy}>Check out</Button></div>
             </div>
           ) : (
             <div className="space-y-3">
-              <Button onClick={() => locate()} disabled={busy}>Use my location</Button>
+              <Button onClick={() => locate()} disabled={busy} loading={busy}>Use my location</Button>
               {pos && <p className="text-xs text-emerald-600">Location: {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}</p>}
               {geoMsg && <p className="text-xs text-slate-500">{geoMsg}</p>}
               <Field label="Note (what you're doing)"><Input value={note} onChange={setNote} placeholder="e.g. boundary survey, Lot 14182" /></Field>

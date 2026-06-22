@@ -118,8 +118,8 @@ export function RefMarks() {
           </p>
           {account && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {source === "seed" && <Button variant="ghost" onClick={publishSeed} disabled={!!busy}>⬆ Publish seed to database</Button>}
-              <Button variant="ghost" onClick={() => csvRef.current?.click()} disabled={!!busy}>Import marks (CSV)</Button>
+              {source === "seed" && <Button variant="ghost" onClick={publishSeed} disabled={!!busy} loading={!!busy}>⬆ Publish seed to database</Button>}
+              <Button variant="ghost" onClick={() => csvRef.current?.click()} disabled={!!busy} loading={!!busy}>Import marks (CSV)</Button>
               <input ref={csvRef} type="file" accept=".csv,.txt" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) onCsv(f); e.target.value = ""; }} />
             </div>

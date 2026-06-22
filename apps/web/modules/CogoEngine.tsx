@@ -223,7 +223,7 @@ export function CogoEngine() {
             </Field>
           </div>
           <div className="mt-4">
-            <Button onClick={run} disabled={running}>
+            <Button onClick={run} disabled={running} loading={running}>
               {running ? "Computing…" : "Run COGO Computation"}
             </Button>
           </div>

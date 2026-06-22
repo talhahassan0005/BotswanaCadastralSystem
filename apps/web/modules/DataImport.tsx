@@ -20,25 +20,32 @@ export function DataImport() {
   const { importResult, setImportResult, setActiveTab, config } = useStore();
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
     setError(null);
+    setBusy(true);
     try {
       const result = await apiUpload<ImportResult>("/import/file", file);
       setImportResult(result);
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function loadSample() {
     setError(null);
+    setBusy(true);
     try {
       const result = await apiJson<ImportResult>("/import/text", { text: SAMPLE_CSV });
       setImportResult(result);
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -65,8 +72,8 @@ export function DataImport() {
         <p className="text-lg font-medium text-brand-dark">Drop your survey file here</p>
         <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT observations, or a DXF / Shapefile parent diagram</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
-          <Button onClick={() => fileRef.current?.click()}>Browse file</Button>
-          <Button variant="ghost" onClick={loadSample}>
+          <Button onClick={() => fileRef.current?.click()} loading={busy}>Browse file</Button>
+          <Button variant="ghost" onClick={loadSample} loading={busy}>
             Load sample
           </Button>
         </div>

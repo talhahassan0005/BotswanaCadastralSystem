@@ -187,7 +187,7 @@ function SurfaceForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
         )}
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => onRun({ text, mode, datum: Number(datum), designText: design })}>
+        <Button disabled={busy} loading={busy} onClick={() => onRun({ text, mode, datum: Number(datum), designText: design })}>
           {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
@@ -226,7 +226,7 @@ function SectionForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
         className="w-full rounded-lg border border-slate-200 p-3 font-mono text-xs focus:border-brand focus:outline-none"
       />
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => onRun({ sections: parse() })}>
+        <Button disabled={busy} loading={busy} onClick={() => onRun({ sections: parse() })}>
           {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
@@ -258,7 +258,7 @@ function GridForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (b: 
         <Field label="Cell size N (m)"><Input type="number" value={dy} onChange={(v) => set({ dy: v })} /></Field>
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => onRun({ text, dx: Number(dx), dy: Number(dy) })}>
+        <Button disabled={busy} loading={busy} onClick={() => onRun({ text, dx: Number(dx), dy: Number(dy) })}>
           {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>
@@ -303,7 +303,7 @@ function ContourForm({ busy, onRun, value, onChange }: { busy: boolean; onRun: (
         </Field>
       </div>
       <div className="mt-4">
-        <Button disabled={busy} onClick={() => onRun({ rows: parse(), topHeight: Number(topHeight) })}>
+        <Button disabled={busy} loading={busy} onClick={() => onRun({ rows: parse(), topHeight: Number(topHeight) })}>
           {busy ? "Computing…" : "Compute volume"}
         </Button>
       </div>

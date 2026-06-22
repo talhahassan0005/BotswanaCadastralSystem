@@ -107,7 +107,7 @@ export function Topographic() {
             </Field>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button disabled={busy} onClick={() => process()}>
+            <Button disabled={busy} loading={busy} onClick={() => process()}>
               {busy ? "Processing…" : "Build surface"}
             </Button>
             <Button variant="ghost" onClick={() => fileRef.current?.click()}>

@@ -47,7 +47,7 @@ export function AiValidate() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-700">Survey QA &amp; DSM compliance</h2>
-        <Button onClick={run} disabled={running}>
+        <Button onClick={run} disabled={running} loading={running}>
           {running ? "Validating…" : "Run AI Validation"}
         </Button>
       </div>

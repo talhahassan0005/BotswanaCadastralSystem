@@ -170,7 +170,7 @@ function AuthStage({
           <button className="text-xs text-slate-500 underline" onClick={() => go(mode === "in" ? "up" : "in")}>
             {mode === "in" ? "Need an account? Sign up" : "← Back to log in"}
           </button>
-          <Button onClick={submit} disabled={busy || (mode === "reset" && onCooldown)}>
+          <Button onClick={submit} disabled={busy || (mode === "reset" && onCooldown)} loading={busy}>
             {busy
               ? "…"
               : mode === "in"
@@ -211,7 +211,7 @@ function SetPasswordStage({ updatePassword }: { updatePassword: (p: string) => P
         <Field label="New password"><Input type="password" value={password} onChange={setPassword} placeholder="••••••••" /></Field>
         <Field label="Confirm password"><Input type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" /></Field>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <div className="flex justify-end"><Button onClick={submit} disabled={busy}>{busy ? "…" : "Update password"}</Button></div>
+        <div className="flex justify-end"><Button onClick={submit} disabled={busy} loading={busy}>{busy ? "…" : "Update password"}</Button></div>
       </div>
     </Card>
   );
