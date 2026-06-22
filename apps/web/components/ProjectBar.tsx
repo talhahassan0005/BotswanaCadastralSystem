@@ -55,39 +55,62 @@ export function ProjectBar() {
     setTimeout(() => setMsg(null), 2500);
   }
 
-  // --- Auto-save: a saved project persists automatically so closing it never
-  // loses work (client request). Saves on a short interval when the snapshot
-  // changed, when the tab is hidden/closed, and before leaving the project. ---
+  // --- Auto-save: a project persists automatically so closing it never loses
+  // work (client request). Saves on a short interval when the snapshot changed,
+  // when the tab is hidden/closed, and before leaving the project. It creates
+  // the project the first time if it has no cloud id yet. ---
   const lastSavedRef = useRef<string>("");
-  const autoSave = useCallback(async () => {
-    if (!user) return;
+  const autoSave = useCallback(async (): Promise<{ saved: boolean; error?: string }> => {
+    if (!user) return { saved: false };
     const snap = snapshot();
     const json = JSON.stringify(snap);
-    if (json === lastSavedRef.current) return;     // nothing changed since the last save
-    if (!currentProject && !hasWork(snap)) return; // brand-new blank project — nothing to save yet
-    // Updates the open project, or creates it (with the project name) the first
-    // time — so signing out / closing always persists the work.
+    if (json === lastSavedRef.current) return { saved: true };       // already up to date
+    if (!currentProject && !hasWork(snap)) return { saved: false };  // blank project — nothing to save yet
     const name = currentProject?.name || config.name || "Untitled Survey";
     const { id, error } = await saveProject({ id: currentProject?.id ?? null, name, state: snap, owner: user.id });
-    if (!error) {
-      lastSavedRef.current = json;
-      if (id && !currentProject) setCurrentProject({ id, name });
-    }
+    if (error) return { saved: false, error };
+    lastSavedRef.current = json;
+    if (id && !currentProject) setCurrentProject({ id, name });
+    return { saved: true };
   }, [user, currentProject, snapshot, config.name, setCurrentProject]);
 
+  // Keep the latest autoSave in a ref so the background timers stay stable
+  // (snapshot() is a fresh function each render, which would otherwise reset the
+  // interval every render and make it unreliable).
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+
   useEffect(() => {
-    if (!user || !currentProject) return;
-    const id = setInterval(() => { void autoSave(); }, 8000);
-    const onHide = () => { if (document.visibilityState === "hidden") void autoSave(); };
+    if (!user) return;
+    const tick = () => {
+      autoSaveRef.current().then((r) => {
+        if (r.error) setMsg(`Auto-save failed: ${r.error}`);
+      });
+    };
+    const id = setInterval(tick, 8000);
+    const onHide = () => { if (document.visibilityState === "hidden") tick(); };
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onHide);
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onHide);
-      void autoSave(); // unmount (e.g. project closed) — final save
     };
-  }, [user, currentProject, autoSave]);
+  }, [user]);
+
+  // Save before an in-app "close" (sign out / Projects home / open another).
+  // If the save fails, surface it and DON'T proceed, so work is never lost.
+  async function saveAndThen(after: () => void) {
+    if (!user) { after(); return; }
+    setMsg("Saving…");
+    const r = await autoSave();
+    if (r.error) {
+      setMsg(`Could not save: ${r.error}. Your work is still open — try File ▸ Save.`);
+      return;
+    }
+    setMsg(null);
+    after();
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm sm:px-6">
@@ -107,13 +130,13 @@ export function ProjectBar() {
               { label: "Save", onClick: () => doSave(false), disabled: busy },
               { label: "Save as…", onClick: () => doSave(true), disabled: busy },
               { label: "Open…", onClick: () => setOpenOpen(true) },
-              { label: "Projects (home)", onClick: async () => { await autoSave(); resetProject(); } },
+              { label: "Projects (home)", onClick: () => saveAndThen(resetProject) },
             ]}
           />
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-500">
             {user.email}
             <button onClick={() => setProfileOpen(true)} className="text-slate-400 underline hover:text-slate-700">profile</button>
-            <button onClick={async () => { await autoSave(); signOut(); }} className="text-slate-400 underline hover:text-slate-700">sign out</button>
+            <button onClick={() => saveAndThen(signOut)} className="text-slate-400 underline hover:text-slate-700">sign out</button>
           </span>
         </>
       ) : (
