@@ -7,6 +7,19 @@ import { deleteProject, listProjects, loadProject, saveProject, type ProjectRow 
 import { getProfile, upsertProfile } from "@/lib/profile";
 import { Button, Field, Input, Modal } from "@/components/ui";
 
+/** Is there anything worth auto-saving (so a blank, just-created project doesn't
+ *  create junk rows, but real work — named project, imports, computations,
+ *  parcels — is always persisted on close)? */
+function hasWork(s: any): boolean {
+  return !!(
+    s?.importResult ||
+    s?.cogoResult ||
+    s?.topoResult ||
+    s?.parcelDoc?.beacons?.length ||
+    (s?.config?.name && s.config.name !== "Untitled Survey")
+  );
+}
+
 export function ProjectBar() {
   const { user, ready, configured, signIn, signUp, signOut } = useAccount();
   const { config, snapshot, hydrate, currentProject, setCurrentProject, resetProject } = useStore();
@@ -47,13 +60,20 @@ export function ProjectBar() {
   // changed, when the tab is hidden/closed, and before leaving the project. ---
   const lastSavedRef = useRef<string>("");
   const autoSave = useCallback(async () => {
-    if (!user || !currentProject) return;
+    if (!user) return;
     const snap = snapshot();
     const json = JSON.stringify(snap);
-    if (json === lastSavedRef.current) return; // nothing changed
-    const { error } = await saveProject({ id: currentProject.id, name: currentProject.name, state: snap, owner: user.id });
-    if (!error) lastSavedRef.current = json;
-  }, [user, currentProject, snapshot]);
+    if (json === lastSavedRef.current) return;     // nothing changed since the last save
+    if (!currentProject && !hasWork(snap)) return; // brand-new blank project — nothing to save yet
+    // Updates the open project, or creates it (with the project name) the first
+    // time — so signing out / closing always persists the work.
+    const name = currentProject?.name || config.name || "Untitled Survey";
+    const { id, error } = await saveProject({ id: currentProject?.id ?? null, name, state: snap, owner: user.id });
+    if (!error) {
+      lastSavedRef.current = json;
+      if (id && !currentProject) setCurrentProject({ id, name });
+    }
+  }, [user, currentProject, snapshot, config.name, setCurrentProject]);
 
   useEffect(() => {
     if (!user || !currentProject) return;
