@@ -273,7 +273,7 @@ export function Parcels() {
 
         {/* Plot */}
         <Card title="Parcel Plot">
-          <ParcelPlot doc={doc} by={by} selId={selId} building={building} activeLine={activeLine} />
+          <ParcelPlot doc={doc} by={by} selId={selId} building={building} activeLine={activeLine} onPickBeacon={toggleBuild} />
           <p className="mt-2 text-xs text-slate-400">Coordinates in {config.coordinateSystem} (survey metres). North is up.</p>
         </Card>
       </div>
@@ -836,13 +836,14 @@ function ConsolidatePanel({
 
 // --- SVG plot -------------------------------------------------------------
 function ParcelPlot({
-  doc, by, selId, building, activeLine,
+  doc, by, selId, building, activeLine, onPickBeacon,
 }: {
   doc: ParcelDoc;
   by: Map<string, Beacon>;
   selId: string | null;
   building: string[];
   activeLine: { from: string; to: string } | null;
+  onPickBeacon?: (id: string) => void;
 }) {
   const W = 460, H = 320, pad = 28;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -850,6 +851,7 @@ function ParcelPlot({
   const viewRef = useRef(view);
   viewRef.current = view;
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null); // pointer-down pos (click vs drag)
   const [grabbing, setGrabbing] = useState(false);
 
   const zoomBy = (factor: number, fx?: number, fy?: number) =>
@@ -895,6 +897,7 @@ function ParcelPlot({
   const k = view.w / W;
   const onDown = (e: React.PointerEvent) => {
     drag.current = { x: e.clientX, y: e.clientY };
+    start.current = { x: e.clientX, y: e.clientY };
     setGrabbing(true);
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   };
@@ -906,7 +909,27 @@ function ParcelPlot({
     drag.current = { x: e.clientX, y: e.clientY };
     setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
   };
-  const onUp = () => { drag.current = null; setGrabbing(false); };
+  // A pointer-up that barely moved is a CLICK: pick the nearest beacon (within
+  // ~16px) and add it to the parcel ring. A larger movement was a pan.
+  const onUp = (e: React.PointerEvent) => {
+    const st = start.current;
+    drag.current = null;
+    start.current = null;
+    setGrabbing(false);
+    if (!onPickBeacon || !st || !svgRef.current) return;
+    if (Math.hypot(e.clientX - st.x, e.clientY - st.y) > 6) return; // was a pan
+    const rect = svgRef.current.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    let best: Beacon | null = null, bestD = Infinity;
+    for (const b of doc.beacons) {
+      const bxp = ((sx(b.east) - view.x) / view.w) * rect.width;
+      const byp = ((sy(b.north) - view.y) / view.h) * rect.height;
+      const d = Math.hypot(bxp - px, byp - py);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    if (best && bestD <= 16) onPickBeacon(best.id);
+  };
+  const onLeave = () => { drag.current = null; start.current = null; setGrabbing(false); };
   const btn = "grid h-7 w-7 place-items-center rounded border border-slate-300 bg-white leading-none text-slate-700 shadow-sm hover:bg-slate-100";
 
   return (
@@ -917,9 +940,9 @@ function ParcelPlot({
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        onPointerLeave={onUp}
+        onPointerLeave={onLeave}
         className="w-full touch-none select-none rounded-md border border-slate-200 bg-slate-50"
-        style={{ cursor: grabbing ? "grabbing" : "grab" }}
+        style={{ cursor: grabbing ? "grabbing" : onPickBeacon ? "pointer" : "grab" }}
       >
         {/* parcels */}
         {doc.parcels.map((p, i) => {
@@ -951,13 +974,25 @@ function ParcelPlot({
             stroke="#db2777" strokeWidth={1.8} strokeDasharray="5 3" vectorEffect="non-scaling-stroke"
           />
         )}
-        {/* beacons (computed subdivision points highlighted) */}
-        {doc.beacons.map((b) => (
-          <g key={b.id}>
-            <circle cx={sx(b.east)} cy={sy(b.north)} r={(b.computed ? 3.5 : 3) * k} fill={b.computed ? "#db2777" : "#0f172a"} />
-            <text x={sx(b.east) + 5 * k} y={sy(b.north) - 4 * k} fontSize={9 * k} fontWeight={b.computed ? 700 : 400} fill={b.computed ? "#db2777" : "#334155"}>{b.id}</text>
-          </g>
-        ))}
+        {/* beacons — computed points pink; points selected into the new parcel ring
+            are teal with their boundary-order number below them */}
+        {doc.beacons.map((b) => {
+          const order = building.indexOf(b.id);
+          const inRing = order >= 0;
+          const fill = inRing ? "#0d9488" : b.computed ? "#db2777" : "#0f172a";
+          return (
+            <g key={b.id}>
+              <circle
+                cx={sx(b.east)} cy={sy(b.north)} r={(inRing ? 4.4 : b.computed ? 3.5 : 3) * k}
+                fill={fill} stroke={inRing ? "#fff" : "none"} strokeWidth={1 * k}
+              />
+              <text x={sx(b.east) + 5 * k} y={sy(b.north) - 4 * k} fontSize={9 * k} fontWeight={inRing || b.computed ? 700 : 400} fill={fill}>{b.id}</text>
+              {inRing && (
+                <text x={sx(b.east)} y={sy(b.north) + 12 * k} textAnchor="middle" fontSize={8 * k} fontWeight={700} fill="#0d9488">{order + 1}</text>
+              )}
+            </g>
+          );
+        })}
       </svg>
 
       {/* Zoom controls */}
@@ -968,7 +1003,9 @@ function ParcelPlot({
       </div>
       {/* North + hint */}
       <div className="pointer-events-none absolute left-2 top-2 select-none text-[10px] font-medium text-slate-500">N ↑</div>
-      <div className="pointer-events-none absolute bottom-1.5 right-2 select-none text-[9px] text-slate-400">scroll / drag to pan · Fit to reset</div>
+      <div className="pointer-events-none absolute bottom-1.5 right-2 select-none text-[9px] text-slate-400">
+        {onPickBeacon ? "click a point to add it to the parcel · drag to pan · scroll to zoom" : "scroll / drag to pan · Fit to reset"}
+      </div>
     </div>
   );
 }
