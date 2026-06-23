@@ -69,7 +69,12 @@ interface Props {
   meta: DiagramMeta;
   points: DiagramPoint[];
   sides: DiagramSide[];
+  /** Optional: draw several parcel rings (mutation / subdivision) coloured,
+   *  instead of one boundary polygon — keeps one template for every diagram. */
+  parcels?: { number: string; points: DiagramPoint[] }[];
 }
+
+const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
 
 // ---------------------------------------------------------------------------
 // Number formatting
@@ -117,7 +122,7 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points, sides },
+  { meta, points, sides, parcels },
   ref
 ) {
   const VB_W = 1000;
@@ -254,11 +259,28 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={-14} y1={2} x2={14} y2={2} stroke="black" strokeWidth={0.8} />
         <text x={9} y={-2} fontSize={12} fontWeight="bold">N</text>
         <text x={-16} y={-2} fontSize={11}>T</text>
-        <text x={0} y={70} textAnchor="middle" fontSize={11} fontWeight="bold">SCALE 1:{meta.scale.toLocaleString()}</text>
+        {meta.scale > 0 && (
+          <text x={0} y={70} textAnchor="middle" fontSize={11} fontWeight="bold">SCALE 1:{meta.scale.toLocaleString()}</text>
+        )}
       </g>
 
       {/* ===================== FIGURE ===================== */}
-      <polygon points={polyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
+      {parcels && parcels.length > 0 ? (
+        parcels.map((pc, i) => {
+          const ring = pc.points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
+          const col = PARCEL_COLORS[i % PARCEL_COLORS.length];
+          const lcx = avg(pc.points.map((p) => toX(p.east)));
+          const lcy = avg(pc.points.map((p) => toY(p.north)));
+          return (
+            <g key={`pc${i}`}>
+              <polygon points={ring} fill={col} fillOpacity={0.12} stroke={col} strokeWidth={1.6} strokeLinejoin="round" />
+              <text x={lcx} y={lcy} textAnchor="middle" fontSize={12} fontWeight="bold" fill={col}>{pc.number}</text>
+            </g>
+          );
+        })
+      ) : (
+        <polygon points={polyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
+      )}
       {points.map((p, i) => {
         const bx = toX(p.east), by = toY(p.north);
         const dx = bx - cx, dy = by - cy, len = Math.hypot(dx, dy) || 1;
