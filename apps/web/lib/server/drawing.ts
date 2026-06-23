@@ -117,6 +117,7 @@ export function drawingToParseResult(d: ImportedDrawing): ParseResult {
       distance: null,
       status: "valid", // coordinates are present, so the row is usable
       issues: [],
+      pointType: "beacon",
     });
   });
 

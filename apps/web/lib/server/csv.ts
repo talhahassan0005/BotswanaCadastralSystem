@@ -18,6 +18,7 @@ export interface ParsedRow {
   distance: number | null;
   status: "valid" | "check" | "error";
   issues: string[];
+  pointType?: "beacon" | "wp" | "ref"; // defaults to "beacon"; user re-tags WP / Ref
 }
 
 export interface ParseResult {
@@ -176,6 +177,7 @@ export function parseSurveyCsv(text: string): ParseResult {
       distance: null,
       status: "valid",
       issues: [],
+      pointType: "beacon", // every imported point starts as a plot beacon
     };
 
     cells.forEach((cell, ci) => {

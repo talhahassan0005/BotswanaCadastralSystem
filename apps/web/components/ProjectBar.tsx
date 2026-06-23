@@ -22,7 +22,7 @@ function hasWork(s: any): boolean {
 
 export function ProjectBar() {
   const { user, ready, configured, signIn, signUp, signOut } = useAccount();
-  const { config, snapshot, hydrate, currentProject, setCurrentProject, resetProject } = useStore();
+  const { config, snapshot, hydrate, currentProject, setCurrentProject, resetProject, setActiveTab } = useStore();
 
   const [authOpen, setAuthOpen] = useState(false);
   const [openOpen, setOpenOpen] = useState(false);
@@ -120,13 +120,19 @@ export function ProjectBar() {
       </span>
 
       {!configured ? (
-        <FileMenu items={[{ label: "Projects (home)", onClick: () => resetProject() }]} />
+        <FileMenu items={[
+          { label: "Import data…", onClick: () => setActiveTab("import") },
+          { label: "Export…", onClick: () => setActiveTab("export") },
+          { label: "Projects (home)", onClick: () => resetProject() },
+        ]} />
       ) : !ready ? (
         <span className="text-xs text-slate-400">…</span>
       ) : user ? (
         <>
           <FileMenu
             items={[
+              { label: "Import data…", onClick: () => setActiveTab("import") },
+              { label: "Export…", onClick: () => setActiveTab("export") },
               { label: "Save", onClick: () => doSave(false), disabled: busy },
               { label: "Save as…", onClick: () => doSave(true), disabled: busy },
               { label: "Open…", onClick: () => setOpenOpen(true) },
@@ -143,6 +149,8 @@ export function ProjectBar() {
         <>
           <FileMenu
             items={[
+              { label: "Import data…", onClick: () => setActiveTab("import") },
+              { label: "Export…", onClick: () => setActiveTab("export") },
               { label: "Sign in", onClick: () => setAuthOpen(true) },
               { label: "Projects (home)", onClick: () => resetProject() },
             ]}

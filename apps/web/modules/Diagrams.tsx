@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Button, Card, Field, Input } from "@/components/ui";
+import { Button, Card, Field, Input, Select } from "@/components/ui";
+import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
+import type { CogoResult, ParcelDoc } from "@/lib/types";
 import { SgDiagram, type DiagramKind, type DiagramMeta } from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
@@ -16,11 +18,36 @@ const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
 ];
 
 export function Diagrams() {
-  const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
-  // Prefer a parcel-derived figure (set from Parcels "Generate SG Diagram"); fall
-  // back to the real COGO traverse so a parcel never clobbers the traverse result.
-  const fig = diagramFigure ?? cogoResult;
+
+  // The surveyor picks which lot (parcel) to draw the diagram for, right here.
+  const pdoc = parcelDoc as ParcelDoc | null;
+  const parcels = useMemo(() => pdoc?.parcels ?? [], [pdoc]);
+  const [selParcelId, setSelParcelId] = useState<string | null>(null);
+  const parcelFigure = useMemo<CogoResult | null>(() => {
+    if (!pdoc || !selParcelId) return null;
+    const p = pdoc.parcels.find((x) => x.id === selParcelId);
+    if (!p) return null;
+    const by = beaconMap(pdoc.beacons);
+    const m = parcelMetrics(p.beaconIds, by);
+    if (!m.closed) return null;
+    const pts = ringPoints(p.beaconIds, by);
+    return {
+      type: "closed",
+      adjustment: "none",
+      closure: { misclose_east: 0, misclose_north: 0, linear_misclosure: 0, total_distance: m.perimeter, relative_precision: null, relative_precision_text: "exact (constructed parcel)" },
+      area_m2: m.area_m2,
+      area_ha: m.area_ha,
+      sigma0: 0,
+      points: pts.map((pp) => ({ name: pp.name ?? null, east: pp.east, north: pp.north })),
+      legs: m.sides.map((s, i) => ({ index: i + 1, from: s.from, to: s.to, bearing: s.bearing, bearing_dms: s.bearing_dms, distance: s.distance, d_east_adj: 0, d_north_adj: 0 })),
+      residuals: [],
+    };
+  }, [pdoc, selParcelId]);
+
+  // Prefer the picked lot, then a parcel sent from Parcels, then the COGO traverse.
+  const fig = parcelFigure ?? diagramFigure ?? cogoResult;
   // Restore saved diagram form state from the project, else derive defaults from config.
   const di = (diagramInput ?? {}) as { kind?: DiagramKind; meta?: Omit<DiagramMeta, "closed" | "kind">; leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem"> };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
@@ -86,6 +113,13 @@ export function Diagrams() {
   const setLease = (k: keyof typeof leaseMeta) => (v: string) =>
     setLeaseMeta((m) => ({ ...m, [k]: k === "localityScale" || k === "boundaryScale" ? Number(v) || 0 : v }));
 
+  // When a lot is picked, pre-fill the diagram's lot name from the parcel number.
+  useEffect(() => {
+    const p = parcels.find((x) => x.id === selParcelId);
+    if (p?.number) setMeta((m) => ({ ...m, lotName: p.number.toUpperCase() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selParcelId]);
+
   // Persist diagram form state into the project bundle.
   useEffect(() => {
     setDiagramInput({ kind, meta, leaseMeta });
@@ -138,13 +172,28 @@ export function Diagrams() {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
-          <p className="text-lg">No computed figure yet</p>
-          <p className="mt-1 text-sm">
-            Run a <strong>closed traverse</strong> in the COGO Engine first — every diagram is drawn
-            from its computed beacon coordinates and sides.
-          </p>
-          <div className="mt-4">
-            <Button onClick={() => setActiveTab("cogo")}>Go to COGO Engine</Button>
+          <p className="text-lg font-medium text-slate-700">Choose a lot to draw its diagram</p>
+          {parcels.length > 0 ? (
+            <>
+              <p className="mt-1 text-sm">Pick the lot (parcel) you want a diagram for:</p>
+              <div className="mx-auto mt-4 max-w-xs text-left">
+                <Select
+                  value={selParcelId ?? ""}
+                  onChange={(v) => setSelParcelId(v || null)}
+                  options={[{ value: "", label: "— select a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
+                />
+              </div>
+              <p className="mt-3 text-xs text-slate-400">…or run a closed traverse in the COGO Engine.</p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm">
+              Build a parcel in the <strong>Parcels</strong> tab, or run a <strong>closed traverse</strong> in the COGO Engine —
+              the diagram is drawn from its beacon coordinates and sides.
+            </p>
+          )}
+          <div className="mt-4 flex justify-center gap-2">
+            <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels</Button>
+            <Button variant="ghost" onClick={() => setActiveTab("cogo")}>Go to COGO Engine</Button>
           </div>
         </div>
       </Card>
@@ -156,6 +205,21 @@ export function Diagrams() {
 
   return (
     <div className="space-y-5">
+      {/* Lot / parcel picker — which figure this diagram draws */}
+      {parcels.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <span className="text-sm font-medium text-slate-600">Lot / parcel:</span>
+          <div className="min-w-[200px]">
+            <Select
+              value={selParcelId ?? ""}
+              onChange={(v) => setSelParcelId(v || null)}
+              options={[{ value: "", label: cogoResult ? "COGO traverse figure" : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
+            />
+          </div>
+          {selParcelId && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}
+        </div>
+      )}
+
       {/* Diagram type selector */}
       <div className="flex flex-wrap gap-2">
         {KINDS.map((k) => (

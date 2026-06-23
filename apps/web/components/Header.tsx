@@ -24,11 +24,13 @@ export const TABS = [
 ];
 
 // Per-discipline tab sets (Stage-3 branch). Generous overlap — common tools are in all.
+// Data Import & Export live under the File menu (not the tab bar). The Editor is a
+// drafting tool, so it is offered under Engineering/Mining/GIS, not Cadastral.
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
-  Cadastral: ["import", "cogo", "traverse", "parcels", "diagrams", "workingplan", "generalplan", "sectional", "records", "editor", "gis", "collab", "export", "validate"],
-  Engineering: ["import", "cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "export", "validate"],
-  Mining: ["import", "cogo", "topo", "volume", "editor", "gis", "collab", "export", "validate"],
-  GIS: ["import", "gis", "editor", "topo", "collab", "export"],
+  Cadastral: ["cogo", "traverse", "parcels", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate"],
+  Engineering: ["cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "validate"],
+  Mining: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate"],
+  GIS: ["gis", "editor", "topo", "collab"],
 };
 
 function Dot({ ok }: { ok: boolean }) {

@@ -49,6 +49,18 @@ export function DataImport() {
     }
   }
 
+  // Re-tag a point's type (Beacon / Working point / Reference mark) for the
+  // coordinate list. Every point imports as a beacon; the surveyor changes the rest.
+  function setRowType(index: number, pointType: "beacon" | "wp" | "ref") {
+    if (!importResult) return;
+    setImportResult({
+      ...importResult,
+      rows: importResult.rows.map((r) => (r.index === index ? { ...r, pointType } : r)),
+    });
+  }
+  const typeCount = (t: "beacon" | "wp" | "ref") =>
+    importResult ? importResult.rows.filter((r) => (r.pointType ?? "beacon") === t).length : 0;
+
   return (
     <div className="space-y-5">
       <div
@@ -115,6 +127,7 @@ export function DataImport() {
                 <tr>
                   <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">Beacon ID</th>
+                  <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Easting (m)</th>
                   <th className="px-4 py-3">Northing (m)</th>
                   <th className="px-4 py-3">Bearing</th>
@@ -138,6 +151,17 @@ export function DataImport() {
                   >
                     <td className="px-4 py-3 text-slate-400">{r.index}</td>
                     <td className="px-4 py-3 font-medium">{r.beaconId ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={r.pointType ?? "beacon"}
+                        onChange={(e) => setRowType(r.index, e.target.value as "beacon" | "wp" | "ref")}
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-brand focus:outline-none"
+                      >
+                        <option value="beacon">Beacon</option>
+                        <option value="wp">Working pt</option>
+                        <option value="ref">Ref mark</option>
+                      </select>
+                    </td>
                     <td className="px-4 py-3">{r.east?.toLocaleString() ?? "—"}</td>
                     <td className="px-4 py-3">{r.north?.toLocaleString() ?? "—"}</td>
                     <td className="px-4 py-3">{r.bearing ?? "—"}</td>
@@ -158,6 +182,7 @@ export function DataImport() {
             <Chip>{importResult.validCount} valid rows</Chip>
             <Chip>{importResult.warningCount} warning</Chip>
             <Chip>{importResult.errorCount} error</Chip>
+            <Chip>{typeCount("beacon")} beacon · {typeCount("wp")} WP · {typeCount("ref")} ref</Chip>
             <Chip>CRS: {config.coordinateSystem}</Chip>
             <div className="ml-auto">
               <Button onClick={() => setActiveTab("cogo")}>Proceed to COGO →</Button>

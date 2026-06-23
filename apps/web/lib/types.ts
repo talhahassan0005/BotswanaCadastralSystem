@@ -1,3 +1,7 @@
+/** Surveyor-defined point type: every imported point defaults to a plot beacon;
+ *  the user re-tags working points and reference marks for the coordinate list. */
+export type PointType = "beacon" | "wp" | "ref";
+
 export interface ParsedRow {
   index: number;
   beaconId: string | null;
@@ -7,6 +11,7 @@ export interface ParsedRow {
   distance: number | null;
   status: "valid" | "check" | "error";
   issues: string[];
+  pointType?: PointType;
 }
 
 export interface ImportResult {
