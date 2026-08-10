@@ -56,6 +56,9 @@ interface Store {
   setDiagramFigure: (r: CogoResult | null) => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
+  /** Browser-like "back" to the previously-visited tab. */
+  goBack: () => void;
+  canGoBack: boolean;
 
   // --- project (cloud) persistence ---
   currentProject: { id: string; name: string } | null;
@@ -132,7 +135,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const recordInputRef = useRef<unknown>(null);
   const setRecordInput = (d: unknown) => { recordInputRef.current = d; };
   const [diagramFigure, setDiagramFigure] = useState<CogoResult | null>(null);
-  const [activeTab, setActiveTab] = useState("import");
+  const [activeTab, setActiveTabState] = useState("import");
+  const [tabHistory, setTabHistory] = useState<string[]>([]);
+  // Tab navigation with a simple back-history (so a "← Back" button can return
+  // to the previous page/tab).
+  const setActiveTab = (t: string) => {
+    if (t !== activeTab) setTabHistory((h) => [...h, activeTab]);
+    setActiveTabState(t);
+  };
+  const goBack = () => {
+    if (tabHistory.length === 0) return;
+    setActiveTabState(tabHistory[tabHistory.length - 1]);
+    setTabHistory((h) => h.slice(0, -1));
+  };
   const [currentProject, setCurrentProject] = useState<{ id: string; name: string } | null>(null);
   const [started, setStarted] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
@@ -175,7 +190,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     generalPlanInputRef.current = s.generalPlanInput ?? null;
     recordInputRef.current = s.recordInput ?? null;
     setDiagramFigure(null); // derived from a parcel; not persisted
-    setActiveTab("import"); // land on a tab present in every discipline
+    setActiveTabState("import"); // land on a tab present in every discipline
+    setTabHistory([]); // fresh project → no back-history
     setStarted(true); // opening a project enters the working station
     setLoadVersion((v) => v + 1); // remount modules so they re-read state
   };
@@ -201,7 +217,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
     }
     setCurrentProject(null);
-    setActiveTab("import");
+    setActiveTabState("import");
+    setTabHistory([]);
     setStarted(false); // return to the project-setup gate
     setLoadVersion((v) => v + 1);
   };
@@ -243,6 +260,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setDiagramFigure,
         activeTab,
         setActiveTab,
+        goBack,
+        canGoBack: tabHistory.length > 0,
         currentProject,
         setCurrentProject,
         started,

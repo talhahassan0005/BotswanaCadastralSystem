@@ -22,7 +22,7 @@ function hasWork(s: any): boolean {
 
 export function ProjectBar() {
   const { user, ready, configured, signIn, signUp, signOut } = useAccount();
-  const { config, snapshot, hydrate, currentProject, setCurrentProject, resetProject, setActiveTab } = useStore();
+  const { config, snapshot, hydrate, currentProject, setCurrentProject, resetProject, setActiveTab, goBack, canGoBack } = useStore();
 
   const [authOpen, setAuthOpen] = useState(false);
   const [openOpen, setOpenOpen] = useState(false);
@@ -114,6 +114,14 @@ export function ProjectBar() {
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm sm:px-6">
+      <button
+        onClick={goBack}
+        disabled={!canGoBack}
+        title="Back to the previous page"
+        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        ← Back
+      </button>
       <span className="font-medium text-slate-700">
         {currentProject?.name ?? config.name}
         <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500">{config.discipline}</span>

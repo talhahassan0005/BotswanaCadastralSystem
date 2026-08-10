@@ -97,13 +97,25 @@ export function fmtDist(n: number): string {
   return `${groupThousands(i)},${f}`;
 }
 
-// Coordinate-table formats matching the Lot 3508 SG template exactly:
-// comma decimal, NO thousands grouping (e.g. "+101543,76", "357,71").
+// Coordinate-table formats matching the official SG template exactly: PERIOD
+// decimal, NO thousands grouping (e.g. "+58737.55", "36.15"). Only the CONSTANTS
+// row shows the comma form "0,00".
 function tCoord(n: number): string {
-  return `${n < 0 ? "-" : "+"}${Math.abs(n).toFixed(2).replace(".", ",")}`;
+  return `${n < 0 ? "-" : "+"}${Math.abs(n).toFixed(2)}`;
 }
 function tDist(n: number): string {
-  return n.toFixed(2).replace(".", ",");
+  return n.toFixed(2);
+}
+/** Area line: small plots in SQUARE METRES, larger in HECTARES (SG convention). */
+function areaText(areaHa: number): string {
+  return areaHa < 1
+    ? `${Math.round(areaHa * 10000).toLocaleString("en-US")} SQUARE METRES`
+    : `${areaHa.toFixed(4)} HECTARES`;
+}
+/** Coordinate-system label in SG form: "Lo 29" -> "LO. 29°". */
+function fmtSystem(cs: string): string {
+  const m = cs.match(/Lo\s*(\d+)/i);
+  return m ? `LO. ${m[1]}°` : cs;
 }
 
 /** "272°36'20\"" (or "272 36 20") -> "272.36.20" (Botswana DIRECTIONS notation) */
@@ -181,7 +193,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       ref={ref}
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       xmlns="http://www.w3.org/2000/svg"
-      style={{ width: "100%", height: "auto", background: "white", fontFamily: "Arial, Helvetica, sans-serif" }}
+      fill="#000"
+      style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       {/* outer border */}
       <rect x={10} y={10} width={VB_W - 20} height={VB_H - 20} fill="white" stroke="black" strokeWidth={2} />
@@ -207,7 +220,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         {/* header row 2 */}
         <text x={(tx + xMetR) / 2} y={ty + 36} textAnchor="middle" fontWeight="bold" fontSize={10}>METRES</text>
         <text x={xPt + 30} y={ty + 36} textAnchor="middle" fontSize={9} fontWeight="bold">Y</text>
-        <text x={(xY + xXR) / 2} y={ty + 36} textAnchor="middle" fontSize={9}>System {meta.coordinateSystem}</text>
+        <text x={(xY + xXR) / 2} y={ty + 36} textAnchor="middle" fontSize={9}>System {fmtSystem(meta.coordinateSystem)}</text>
         <text x={xX + 110} y={ty + 36} textAnchor="middle" fontSize={9} fontWeight="bold">X</text>
         <text x={(xDsm + tableRight) / 2} y={ty + 38} textAnchor="middle" fontSize={11}>{meta.dsmNo || ""}</text>
         {/* header row 3 — constants */}
@@ -245,7 +258,9 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       <text x={tx + 4} y={tableBottom + 30} fontSize={12} fontWeight="bold" textDecoration="underline">
         BEACON DESCRIPTION
       </text>
-      <text x={tx + 4} y={tableBottom + 48} fontSize={12}>{meta.beaconDescription}</text>
+      {meta.beaconDescription.split(/\s*[;\n]\s*/).filter(Boolean).map((ln, i) => (
+        <text key={`bd${i}`} x={tx + 4} y={tableBottom + 48 + i * 16} fontSize={12}>{ln}</text>
+      ))}
       <text x={420} y={tableBottom + 80} textAnchor="middle" fontSize={13} letterSpacing="1">{meta.location}</text>
 
       {/* ===================== Director of Surveys block (right, under D.S.M) ===================== */}
@@ -296,7 +311,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       <g textAnchor="middle">
         <text x={VB_W / 2} y={968} fontSize={13} fontWeight="bold">
-          THE FIGURE {figureLetters} REPRESENTS {meta.areaHa.toFixed(4)} HECTARES OF LAND CALLED
+          THE FIGURE {figureLetters} REPRESENTS {areaText(meta.areaHa)} OF LAND CALLED
         </text>
         <text x={VB_W / 2} y={990} fontSize={13} fontWeight="bold" textDecoration="underline">{meta.lotName}</text>
         <text x={VB_W / 2} y={1010} fontSize={12}>({meta.parent})</text>

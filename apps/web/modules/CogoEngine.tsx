@@ -50,11 +50,18 @@ export function CogoEngine() {
   }, [importResult]);
 
   // Points that already have coordinates (for coordinate-only imports, e.g. an X,Y(,Z) list).
+  // Only PLOT BEACONS form the figure — working points and reference marks are
+  // control, not part of the parcel boundary, so they are excluded here.
   const coordPoints = useMemo(
     () =>
       (importResult?.rows ?? [])
-        .filter((r) => r.east != null && r.north != null)
+        .filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === "beacon")
         .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
+    [importResult]
+  );
+  // Working points / reference marks that were excluded from the figure.
+  const excludedControl = useMemo(
+    () => (importResult?.rows ?? []).filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") !== "beacon").length,
     [importResult]
   );
 
@@ -229,9 +236,11 @@ export function CogoEngine() {
           </div>
           {coordinateOnly && (
             <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              These are point coordinates (no bearings or distances) — the figure is computed directly from
-              the points. If the file also contains a working station or reference marks, load only the plot
-              coordinates, or build the plot in the{" "}
+              The figure is built from the <strong>plot beacons</strong> only
+              {excludedControl > 0
+                ? ` — ${excludedControl} working point(s) / reference mark(s) are excluded (control, not part of the boundary).`
+                : ". Tag any working points or reference marks in Data Import to keep them out of the figure."}
+              {" "}To set boundary order or subdivide, use the{" "}
               <button type="button" onClick={() => setActiveTab("parcels")} className="font-medium text-brand underline">
                 Parcels
               </button>{" "}
