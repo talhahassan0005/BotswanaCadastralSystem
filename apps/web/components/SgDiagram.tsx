@@ -219,20 +219,20 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={xDsm} y1={ty + 44} x2={tableRight} y2={ty + 44} stroke="black" strokeWidth={0.5} />
 
         {/* header row 1 */}
-        <text x={(tx + xMetR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={11}>SIDES</text>
-        <text x={(xDir + xDirR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={11}>DIRECTIONS</text>
-        <text x={(xPt + xXR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={11}>CO-ORDINATES</text>
-        <text x={(xDsm + tableRight) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={11}>D.S.M No.</text>
+        <text x={(tx + xMetR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={13}>SIDES</text>
+        <text x={(xDir + xDirR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={13}>DIRECTIONS</text>
+        <text x={(xPt + xXR) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={13}>CO-ORDINATES</text>
+        <text x={(xDsm + tableRight) / 2} y={ty + 16} textAnchor="middle" fontWeight="bold" fontSize={13}>D.S.M No.</text>
         {/* header row 2 */}
-        <text x={(tx + xMetR) / 2} y={ty + 36} textAnchor="middle" fontWeight="bold" fontSize={10}>METRES</text>
-        <text x={xPt + 30} y={ty + 36} textAnchor="middle" fontSize={9} fontWeight="bold">Y</text>
-        <text x={(xY + xXR) / 2} y={ty + 36} textAnchor="middle" fontSize={9}>System {fmtSystem(meta.coordinateSystem)}</text>
-        <text x={xX + 110} y={ty + 36} textAnchor="middle" fontSize={9} fontWeight="bold">X</text>
-        <text x={(xDsm + tableRight) / 2} y={ty + 38} textAnchor="middle" fontSize={11}>{meta.dsmNo || ""}</text>
+        <text x={(tx + xMetR) / 2} y={ty + 36} textAnchor="middle" fontWeight="bold" fontSize={12}>METRES</text>
+        <text x={xPt + 30} y={ty + 36} textAnchor="middle" fontSize={11} fontWeight="bold">Y</text>
+        <text x={(xY + xXR) / 2} y={ty + 36} textAnchor="middle" fontSize={11}>System {fmtSystem(meta.coordinateSystem)}</text>
+        <text x={xX + 110} y={ty + 36} textAnchor="middle" fontSize={11} fontWeight="bold">X</text>
+        <text x={(xDsm + tableRight) / 2} y={ty + 38} textAnchor="middle" fontSize={13}>{meta.dsmNo || ""}</text>
         {/* header row 3 — constants */}
-        <text x={(xDir + xDirR) / 2} y={ty + 58} textAnchor="middle" fontWeight="bold" fontSize={9}>CONSTANTS</text>
-        <text x={xY + 8} y={ty + 58} fontSize={9}>+    0,00</text>
-        <text x={xX + 8} y={ty + 58} fontSize={9}>+    0,00</text>
+        <text x={(xDir + xDirR) / 2} y={ty + 58} textAnchor="middle" fontWeight="bold" fontSize={11}>CONSTANTS</text>
+        <text x={xY + 8} y={ty + 58} fontSize={11}>+    0,00</text>
+        <text x={xX + 8} y={ty + 58} fontSize={11}>+    0,00</text>
 
         {/* data rows */}
         {Array.from({ length: n }).map((_, i) => {
@@ -240,7 +240,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           const p = points[i];
           const y = ty + headH + i * rowH + 14;
           return (
-            <g key={`row${i}`} fontSize={10}>
+            <g key={`row${i}`} fontSize={13}>
               {s && (
                 <>
                   <text x={tx + 10} y={y}>{`${s.from ?? ""}${s.to ?? ""}`}</text>
@@ -261,17 +261,17 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       </g>
 
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
-      <text x={tx + 4} y={tableBottom + 30} fontSize={12} fontWeight="bold" textDecoration="underline">
+      <text x={tx + 4} y={tableBottom + 32} fontSize={14} fontWeight="bold" textDecoration="underline">
         BEACON DESCRIPTION
       </text>
       {meta.beaconDescription.split(/\s*[;\n]\s*/).filter(Boolean).map((ln, i) => (
-        <text key={`bd${i}`} x={tx + 4} y={tableBottom + 48 + i * 16} fontSize={12}>{ln}</text>
+        <text key={`bd${i}`} x={tx + 4} y={tableBottom + 52 + i * 18} fontSize={14}>{ln}</text>
       ))}
-      <text x={420} y={tableBottom + 80} textAnchor="middle" fontSize={13} letterSpacing="1">{meta.location}</text>
+      <text x={420} y={tableBottom + 88} textAnchor="middle" fontSize={15} letterSpacing="1">{meta.location}</text>
 
       {/* ===================== Director of Surveys block (right, under D.S.M) ===================== */}
-      <text x={xDsm + 16} y={tableBottom + 30} fontSize={12}>Director of Surveys</text>
-      <text x={xDsm + 16} y={tableBottom + 46} fontSize={12}>and Mapping</text>
+      <text x={xDsm + 16} y={tableBottom + 32} fontSize={13}>Director of Surveys</text>
+      <text x={xDsm + 16} y={tableBottom + 48} fontSize={13}>and Mapping</text>
 
       {/* ===================== North arrow + scale (right) ===================== */}
       <g transform={`translate(${850}, ${fig.y - 8})`}>
@@ -308,33 +308,33 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const lx = bx + (dx / len) * 18, ly = by + (dy / len) * 18;
         return (
           <g key={`bcn${i}`}>
-            <circle cx={bx} cy={by} r={3.4} fill="white" stroke="black" strokeWidth={1.2} />
-            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={13} fontWeight="bold">{p.name}</text>
+            <circle cx={bx} cy={by} r={4} fill="white" stroke="black" strokeWidth={1.2} />
+            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={15} fontWeight="bold">{p.name}</text>
           </g>
         );
       })}
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       <g textAnchor="middle">
-        <text x={VB_W / 2} y={968} fontSize={13} fontWeight="bold">
+        <text x={VB_W / 2} y={966} fontSize={15} fontWeight="bold">
           THE FIGURE {figureLetters} REPRESENTS {areaText(meta.areaHa)} OF LAND CALLED
         </text>
-        <text x={VB_W / 2} y={990} fontSize={13} fontWeight="bold" textDecoration="underline">{landCalled}</text>
-        <text x={VB_W / 2} y={1010} fontSize={12}>({meta.parent})</text>
-        <text x={VB_W / 2} y={1030} fontSize={12}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
+        <text x={VB_W / 2} y={990} fontSize={15} fontWeight="bold" textDecoration="underline">{landCalled}</text>
+        <text x={VB_W / 2} y={1013} fontSize={14}>({meta.parent})</text>
+        <text x={VB_W / 2} y={1035} fontSize={14}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
       </g>
 
       {/* ===================== certification + surveyor ===================== */}
-      <text x={tx + 20} y={1090} fontSize={12}>
+      <text x={tx + 20} y={1088} fontSize={14}>
         {meta.kind === "compiled"
           ? `Compiled from ${dash(meta.sourceRef) || "—"}`
           : meta.kind === "framed"
           ? `Framed from ${dash(meta.sourceRef) || "—"}`
           : "Surveyed"}
       </text>
-      <text x={tx + 40} y={1108} fontSize={12}>IN {meta.surveyedDate} BY ME,</text>
-      <text x={VB_W - 270} y={1108} fontSize={12} fontWeight="bold">{meta.surveyor}</text>
-      <text x={VB_W - 270} y={1126} fontSize={11}>LAND SURVEYOR</text>
+      <text x={tx + 40} y={1110} fontSize={14}>IN {meta.surveyedDate} BY ME,</text>
+      <text x={VB_W - 300} y={1108} fontSize={14} fontWeight="bold">{meta.surveyor}</text>
+      <text x={VB_W - 300} y={1128} fontSize={12}>LAND SURVEYOR</text>
 
       {/* ===================== DEDUCTIONS + deeds/annexure table ===================== */}
       <text x={tx + 4} y={annTop - 6} fontSize={9}>DEDUCTIONS FROM THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
