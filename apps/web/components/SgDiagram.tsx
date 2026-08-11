@@ -376,13 +376,19 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={annC1 + 8} y={annTop + 70}>to</text>
         <text x={annC1 + 40} y={annTop + 70}>No. {dash(meta.parentDiagramNo || meta.parentDiagram)}</text>
 
-        {/* right — registration numbers */}
-        <text x={annC2 + 10} y={annTop + 18}>General Plan No. {dash(meta.gpNo)}</text>
-        <text x={annC2 + 10} y={annTop + 44}>S.R No. {dash(meta.srNo)}</text>
-        <text x={annC2 + 10} y={annTop + 70}>D.S.M File: {dash(meta.dsmFile)}</text>
-        <text x={annC2 + 10} y={annTop + 96}>Comp. {dash(meta.comp)}</text>
-        <text x={annC2 + 10} y={annTop + 122}>Degree Square: {dash(meta.degreeSquare)}</text>
-        <text x={annC2 + 10} y={annTop + 148}>LIR No: {dash(meta.lirNo)}</text>
+        {/* right — registration numbers (label + value in an aligned column, with a gap) */}
+        <text x={annC2 + 10} y={annTop + 18}>General Plan No.</text>
+        <text x={annC2 + 125} y={annTop + 18}>{dash(meta.gpNo)}</text>
+        <text x={annC2 + 10} y={annTop + 44}>S.R No.</text>
+        <text x={annC2 + 125} y={annTop + 44}>{dash(meta.srNo)}</text>
+        <text x={annC2 + 10} y={annTop + 70}>D.S.M File:</text>
+        <text x={annC2 + 125} y={annTop + 70}>{dash(meta.dsmFile)}</text>
+        <text x={annC2 + 10} y={annTop + 96}>Comp.</text>
+        <text x={annC2 + 125} y={annTop + 96}>{dash(meta.comp)}</text>
+        <text x={annC2 + 10} y={annTop + 122}>Degree Square:</text>
+        <text x={annC2 + 125} y={annTop + 122}>{dash(meta.degreeSquare)}</text>
+        <text x={annC2 + 10} y={annTop + 148}>LIR No:</text>
+        <text x={annC2 + 125} y={annTop + 148}>{dash(meta.lirNo)}</text>
       </g>
     </svg>
   );
