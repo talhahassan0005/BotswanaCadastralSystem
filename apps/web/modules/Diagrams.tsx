@@ -66,6 +66,18 @@ export function Diagrams() {
 
   // Prefer the picked lot, then a parcel sent from Parcels, then the COGO traverse.
   const fig = parcelFigure ?? diagramFigure ?? cogoResult;
+
+  // Beacons that exist but are NOT on the selected lot's boundary — shown on the
+  // diagram as marks (dot + label) but kept OUT of the traverse (client request).
+  const extraPoints = useMemo(() => {
+    if (!pdoc || !selParcelId) return [];
+    const parcel = pdoc.parcels.find((p) => p.id === selParcelId);
+    if (!parcel) return [];
+    const ring = new Set(parcel.beaconIds);
+    return pdoc.beacons
+      .filter((b) => !ring.has(b.id))
+      .map((b) => ({ name: b.id, east: b.east, north: b.north }));
+  }, [pdoc, selParcelId]);
   // Restore saved diagram form state from the project, else derive defaults from config.
   const di = (diagramInput ?? {}) as { kind?: DiagramKind; meta?: Omit<DiagramMeta, "closed" | "kind">; leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem"> };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
@@ -177,7 +189,7 @@ export function Diagrams() {
     }
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
-        `<style>@page{size:A4 portrait;margin:8mm}body{margin:0}svg{width:100%;height:auto}</style></head>` +
+        `<style>@page{size:A4 portrait;margin:0}body{margin:0}svg{width:160mm;height:270mm;display:block;margin:14mm 15mm 13mm 35mm}</style></head>` +
         `<body onload="window.print()">${svg}</body></html>`
     );
     w.document.close();
@@ -360,7 +372,7 @@ export function Diagrams() {
             ) : isBorehole ? (
               <BoreholeDiagram ref={svgRef} meta={fullMeta} points={points} />
             ) : (
-              <SgDiagram ref={svgRef} meta={fullMeta} points={points} sides={sides} />
+              <SgDiagram ref={svgRef} meta={fullMeta} points={points} sides={sides} extraPoints={extraPoints} />
             )}
           </div>
           <p className="mt-3 text-xs text-slate-400">

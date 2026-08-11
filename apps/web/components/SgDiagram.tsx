@@ -73,6 +73,10 @@ interface Props {
   /** Optional: draw several parcel rings (mutation / subdivision) coloured,
    *  instead of one boundary polygon — keeps one template for every diagram. */
   parcels?: { number: string; points: DiagramPoint[] }[];
+  /** Optional: points shown on the figure as marks (dot + label) but NOT part of
+   *  the traverse — no boundary side, no coordinate-table row (e.g. a nearby
+   *  reference/witness point the surveyor wants visible). */
+  extraPoints?: DiagramPoint[];
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -135,11 +139,11 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points, sides, parcels },
+  { meta, points, sides, parcels, extraPoints },
   ref
 ) {
   const VB_W = 1000;
-  const VB_H = 1414; // A4 portrait ratio
+  const VB_H = 1687; // 16 : 27 cm SG sheet — border prints 160×270mm on A4
 
   // ---- top data table geometry ----
   const tx = 24;
@@ -163,12 +167,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const tableRight = tx + tw;
 
   // ---- figure transform (centre area) ----
-  const fig = { x: 110, y: 440, w: 780, h: 470 };
+  const fig = { x: 110, y: 440, w: 780, h: 700 };
   const pad = 90;
   const es = points.map((p) => p.east);
   const nsv = points.map((p) => p.north);
-  const minE = Math.min(...es), maxE = Math.max(...es);
-  const minN = Math.min(...nsv), maxN = Math.max(...nsv);
+  // Figure bounds include any extra (non-traverse) marks so they stay visible.
+  const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
+  const bN = [...nsv, ...(extraPoints ?? []).map((p) => p.north)];
+  const minE = Math.min(...bE), maxE = Math.max(...bE);
+  const minN = Math.min(...bN), maxN = Math.max(...bN);
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
   const sc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
@@ -188,7 +195,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       : meta.lotName;
 
   // ---- bottom deeds/annexure table ----
-  const annTop = 1206;
+  const annTop = 1490;
   const annBottom = VB_H - 16;
   const annC1 = 392; // divider after left column
   const annC2 = 600; // divider after middle column
@@ -313,28 +320,36 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </g>
         );
       })}
+      {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse
+          (no boundary side, no coordinate-table row). */}
+      {(extraPoints ?? []).map((p, i) => (
+        <g key={`xp${i}`}>
+          <circle cx={toX(p.east)} cy={toY(p.north)} r={3.2} fill="black" />
+          <text x={toX(p.east) + 8} y={toY(p.north) + 4} fontSize={13}>{p.name}</text>
+        </g>
+      ))}
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       <g textAnchor="middle">
-        <text x={VB_W / 2} y={966} fontSize={15} fontWeight="bold">
+        <text x={VB_W / 2} y={1200} fontSize={15} fontWeight="bold">
           THE FIGURE {figureLetters} REPRESENTS {areaText(meta.areaHa)} OF LAND CALLED
         </text>
-        <text x={VB_W / 2} y={990} fontSize={15} fontWeight="bold" textDecoration="underline">{landCalled}</text>
-        <text x={VB_W / 2} y={1013} fontSize={14}>({meta.parent})</text>
-        <text x={VB_W / 2} y={1035} fontSize={14}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
+        <text x={VB_W / 2} y={1224} fontSize={15} fontWeight="bold" textDecoration="underline">{landCalled}</text>
+        <text x={VB_W / 2} y={1247} fontSize={14}>({meta.parent})</text>
+        <text x={VB_W / 2} y={1269} fontSize={14}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
       </g>
 
       {/* ===================== certification + surveyor ===================== */}
-      <text x={tx + 20} y={1088} fontSize={14}>
+      <text x={tx + 20} y={1330} fontSize={14}>
         {meta.kind === "compiled"
           ? `Compiled from ${dash(meta.sourceRef) || "—"}`
           : meta.kind === "framed"
           ? `Framed from ${dash(meta.sourceRef) || "—"}`
           : "Surveyed"}
       </text>
-      <text x={tx + 40} y={1110} fontSize={14}>IN {meta.surveyedDate} BY ME,</text>
-      <text x={VB_W - 300} y={1108} fontSize={14} fontWeight="bold">{meta.surveyor}</text>
-      <text x={VB_W - 300} y={1128} fontSize={12}>LAND SURVEYOR</text>
+      <text x={tx + 40} y={1352} fontSize={14}>IN {meta.surveyedDate} BY ME,</text>
+      <text x={VB_W - 300} y={1350} fontSize={14} fontWeight="bold">{meta.surveyor}</text>
+      <text x={VB_W - 300} y={1370} fontSize={12}>LAND SURVEYOR</text>
 
       {/* ===================== DEDUCTIONS + deeds/annexure table ===================== */}
       <text x={tx + 4} y={annTop - 6} fontSize={9}>DEDUCTIONS FROM THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
