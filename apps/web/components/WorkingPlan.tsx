@@ -89,7 +89,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         ref={ref}
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         xmlns="http://www.w3.org/2000/svg"
-        style={{ width: "100%", height: "auto", background: "white", fontFamily: "Arial, sans-serif" }}
+        style={{ width: "100%", height: "auto", background: "white", fontFamily: "'Courier New', Courier, monospace" }}
       >
         <rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} fill="white" stroke="black" strokeWidth={1.5} />
         <text x={VB_W / 2} y={VB_H / 2} textAnchor="middle" fontSize={16} fill="#333">
@@ -152,15 +152,16 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
 
   // ---- Bottom description blocks ----
   const descTop = VB_H - 200;
-  // ---- Certification box (bottom-right) ----
-  const cert = { x: 240, y: VB_H - 130, w: VB_W - 240 - 20, h: 104 };
+  // ---- Certification box (bottom-right, narrower to match the template) ----
+  const cert = { x: 300, y: VB_H - 130, w: 260, h: 104 };
 
   return (
     <svg
       ref={ref}
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       xmlns="http://www.w3.org/2000/svg"
-      style={{ width: "100%", height: "auto", background: "white", fontFamily: "Arial, sans-serif" }}
+      fill="#000"
+      style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "'Courier New', Courier, monospace" }}
     >
       {/* Outer border */}
       <rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} fill="white" stroke="black" strokeWidth={2} />
@@ -251,16 +252,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={26} y={descTop + 56}>{meta.workingStationDescription}</text>
       </g>
 
-      {/* ---------- Bottom-right: beacon description ---------- */}
+      {/* ---------- Right column: beacon description (left-aligned, like the template) ---------- */}
       <g fontSize={8.5}>
-        <text x={VB_W - 26} y={descTop} textAnchor="end" fontSize={10} fontWeight="bold" textDecoration="underline">
+        <text x={340} y={descTop} fontSize={10} fontWeight="bold" textDecoration="underline">
           BEACON DESCRIPTION
         </text>
-        <text x={VB_W - 26} y={descTop + 16} textAnchor="end" fontWeight="bold">PLACED BEACONS</text>
-        <text x={VB_W - 26} y={descTop + 28} textAnchor="end">{meta.placedBeaconDescription}</text>
-        <text x={VB_W - 26} y={descTop + 50} textAnchor="end" fontSize={8} fill="#555">
-          System {meta.coordinateSystem}
-        </text>
+        <text x={340} y={descTop + 16} fontWeight="bold">PLACED BEACONS</text>
+        <text x={340} y={descTop + 28}>{meta.placedBeaconDescription}</text>
+        <text x={340} y={descTop + 44} fontSize={8}>System {meta.coordinateSystem}</text>
       </g>
 
       {/* ---------- Inset locality box (green border, not to scale) ---------- */}
