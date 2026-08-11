@@ -17,6 +17,24 @@ const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "lease", label: "Tribal Lease", blurb: "Land Board tribal-lease sketch — NOT submitted to DSM (witness blocks, no approval). Locality + boundary sketch from base-map data." },
 ];
 
+// Remembered location -> "Parent / portion" (cadastre) map, so entering a known
+// location auto-fills its cadastre. It learns as the surveyor uses it (no external
+// dataset needed) and persists across projects in the browser.
+const CAD_KEY = "bcs-location-cadastre";
+function loadCadMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(window.localStorage.getItem(CAD_KEY) || "{}"); } catch { return {}; }
+}
+function rememberCad(location: string, parent: string) {
+  const loc = location.trim().toUpperCase();
+  if (!loc || !parent.trim() || typeof window === "undefined") return;
+  try {
+    const m = loadCadMap();
+    m[loc] = parent;
+    window.localStorage.setItem(CAD_KEY, JSON.stringify(m));
+  } catch { /* ignore */ }
+}
+
 export function Diagrams() {
   const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -168,6 +186,19 @@ export function Diagrams() {
   const set = (k: keyof typeof meta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" || k === "boreholeE" || k === "boreholeN" ? Number(v) || 0 : v }));
 
+  // Entering a known location auto-picks its cadastre (Parent / portion); typing a
+  // parent for a location remembers it for next time.
+  const onLocation = (v: string) =>
+    setMeta((m) => {
+      const remembered = loadCadMap()[v.trim().toUpperCase()];
+      return { ...m, location: v, parent: remembered ?? m.parent };
+    });
+  const onParent = (v: string) =>
+    setMeta((m) => {
+      rememberCad(m.location, v);
+      return { ...m, parent: v };
+    });
+
   if (!fig || points.length < 3) {
     return (
       <Card>
@@ -274,7 +305,7 @@ export function Diagrams() {
                     </>
                   ) : (
                     <Field label="Parent / portion">
-                      <Input value={meta.parent} onChange={set("parent")} />
+                      <Input value={meta.parent} onChange={onParent} placeholder="e.g. A PORTION OF CADASTRE 243" />
                     </Field>
                   )}
                   {(kind === "compiled" || kind === "framed") && (
@@ -282,7 +313,7 @@ export function Diagrams() {
                       <Input value={meta.sourceRef ?? ""} onChange={set("sourceRef")} />
                     </Field>
                   )}
-                  <Field label="Situate at (location)"><Input value={meta.location} onChange={set("location")} /></Field>
+                  <Field label="Situate at (location)"><Input value={meta.location} onChange={onLocation} placeholder="e.g. CHARLESHILL" /></Field>
                   <Field label="Tribal / administrative area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
@@ -309,6 +340,7 @@ export function Diagrams() {
                     <Field label="Annexed — dated"><Input value={meta.annexedDate ?? ""} onChange={set("annexedDate")} /></Field>
                     <Field label="In favour of"><Input value={meta.annexedInFavourOf ?? ""} onChange={set("annexedInFavourOf")} /></Field>
                   </div>
+                  <Field label="Name above ‘Registrar of Deeds’ (optional)"><Input value={meta.annexName ?? ""} onChange={set("annexName")} placeholder="optional" /></Field>
                 </div>
               </Card>
             </>

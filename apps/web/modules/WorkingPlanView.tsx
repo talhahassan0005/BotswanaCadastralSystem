@@ -10,7 +10,7 @@ import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
  * style, drawn from the computed figure (COGO result or a parcel sent to it).
  */
 export function WorkingPlanView() {
-  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const fig = diagramFigure ?? cogoResult;
 
@@ -35,8 +35,19 @@ export function WorkingPlanView() {
     referenceMarkDescription: "All Reference Marks: 20mm Iron Peg in Concrete",
     workingStationDescription: "WP1: 12mm Iron Peg",
     placedBeaconDescription: "ALL: 12mm Iron Peg",
+    surveyor: config.surveyor || "",
+    dateOfSurvey: "",
     ...(saved ?? {}),
   });
+
+  // Auto-captured values: the Land Surveyor comes from the project surveyor, and
+  // the placed-beacon description mirrors the one entered under Diagrams.
+  const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
+  const effectiveMeta: WorkingPlanMeta = {
+    ...meta,
+    surveyor: config.surveyor || meta.surveyor || "",
+    placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
+  };
   const set = (k: keyof WorkingPlanMeta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
 
@@ -108,8 +119,12 @@ export function WorkingPlanView() {
           <Field label="Coordinate system"><Input value={meta.coordinateSystem} onChange={set("coordinateSystem")} /></Field>
           <Field label="Reference marks"><Input value={meta.referenceMarkDescription} onChange={set("referenceMarkDescription")} /></Field>
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
-          <Field label="Placed beacons"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
+          <Field label="Placed beacons (auto from Diagram if set)"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
+          <Field label="Date of survey"><Input value={meta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} placeholder="e.g. 15 June 2026" /></Field>
         </div>
+        <p className="mt-2 text-xs text-slate-400">
+          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : " — set it in COGO Engine ▸ Project Details"}. Placed-beacon description mirrors the one entered under Diagrams.
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={download}>⬇ Download SVG</Button>
           <Button variant="ghost" onClick={print}>Print / Save PDF</Button>
@@ -118,7 +133,7 @@ export function WorkingPlanView() {
 
       <Card title="Working Plan">
         <div className="mx-auto max-w-3xl">
-          <WorkingPlan ref={svgRef} meta={meta} points={points} sides={sides} />
+          <WorkingPlan ref={svgRef} meta={effectiveMeta} points={points} sides={sides} />
         </div>
       </Card>
     </div>

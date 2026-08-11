@@ -51,6 +51,7 @@ export interface DiagramMeta {
   annexedDate?: string;      // "Dated"
   annexedInFavourOf?: string;// "in favour of"
   parentDiagramNo?: string;  // "The immediate parent diagram is annexed to No."
+  annexName?: string;        // optional name printed above "Registrar of Deeds"
 }
 
 /** Certification line wording — differs per diagram type per SG convention. */
@@ -180,6 +181,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const polyPoints = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
   const figureLetters =
     points.map((p) => p.name ?? "?").join(" ") + (meta.closed ? ` ${points[0]?.name ?? ""}` : "");
+  // "LAND CALLED" line carries the village/location too, e.g. "LOT 323 CHARLESHILL".
+  const landCalled =
+    meta.location && !meta.lotName.toUpperCase().includes(meta.location.trim().toUpperCase())
+      ? `${meta.lotName} ${meta.location}`
+      : meta.lotName;
 
   // ---- bottom deeds/annexure table ----
   const annTop = 1206;
@@ -313,7 +319,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={VB_W / 2} y={968} fontSize={13} fontWeight="bold">
           THE FIGURE {figureLetters} REPRESENTS {areaText(meta.areaHa)} OF LAND CALLED
         </text>
-        <text x={VB_W / 2} y={990} fontSize={13} fontWeight="bold" textDecoration="underline">{meta.lotName}</text>
+        <text x={VB_W / 2} y={990} fontSize={13} fontWeight="bold" textDecoration="underline">{landCalled}</text>
         <text x={VB_W / 2} y={1010} fontSize={12}>({meta.parent})</text>
         <text x={VB_W / 2} y={1030} fontSize={12}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
       </g>
@@ -343,6 +349,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={tx + 8} y={annTop + 70}>Dated {dash(meta.annexedDate)}</text>
         <text x={annC1 - 70} y={annTop + 70}>in favour</text>
         <text x={tx + 8} y={annTop + 96}>of {dash(meta.annexedInFavourOf)}</text>
+        {meta.annexName && meta.annexName.trim() && (
+          <text x={(tx + annC1) / 2} y={annBottom - 24} textAnchor="middle" fontSize={11}>{meta.annexName}</text>
+        )}
+        <line x1={tx + 30} y1={annBottom - 18} x2={annC1 - 20} y2={annBottom - 18} stroke="black" strokeWidth={0.4} />
         <text x={(tx + annC1) / 2} y={annBottom - 8} textAnchor="middle">Registrar of Deeds</text>
 
         {/* middle — immediate parent diagram */}

@@ -1,7 +1,6 @@
 "use client";
 
 import { forwardRef } from "react";
-import { fmtDist } from "./SgDiagram";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +28,8 @@ export interface WorkingPlanMeta {
   referenceMarkDescription: string;   // "All Reference Marks: 20mm Iron Peg in Concrete"
   workingStationDescription: string;  // "WP1: 12mm Iron Peg"
   placedBeaconDescription: string;    // "ALL: 12mm Iron Peg"
+  surveyor?: string;                  // Land Surveyor — auto from the project surveyor
+  dateOfSurvey?: string;              // "Date of survey" — entered manually
 }
 
 interface Props {
@@ -75,7 +76,7 @@ const REF_RED = "#dc2626";
 // Component — Botswana Working Plan as a scalable portrait SVG.
 // ---------------------------------------------------------------------------
 export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan(
-  { meta, points, sides },
+  { meta, points },
   ref
 ) {
   const VB_W = 600;
@@ -133,7 +134,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const fmtGrid = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
   // ---- Inset (locality, not to scale) ----
-  const inset = { x: 26, y: VB_H - 150, w: 150, h: 120 };
+  const inset = { x: 26, y: VB_H - 130, w: 150, h: 104 };
   const insetPad = 24;
   const iFit = Math.min((inset.w - 2 * insetPad) / spanE, (inset.h - 2 * insetPad) / spanN);
   const iDrawW = spanE * iFit;
@@ -150,7 +151,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   ];
 
   // ---- Bottom description blocks ----
-  const descTop = VB_H - 160;
+  const descTop = VB_H - 200;
+  // ---- Certification box (bottom-right) ----
+  const cert = { x: 240, y: VB_H - 130, w: VB_W - 240 - 20, h: 104 };
 
   return (
     <svg
@@ -171,12 +174,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={VB_W / 2} y={104} fontSize={12} textDecoration="underline">1:{meta.scale}</text>
       </g>
 
-      {/* ---------- North arrow (top-right) ---------- */}
+      {/* ---------- North arrow (top-right) — "T N" below the arrow ---------- */}
       <g transform={`translate(${VB_W - 60}, 70)`}>
         <line x1={0} y1={24} x2={0} y2={-20} stroke="black" strokeWidth={1.2} />
         <polygon points="0,-28 -6,-14 6,-14" fill="black" />
-        <text x={0} y={40} textAnchor="middle" fontSize={12} fontWeight="bold">N</text>
-        <text x={-20} y={6} textAnchor="middle" fontSize={9}>T</text>
+        <line x1={0} y1={30} x2={0} y2={44} stroke="black" strokeWidth={0.6} />
+        <text x={-9} y={42} textAnchor="middle" fontSize={11} fontWeight="bold">T</text>
+        <text x={9} y={42} textAnchor="middle" fontSize={11} fontWeight="bold">N</text>
       </g>
 
       {/* ---------- Coordinate grid (blue) ---------- */}
@@ -212,23 +216,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       {/* ---------- Figure ---------- */}
       <polygon points={polyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
 
-      {/* Side distances (light, small) at edge midpoints */}
-      {sides.map((s, i) => {
-        const a = points[i];
-        const b = points[(i + 1) % points.length];
-        if (!a || !b) return null;
-        const mx = (toX(a.east) + toX(b.east)) / 2;
-        const my = (toY(a.north) + toY(b.north)) / 2;
-        const dx = mx - cx, dy = my - cy;
-        const len = Math.hypot(dx, dy) || 1;
-        const ox = mx + (dx / len) * 12;
-        const oy = my + (dy / len) * 12;
-        return (
-          <text key={`sd${i}`} x={ox} y={oy + 3} textAnchor="middle" fontSize={7.5} fill="#555">
-            {fmtDist(s.distance)}
-          </text>
-        );
-      })}
+      {/* Side distances are intentionally NOT shown on the working plan (client request). */}
 
       {/* Beacons: open circles + bold labels placed outside the figure */}
       {points.map((p, i) => {
@@ -288,6 +276,20 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
             <text x={d.x + 5} y={d.y + 3} fontSize={7} fill={REF_RED}>{d.label}</text>
           </g>
         ))}
+      </g>
+
+      {/* ---------- Certification box (bottom-right) ---------- */}
+      <g fontSize={8} fill="#000">
+        <rect x={cert.x} y={cert.y} width={cert.w} height={cert.h} fill="white" stroke="black" strokeWidth={0.7} />
+        <text x={cert.x + 8} y={cert.y + 15}>Surveyed by me in accordance</text>
+        <text x={cert.x + 8} y={cert.y + 26}>with the provisions of the Land</text>
+        <text x={cert.x + 8} y={cert.y + 37}>Survey Act and the regulations</text>
+        <text x={cert.x + 8} y={cert.y + 48}>framed thereunder.</text>
+        <text x={cert.x + 8} y={cert.y + 72}>Date of survey:</text>
+        <text x={cert.x + 70} y={cert.y + 72}>{meta.dateOfSurvey || ""}</text>
+        <line x1={cert.x + 70} y1={cert.y + 74} x2={cert.x + cert.w - 12} y2={cert.y + 74} stroke="black" strokeWidth={0.4} />
+        <text x={cert.x + 8} y={cert.y + 92}>Land Surveyor:</text>
+        <text x={cert.x + cert.w - 12} y={cert.y + 92} textAnchor="end" fontWeight="bold">{meta.surveyor || ""}</text>
       </g>
     </svg>
   );
