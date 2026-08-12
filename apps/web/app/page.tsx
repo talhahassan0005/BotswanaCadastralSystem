@@ -43,8 +43,9 @@ function Workspace() {
 
   return (
     <div className="min-h-screen">
-      <Header activeTab={activeTab} onTab={setActiveTab} />
-      <ProjectBar />
+      <Header activeTab={activeTab} onTab={setActiveTab}>
+        <ProjectBar />
+      </Header>
       <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
         {/* keyed by loadVersion so opening a project remounts modules with fresh state */}
         <div key={loadVersion}>

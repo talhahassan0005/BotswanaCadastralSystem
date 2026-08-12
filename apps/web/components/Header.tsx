@@ -40,7 +40,15 @@ function Dot({ ok }: { ok: boolean }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-brand" : "bg-slate-500"}`} />;
 }
 
-export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: string) => void }) {
+export function Header({
+  activeTab,
+  onTab,
+  children,
+}: {
+  activeTab: string;
+  onTab: (id: string) => void;
+  children?: React.ReactNode;
+}) {
   const { config } = useStore();
   const allowed = DISCIPLINE_TABS[config.discipline] ?? TABS.map((t) => t.id);
   // Cadastral discipline relabels the "cogo" tab to "Cadastral" (client req);
@@ -75,6 +83,8 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
           <span className="truncate">Module: {active?.module ?? ""}</span>
         </div>
       </div>
+
+      {children}
 
       <nav className="flex gap-1 overflow-x-auto bg-navy-800 px-2 sm:px-4">
         {visibleTabs.map((t) => (
