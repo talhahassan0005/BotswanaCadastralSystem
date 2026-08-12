@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, cogoTabLabel } from "@/lib/store";
 import { Badge, Button, Card, Field, Input, Stat } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import type { ParcelDoc } from "@/lib/types";
@@ -161,9 +161,9 @@ export function SurveyRecord() {
           )}
           {doc === "consistency" && <DataConsistency validation={validation} />}
           {doc === "coordinates" && (
-            <CoordinateList rows={coordRows} coordinateSystem={displayCrs(config.coordinateSystem)} lotName={lotName} />
+            <CoordinateList rows={coordRows} coordinateSystem={displayCrs(config.coordinateSystem)} lotName={lotName} discipline={config.discipline} />
           )}
-          {doc === "comparison" && <DataComparison cogoResult={cogoResult} />}
+          {doc === "comparison" && <DataComparison cogoResult={cogoResult} discipline={config.discipline} />}
         </div>
       </Card>
     </div>
@@ -240,7 +240,7 @@ function ReportOnSurvey({
   fileNo: string;
   lotName: string;
   surveyor: string;
-  config: { coordinateSystem: string; discipline: string; traverseType: string; adjustment: string };
+  config: { coordinateSystem: string; discipline: import("@/lib/store").Discipline; traverseType: string; adjustment: string };
   cogoResult: ReturnType<typeof useStore>["cogoResult"];
   validationNarrative?: string;
 }) {
@@ -294,7 +294,7 @@ function ReportOnSurvey({
         </>
       ) : (
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          No computed figure yet. Run the COGO Engine to populate the closure, precision and area sections of this
+          No computed figure yet. Run the {cogoTabLabel(config.discipline)} to populate the closure, precision and area sections of this
           report.
         </p>
       )}
@@ -367,10 +367,12 @@ function CoordinateList({
   rows,
   coordinateSystem,
   lotName,
+  discipline,
 }: {
   rows: { label: string; east: number; north: number }[];
   coordinateSystem: string;
   lotName: string;
+  discipline: import("@/lib/store").Discipline;
 }) {
   return (
     <div className="space-y-3">
@@ -380,7 +382,7 @@ function CoordinateList({
       </p>
       {rows.length === 0 ? (
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          No coordinates available. Run the COGO Engine, construct parcels, or import survey data first.
+          No coordinates available. Run the {cogoTabLabel(discipline)}, construct parcels, or import survey data first.
         </p>
       ) : (
         <table className="w-full border-collapse text-sm">
@@ -411,12 +413,18 @@ function CoordinateList({
 /* -------------------------------------------------------------------------- */
 /* 5. Data Comparison                                                          */
 /* -------------------------------------------------------------------------- */
-function DataComparison({ cogoResult }: { cogoResult: ReturnType<typeof useStore>["cogoResult"] }) {
+function DataComparison({
+  cogoResult,
+  discipline,
+}: {
+  cogoResult: ReturnType<typeof useStore>["cogoResult"];
+  discipline: import("@/lib/store").Discipline;
+}) {
   if (!cogoResult) {
     return (
       <div className="space-y-3">
         <h1 className="text-base font-bold text-slate-800">Data Comparison</h1>
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">Run the COGO Engine first.</p>
+        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">Run the {cogoTabLabel(discipline)} first.</p>
       </div>
     );
   }

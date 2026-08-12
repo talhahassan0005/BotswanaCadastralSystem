@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { apiJson, apiUpload } from "@/lib/api";
-import { useStore } from "@/lib/store";
+import { useStore, cogoTabLabel } from "@/lib/store";
 import type { ImportResult } from "@/lib/types";
 import { Badge, Button } from "@/components/ui";
 
@@ -185,7 +185,7 @@ export function DataImport() {
             <Chip>{typeCount("beacon")} beacon · {typeCount("wp")} WP · {typeCount("ref")} ref</Chip>
             <Chip>CRS: {config.coordinateSystem}</Chip>
             <div className="ml-auto">
-              <Button onClick={() => setActiveTab("cogo")}>Proceed to COGO →</Button>
+              <Button onClick={() => setActiveTab("cogo")}>Proceed to {cogoTabLabel(config.discipline)} →</Button>
             </div>
           </div>
         </div>

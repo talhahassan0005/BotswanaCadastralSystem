@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiHealth } from "@/lib/api";
-import { useStore, type Discipline } from "@/lib/store";
+import { useStore, cogoTabLabel, type Discipline } from "@/lib/store";
 
 export const TABS = [
   { id: "import", label: "Data Import", module: "Data Import" },
@@ -45,10 +45,8 @@ export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: st
   const allowed = DISCIPLINE_TABS[config.discipline] ?? TABS.map((t) => t.id);
   // Cadastral discipline relabels the "cogo" tab to "Cadastral" (client req);
   // other disciplines keep the original "COGO Engine" label.
-  const tabs =
-    config.discipline === "Cadastral"
-      ? TABS.map((t) => (t.id === "cogo" ? { ...t, label: "Cadastral", module: "Cadastral" } : t))
-      : TABS;
+  const cogoLabel = cogoTabLabel(config.discipline);
+  const tabs = TABS.map((t) => (t.id === "cogo" ? { ...t, label: cogoLabel, module: cogoLabel } : t));
   const visibleTabs = tabs.filter((t) => allowed.includes(t.id));
   const active = tabs.find((t) => t.id === activeTab);
   const [health, setHealth] = useState<{ engine: boolean; ai: boolean; db: boolean } | null>(null);

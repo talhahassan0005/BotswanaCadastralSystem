@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import type { CogoResult, ParcelDoc } from "@/lib/types";
@@ -226,17 +226,17 @@ export function Diagrams() {
                   options={[{ value: "", label: "— select a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
                 />
               </div>
-              <p className="mt-3 text-xs text-slate-400">…or run a closed traverse in the COGO Engine.</p>
+              <p className="mt-3 text-xs text-slate-400">…or run a closed traverse in the {cogoTabLabel(config.discipline)}.</p>
             </>
           ) : (
             <p className="mt-1 text-sm">
-              Build a parcel in the <strong>Parcels</strong> tab, or run a <strong>closed traverse</strong> in the COGO Engine —
+              Build a parcel in the <strong>Parcels</strong> tab, or run a <strong>closed traverse</strong> in the {cogoTabLabel(config.discipline)} —
               the diagram is drawn from its beacon coordinates and sides.
             </p>
           )}
           <div className="mt-4 flex justify-center gap-2">
             <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels</Button>
-            <Button variant="ghost" onClick={() => setActiveTab("cogo")}>Go to COGO Engine</Button>
+            <Button variant="ghost" onClick={() => setActiveTab("cogo")}>Go to {cogoTabLabel(config.discipline)}</Button>
           </div>
         </div>
       </Card>
@@ -256,7 +256,7 @@ export function Diagrams() {
             <Select
               value={selParcelId ?? ""}
               onChange={(v) => setSelParcelId(v || null)}
-              options={[{ value: "", label: cogoResult ? "COGO traverse figure" : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
+              options={[{ value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
             />
           </div>
           {selParcelId && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}

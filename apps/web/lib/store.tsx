@@ -5,6 +5,13 @@ import type { CogoResult, ImportResult, TopoResult, ValidationResult, VolumeResu
 
 export type Discipline = "Cadastral" | "Engineering" | "Mining" | "GIS";
 
+// The "cogo" tab is relabelled "Cadastral" for the Cadastral discipline (client
+// req 2026-08-12); other disciplines still call it "COGO Engine". Use this
+// wherever UI text refers users to that tab so both stay in sync.
+export function cogoTabLabel(discipline: Discipline): string {
+  return discipline === "Cadastral" ? "Cadastral" : "COGO Engine";
+}
+
 export interface ProjectConfig {
   name: string;
   surveyor: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
 
@@ -90,16 +90,17 @@ export function WorkingPlanView() {
   }
 
   if (!fig || points.length < 3) {
+    const cogoLabel = cogoTabLabel(config.discipline);
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
           <p className="text-lg">No computed figure yet</p>
           <p className="mt-1 text-sm">
-            Run a <strong>closed traverse</strong> in the COGO Engine, or build a parcel and use
+            Run a <strong>closed traverse</strong> in the {cogoLabel}, or build a parcel and use
             <strong> Generate SG Diagram</strong> — the working plan is drawn from that figure.
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Button onClick={() => setActiveTab("cogo")}>Go to COGO Engine</Button>
+            <Button onClick={() => setActiveTab("cogo")}>Go to {cogoLabel}</Button>
             <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels</Button>
           </div>
         </div>
@@ -123,7 +124,7 @@ export function WorkingPlanView() {
           <Field label="Date of survey"><Input value={meta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} placeholder="e.g. 15 June 2026" /></Field>
         </div>
         <p className="mt-2 text-xs text-slate-400">
-          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : " — set it in COGO Engine ▸ Project Details"}. Placed-beacon description mirrors the one entered under Diagrams.
+          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Placed-beacon description mirrors the one entered under Diagrams.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={download}>⬇ Download SVG</Button>
