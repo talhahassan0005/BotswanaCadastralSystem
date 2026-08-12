@@ -14,6 +14,9 @@ export function CogoEngine() {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [tool, setTool] = useState<ToolId | null>(null);
+  // Points a COGO tool (Forward / Intersection) computed and the user chose to
+  // plot — shown on the work station canvas alongside the imported points.
+  const [toolPoints, setToolPoints] = useState<{ name: string; east: number; north: number }[]>([]);
   const [endE, setEndE] = useState(""); // known end-station coords (link traverse)
   const [endN, setEndN] = useState("");
 
@@ -282,11 +285,11 @@ export function CogoEngine() {
         </Card>
       </div>
 
-      <CogoTools tool={tool} onClose={() => setTool(null)} />
+      <CogoTools tool={tool} onClose={() => setTool(null)} onAddPoint={(p) => setToolPoints((arr) => [...arr, p])} />
 
       {/* Right results */}
       <div className="space-y-5">
-        <CogoWorkspace points={workspacePoints} onTool={setTool} />
+        <CogoWorkspace points={[...workspacePoints, ...toolPoints]} onTool={setTool} />
 
         {!cogoResult ? (
           <Card>

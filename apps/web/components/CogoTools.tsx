@@ -37,15 +37,51 @@ function Result({ data }: { data: any }) {
   );
 }
 
-export function CogoTools({ tool, onClose }: { tool: ToolId | null; onClose: () => void }) {
+export function CogoTools({
+  tool,
+  onClose,
+  onAddPoint,
+}: {
+  tool: ToolId | null;
+  onClose: () => void;
+  /** Push a computed point onto the work station's drawing. Only offered by
+   *  tools that produce a real east/north in the project's own coordinate
+   *  system (Forward, Intersection) — Inverse only measures between two
+   *  already-known points, Curve/Area aren't located in space, and Transform
+   *  can output a different (e.g. lat/lon) system that isn't plottable here. */
+  onAddPoint?: (p: { name: string; east: number; north: number }) => void;
+}) {
   return (
     <Modal open={tool !== null} onClose={onClose} title={tool ? TOOL_TITLES[tool] : ""}>
-      {tool === "inverse" && <InverseTool />}
-      {tool === "intersection" && <IntersectionTool />}
+      {tool === "inverse" && <InverseTool onAddPoint={onAddPoint} />}
+      {tool === "intersection" && <IntersectionTool onAddPoint={onAddPoint} />}
       {tool === "curve" && <CurveTool />}
       {tool === "area" && <AreaTool />}
       {tool === "transform" && <TransformTool />}
     </Modal>
+  );
+}
+
+function AddToDrawing({
+  east,
+  north,
+  onAddPoint,
+}: {
+  east: number;
+  north: number;
+  onAddPoint?: (p: { name: string; east: number; north: number }) => void;
+}) {
+  if (!onAddPoint) return null;
+  return (
+    <Button
+      variant="ghost"
+      onClick={() => {
+        const name = window.prompt("Point name", "New1") ?? "New1";
+        onAddPoint({ name, east, north });
+      }}
+    >
+      + Add to drawing
+    </Button>
   );
 }
 
@@ -68,7 +104,7 @@ function useRun() {
   return { result, error, busy, run };
 }
 
-function InverseTool() {
+function InverseTool({ onAddPoint }: { onAddPoint?: (p: { name: string; east: number; north: number }) => void }) {
   const [mode, setMode] = useState("inverse");
   const [a, setA] = useState({ e: "0", n: "0" });
   const [b, setB] = useState({ e: "100", n: "100" });
@@ -106,11 +142,14 @@ function InverseTool() {
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <Result data={result} />
+      {mode === "forward" && result?.east != null && (
+        <div className="mt-3"><AddToDrawing east={result.east} north={result.north} onAddPoint={onAddPoint} /></div>
+      )}
     </div>
   );
 }
 
-function IntersectionTool() {
+function IntersectionTool({ onAddPoint }: { onAddPoint?: (p: { name: string; east: number; north: number }) => void }) {
   const [method, setMethod] = useState("bb");
   const [a, setA] = useState({ e: "0", n: "0", brg: "45", r: "120" });
   const [b, setB] = useState({ e: "100", n: "0", brg: "315", r: "120" });
@@ -153,6 +192,9 @@ function IntersectionTool() {
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <Result data={result} />
+      {result?.east != null && (
+        <div className="mt-3"><AddToDrawing east={result.east} north={result.north} onAddPoint={onAddPoint} /></div>
+      )}
     </div>
   );
 }
