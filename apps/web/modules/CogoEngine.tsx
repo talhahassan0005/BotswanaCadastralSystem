@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import type { CogoResult } from "@/lib/types";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { CogoTools, type ToolId } from "@/components/CogoTools";
+import { CogoWorkspace } from "@/components/CogoWorkspace";
 import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
 
 export function CogoEngine() {
@@ -56,6 +57,16 @@ export function CogoEngine() {
     () =>
       (importResult?.rows ?? [])
         .filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === "beacon")
+        .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
+    [importResult]
+  );
+  // All imported points with coordinates (beacons + working points + reference
+  // marks) — the COGO work station plots everything that was imported, unlike
+  // the parcel figure which only uses plot beacons.
+  const workspacePoints = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null)
         .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
     [importResult]
   );
@@ -275,6 +286,8 @@ export function CogoEngine() {
 
       {/* Right results */}
       <div className="space-y-5">
+        <CogoWorkspace points={workspacePoints} onTool={setTool} />
+
         {!cogoResult ? (
           <Card>
             <div className="py-12 text-center text-slate-400">

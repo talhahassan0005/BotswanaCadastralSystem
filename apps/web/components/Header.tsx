@@ -26,8 +26,11 @@ export const TABS = [
 // Per-discipline tab sets (Stage-3 branch). Generous overlap — common tools are in all.
 // Data Import & Export live under the File menu (not the tab bar). The Editor is a
 // drafting tool, so it is offered under Engineering/Mining/GIS, not Cadastral.
+// Cadastral (client req 2026-08-12): "cogo" tab is relabelled "Cadastral" and kept
+// first; Traverse and Parcels are dropped from the nav (Parcels stays reachable via
+// in-page "Go to Parcels" links from Diagrams/Working Plan/General Plan).
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
-  Cadastral: ["cogo", "traverse", "parcels", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate"],
+  Cadastral: ["cogo", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate"],
   Engineering: ["cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "validate"],
   Mining: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate"],
   GIS: ["gis", "editor", "topo", "collab"],
@@ -40,8 +43,14 @@ function Dot({ ok }: { ok: boolean }) {
 export function Header({ activeTab, onTab }: { activeTab: string; onTab: (id: string) => void }) {
   const { config } = useStore();
   const allowed = DISCIPLINE_TABS[config.discipline] ?? TABS.map((t) => t.id);
-  const visibleTabs = TABS.filter((t) => allowed.includes(t.id));
-  const active = TABS.find((t) => t.id === activeTab);
+  // Cadastral discipline relabels the "cogo" tab to "Cadastral" (client req);
+  // other disciplines keep the original "COGO Engine" label.
+  const tabs =
+    config.discipline === "Cadastral"
+      ? TABS.map((t) => (t.id === "cogo" ? { ...t, label: "Cadastral", module: "Cadastral" } : t))
+      : TABS;
+  const visibleTabs = tabs.filter((t) => allowed.includes(t.id));
+  const active = tabs.find((t) => t.id === activeTab);
   const [health, setHealth] = useState<{ engine: boolean; ai: boolean; db: boolean } | null>(null);
 
   useEffect(() => {
