@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "@/lib/account";
 import { useStore, type Discipline } from "@/lib/store";
-import { listProjects, loadProject, type ProjectRow } from "@/lib/projects";
+import { deleteProject, listProjects, loadProject, type ProjectRow } from "@/lib/projects";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
 
@@ -308,11 +308,25 @@ function OpenProject({
 }) {
   const [rows, setRows] = useState<ProjectRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  function refresh() {
+    listProjects().then(({ data, error }) => { setRows(data); if (error) setError(error); });
+  }
   useEffect(() => {
     if (!loggedIn) return;
-    listProjects().then(({ data, error }) => { setRows(data); if (error) setError(error); });
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loggedIn]);
+
+  async function handleDelete(r: ProjectRow) {
+    if (!window.confirm(`Delete "${r.name}"? This cannot be undone.`)) return;
+    setDeletingId(r.id);
+    const { error } = await deleteProject(r.id);
+    setDeletingId(null);
+    if (error) { setError(error); return; }
+    refresh();
+  }
 
   return (
     <Card>
@@ -326,11 +340,19 @@ function OpenProject({
       {loggedIn && rows && rows.length === 0 && <p className="text-sm text-slate-500">No saved projects yet — create a new one.</p>}
       <div className="max-h-[50vh] space-y-1 overflow-y-auto">
         {(rows ?? []).map((r) => (
-          <button key={r.id} onClick={() => onOpen(r.id)}
-            className="flex w-full items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-left hover:bg-slate-50">
-            <span className="font-medium text-slate-700">{r.name}</span>
-            <span className="text-xs text-slate-400">{new Date(r.updated_at).toLocaleDateString()}</span>
-          </button>
+          <div key={r.id} className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 hover:bg-slate-50">
+            <button onClick={() => onOpen(r.id)} className="flex flex-1 items-center justify-between text-left">
+              <span className="font-medium text-slate-700">{r.name}</span>
+              <span className="text-xs text-slate-400">{new Date(r.updated_at).toLocaleDateString()}</span>
+            </button>
+            <button
+              onClick={() => handleDelete(r)}
+              disabled={deletingId === r.id}
+              className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50"
+            >
+              {deletingId === r.id ? "Deleting…" : "Delete"}
+            </button>
+          </div>
         ))}
       </div>
     </Card>
