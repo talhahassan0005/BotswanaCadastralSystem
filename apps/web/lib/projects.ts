@@ -34,11 +34,26 @@ export async function saveProject(args: {
   owner: string;
 }): Promise<{ id?: string; error?: string }> {
   if (!supabase) return { error: "Backend not configured." };
-  if (args.id) {
+  let targetId = args.id;
+  if (!targetId) {
+    // No known row yet — if this owner already has a project with this exact
+    // name, update that one instead of inserting a duplicate (Save behaves
+    // like a normal desktop app: same name = same file, not a new copy).
+    const { data: existing } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("owner", args.owner)
+      .eq("name", args.name)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    targetId = existing?.id ?? null;
+  }
+  if (targetId) {
     const { data, error } = await supabase
       .from("projects")
       .update({ name: args.name, state: args.state, updated_at: new Date().toISOString() })
-      .eq("id", args.id)
+      .eq("id", targetId)
       .select("id")
       .maybeSingle();
     if (data?.id) return { id: data.id };
