@@ -11,11 +11,12 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
+import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
-import type { ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
+import type { ToolDef, ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
@@ -71,6 +72,9 @@ export function CogoWorkspace({
   const [offsetLineId, setOffsetLineId] = useState<string | null>(null); // source line picked for the Offset tool
   const [offsetInput, setOffsetInput] = useState<{ screenX: number; screenY: number; side: 1 | -1; value: string } | null>(null);
   const draftIdRef = useRef(1);
+  // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
+  const [formTool, setFormTool] = useState<ToolDef | null>(null);
+  const commandBarRef = useRef<CogoCommandBarHandle>(null);
   const [lines, setLines] = useState<WLine[]>([]);
   const [arcs, setArcs] = useState<WArc[]>([]);
   const [polygons, setPolygons] = useState<WPolygon[]>([]);
@@ -237,7 +241,14 @@ export function CogoWorkspace({
     setOffsetInput(null);
     setMoving(null);
     setRename(null);
+    setFormTool(null);
     setDraftTool(tool);
+  }
+  /** Open the command bar for a numeric-input tool, discarding any
+   *  in-progress click-to-draw shape first (only one mode at a time). */
+  function openFormTool(tool: ToolDef) {
+    activateDrawTool("select");
+    setFormTool(tool);
   }
   function finishDraftWith(rawPts: DraftPt[]) {
     // A double-click's second click can land on (and snap to) the vertex the
@@ -409,7 +420,17 @@ export function CogoWorkspace({
     const wasClick = !!pan.current && pan.current.moved < CLICK_SLOP_PX;
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
-      if (draftTool === "addpoint") {
+      if (formTool) {
+        // Command bar open (Part 5): clicking a point/line on canvas fills
+        // whichever field is focused (or the first empty matching field)
+        // instead of doing the normal select/pan/draw behaviour.
+        const p = snapPoint(vbx, vby);
+        if (p) commandBarRef.current?.pickFromCanvas("point", p.id);
+        else {
+          const l = nearestLineHit(vbx, vby);
+          if (l) commandBarRef.current?.pickFromCanvas("line", l.id);
+        }
+      } else if (draftTool === "addpoint") {
         const v = resolveVertex(vbx, vby);
         if (!v.existingId) {
           const name = `New${idRef.current}`;
@@ -474,19 +495,28 @@ export function CogoWorkspace({
     setView((v) => ({ ...v, zoom: Math.min(50, Math.max(0.01, v.zoom * factor)) }));
   }
 
-  // Escape cancels an in-progress draw; Enter finishes a polyline/polygon;
-  // Ctrl+Z (while drawing) removes only the last placed vertex.
+  // Escape cancels an in-progress draw (or closes the command bar); Enter
+  // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
+  // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool)) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.preventDefault(); cancelDraft(); }
-      else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) { e.preventDefault(); finishDraft(); }
-      else if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey) && draft.length) { e.preventDefault(); removeLastDraftVertex(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (formTool) setFormTool(null);
+        else cancelDraft();
+      } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
+        e.preventDefault();
+        finishDraft();
+      } else if (e.key.toLowerCase() === "z" && (e.ctrlKey || e.metaKey) && draft.length) {
+        e.preventDefault();
+        removeLastDraftVertex();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft]);
+  }, [draftTool, draft, formTool]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -573,26 +603,20 @@ export function CogoWorkspace({
           </div>
 
           {/* Row 3 — registry-driven COGO point-construction tools. "Add Point"
-              is click-to-draw (Part 1); the rest stay modal calculators. */}
+              is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
           <CogoDrawingToolbar
-            points={visible}
-            lines={lines}
-            polygons={polygons}
             category="point"
-            onResult={addToolResult}
+            onOpenTool={openFormTool}
             interceptIds={{ "add-point": () => activateDrawTool("addpoint") }}
             activeId={draftTool === "addpoint" ? "add-point" : null}
           />
 
           {/* Row 4 — registry-driven COGO line-construction tools. Line,
               Polyline and Offset are click-to-draw; Bearing&Distance/Extend/
-              Trim/Perpendicular stay modal (need exact numeric input). */}
+              Trim/Perpendicular open the command bar (need exact numeric input). */}
           <CogoDrawingToolbar
-            points={visible}
-            lines={lines}
-            polygons={polygons}
             category="line"
-            onResult={addToolResult}
+            onOpenTool={openFormTool}
             interceptIds={{
               "line-between-points": () => activateDrawTool("line"),
               "polyline-traverse": () => activateDrawTool("polyline"),
@@ -602,37 +626,31 @@ export function CogoWorkspace({
           />
 
           {/* Row 5 — registry-driven COGO curve-construction tools. Arc by 3
-              Points is click-to-draw; the numeric-input arc methods + Fillet stay modal. */}
+              Points is click-to-draw; the numeric-input arc methods + Fillet open the command bar. */}
           <CogoDrawingToolbar
-            points={visible}
-            lines={lines}
-            polygons={polygons}
             category="curve"
-            onResult={addToolResult}
+            onOpenTool={openFormTool}
             interceptIds={{ "arc-3points": () => activateDrawTool("curve") }}
             activeId={draftTool === "curve" ? "arc-3points" : null}
           />
 
           {/* Row 6 — registry-driven COGO polygon-construction tools. Draw
-              Polygon is click-to-draw; Split/Merge/Offset/Area stay modal. */}
+              Polygon is click-to-draw; Split/Merge/Offset/Area open the command bar. */}
           <CogoDrawingToolbar
-            points={visible}
-            lines={lines}
-            polygons={polygons}
             category="polygon"
-            onResult={addToolResult}
+            onOpenTool={openFormTool}
             interceptIds={{ "draw-polygon": () => activateDrawTool("polygon") }}
             activeId={draftTool === "polygon" ? "draw-polygon" : null}
           />
 
           {/* Row 7 — registry-driven traverse & adjustment tools (same computeTraverse() engine as the COGO Engine tab) */}
-          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="traverse" onResult={addToolResult} />
+          <CogoDrawingToolbar category="traverse" onOpenTool={openFormTool} />
 
           {/* Row 8 — registry-driven query tools (read-only) */}
-          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="query" onResult={addToolResult} />
+          <CogoDrawingToolbar category="query" onOpenTool={openFormTool} />
 
           {/* Row 9 — registry-driven annotation tools */}
-          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="annotation" onResult={addToolResult} />
+          <CogoDrawingToolbar category="annotation" onOpenTool={openFormTool} />
 
           {(draftTool === "polyline" || draftTool === "polygon") && (
             <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
@@ -802,6 +820,21 @@ export function CogoWorkspace({
           )}
           </div>
 
+          {/* Bottom-docked command bar (Part 5) — numeric-input tools land here
+              instead of a centered modal, so the canvas stays visible/pannable
+              while typing. Point/line fields can also be filled by clicking
+              the canvas (see the formTool branch in onPointerUp). */}
+          <CogoCommandBar
+            ref={commandBarRef}
+            tool={formTool}
+            points={visible}
+            lines={lines}
+            polygons={polygons}
+            onResult={(result) => { addToolResult(result); setFormTool(null); }}
+            onClose={() => setFormTool(null)}
+          />
+
+          {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
             <span>
               {draftTool === "addpoint"
@@ -830,6 +863,7 @@ export function CogoWorkspace({
                 : <>Y = {cursor ? cursor.e.toFixed(3) : "—"}&nbsp;&nbsp;X = {cursor ? cursor.n.toFixed(3) : "—"}</>}
             </span>
           </div>
+          )}
         </>
       )}
     </div>
