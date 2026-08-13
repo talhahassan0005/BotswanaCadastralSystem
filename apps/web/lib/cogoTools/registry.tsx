@@ -9,6 +9,7 @@
 import type { ToolDef } from "./types";
 import * as pt from "./pointTools";
 import * as ln from "./lineTools";
+import * as cv from "./curveTools";
 
 const POINT_TOOLS: ToolDef[] = [
   {
@@ -258,9 +259,93 @@ const LINE_TOOLS: ToolDef[] = [
   },
 ];
 
-// Future phases (Curve/Polygon/Traverse/Query/Annotation/Edit) append their
+const ARC_TYPE_OPTIONS = [{ value: "minor", label: "Minor arc (shorter)" }, { value: "major", label: "Major arc (longer)" }];
+const SIDE_OPTIONS = [{ value: "right", label: "Right of A→B" }, { value: "left", label: "Left of A→B" }];
+
+const CURVE_TOOLS: ToolDef[] = [
+  {
+    id: "arc-radius-2points",
+    category: "curve",
+    label: "Arc by Radius + 2 Points",
+    description: "A circular arc of a given radius connecting two known points.",
+    icon: iconArcRadius2Points,
+    fields: [
+      { key: "pointA", label: "Start point", type: "point" },
+      { key: "pointB", label: "End point", type: "point" },
+      { key: "radius", label: "Radius (m)", type: "number" },
+      { key: "side", label: "Centre side", type: "select", options: SIDE_OPTIONS },
+      { key: "arcType", label: "Arc", type: "select", options: ARC_TYPE_OPTIONS },
+      { key: "name", label: "Arc name (optional)", type: "text" },
+    ],
+    run: cv.arcByRadiusAnd2Points,
+  },
+  {
+    id: "arc-3points",
+    category: "curve",
+    label: "Arc by 3 Points",
+    description: "The circular arc that passes through three known points.",
+    icon: iconArc3Points,
+    fields: [
+      { key: "pointA", label: "Start point", type: "point" },
+      { key: "pointB", label: "Point on arc (between start and end)", type: "point" },
+      { key: "pointC", label: "End point", type: "point" },
+      { key: "name", label: "Arc name (optional)", type: "text" },
+    ],
+    run: cv.arcBy3Points,
+  },
+  {
+    id: "arc-chord-bearing",
+    category: "curve",
+    label: "Arc by Chord + Bearing",
+    description: "From a start point, a chord bearing and length define the end point; a radius bends it into an arc.",
+    icon: iconArcChordBearing,
+    fields: [
+      { key: "pointA", label: "Start point", type: "point" },
+      { key: "chordBearing", label: "Chord bearing", type: "text" },
+      { key: "chordLength", label: "Chord length (m)", type: "number" },
+      { key: "radius", label: "Radius (m)", type: "number" },
+      { key: "side", label: "Centre side", type: "select", options: SIDE_OPTIONS },
+      { key: "arcType", label: "Arc", type: "select", options: ARC_TYPE_OPTIONS },
+      { key: "name", label: "New point / arc name", type: "text", default: "New" },
+    ],
+    run: cv.arcByChordAndBearing,
+  },
+  {
+    id: "arc-tangent",
+    category: "curve",
+    label: "Arc by Tangent",
+    description: "Tangent-in curve: from a PC point with a known tangent bearing, radius and deflection angle, compute the arc and its PT.",
+    icon: iconArcTangent,
+    fields: [
+      { key: "pointA", label: "PC (start) point", type: "point" },
+      { key: "tangentBearing", label: "Tangent-in bearing", type: "text" },
+      { key: "radius", label: "Radius (m)", type: "number" },
+      { key: "deflection", label: "Deflection angle (°)", type: "number" },
+      { key: "turn", label: "Turn direction", type: "select", options: [{ value: "right", label: "Right" }, { value: "left", label: "Left" }] },
+      { key: "name", label: "PT (end) point name", type: "text", default: "PT" },
+    ],
+    run: cv.arcByTangent,
+  },
+  {
+    id: "fillet",
+    category: "curve",
+    label: "Fillet (rounded corner)",
+    description: "Rounds the corner where two lines meet with an arc of the given radius, trimming both lines to the tangent points.",
+    icon: iconFillet,
+    fields: [
+      { key: "lineA", label: "First line", type: "line" },
+      { key: "lineB", label: "Second line", type: "line" },
+      { key: "radius", label: "Fillet radius (m)", type: "number" },
+      { key: "nameA", label: "Tangent point 1 name", type: "text", default: "T1" },
+      { key: "nameB", label: "Tangent point 2 name", type: "text", default: "T2" },
+    ],
+    run: cv.fillet,
+  },
+];
+
+// Future phases (Polygon/Traverse/Query/Annotation/Edit) append their
 // category arrays here — the toolbar and TOOL_REGISTRY don't change shape.
-export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS];
+export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS, ...CURVE_TOOLS];
 
 function iconAddPoint(c: string) {
   return (
@@ -410,6 +495,50 @@ function iconPerpLine(c: string) {
       <path d="M3 15h18" />
       <path d="M13 15V4" />
       <path d="M13 15l-2-2M13 15l2-2" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function iconArcRadius2Points(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 18C4 9 9 4 18 4" />
+      <circle cx="4" cy="18" r="1.6" fill={c} stroke="none" />
+      <circle cx="18" cy="4" r="1.6" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconArc3Points(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 18C4 9 9 4 18 4" />
+      <circle cx="4" cy="18" r="1.5" fill={c} stroke="none" />
+      <circle cx="10.5" cy="7.3" r="1.5" fill={c} stroke="none" />
+      <circle cx="18" cy="4" r="1.5" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconArcChordBearing(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 18C4 9 9 4 18 4" />
+      <path d="M4 18L18 4" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+function iconArcTangent(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M2 14h8" />
+      <path d="M10 14c0-6 4-10 10-10" />
+    </svg>
+  );
+}
+function iconFillet(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 4v9a8 8 0 0 0 8 8h9" />
+      <path d="M3 13a8 8 0 0 1 8-8" strokeDasharray="2 2" />
     </svg>
   );
 }

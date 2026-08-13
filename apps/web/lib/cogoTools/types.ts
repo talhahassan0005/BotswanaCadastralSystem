@@ -26,6 +26,24 @@ export interface WLine {
   bN: number;
 }
 
+/** A circular arc, stored pre-resolved for rendering: centre + radius, the
+ *  bearings (from centre) to its start/end points, and the two SVG path
+ *  flags computed once at creation time so the renderer never has to re-derive
+ *  sweep direction. */
+export interface WArc {
+  id: string;
+  name?: string;
+  cE: number;
+  cN: number;
+  radius: number;
+  startBearing: number;
+  endBearing: number;
+  /** SVG large-arc-flag (0|1). */
+  largeArc: 0 | 1;
+  /** SVG sweep-flag (0|1) — 1 means the bearing increases (visually clockwise) from start to end. */
+  sweep: 0 | 1;
+}
+
 export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "select";
 
 export interface FieldDef {
@@ -45,6 +63,8 @@ export interface ToolContext {
   lines: WLine[];
 }
 
+export type NewArc = Omit<WArc, "id">;
+
 export type ToolCategory =
   | "point"
   | "line"
@@ -58,6 +78,11 @@ export type ToolCategory =
 export interface ToolResult {
   points?: { name: string; east: number; north: number }[];
   lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
+  arcs?: NewArc[];
+  /** Existing line ids this result replaces (e.g. Fillet trims the two source
+   *  lines back to their new tangent points) — removed before the new lines/
+   *  arcs above are added. */
+  replaceLineIds?: string[];
   /** Human-readable read-out for tools that report a value rather than geometry
    *  (e.g. a Query tool's angle or distance). Shown in the form modal on success. */
   message?: string;

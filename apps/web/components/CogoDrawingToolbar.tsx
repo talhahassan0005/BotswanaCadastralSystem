@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { Button, Field, Input, Modal, Select } from "@/components/ui";
 import { TOOL_REGISTRY } from "@/lib/cogoTools/registry";
-import type { FieldDef, ToolDef, WLine, WPoint } from "@/lib/cogoTools/types";
+import type { FieldDef, ToolDef, ToolResult, WLine, WPoint } from "@/lib/cogoTools/types";
 
 export function CogoDrawingToolbar({
   points,
@@ -18,10 +18,7 @@ export function CogoDrawingToolbar({
 }: {
   points: WPoint[];
   lines: WLine[];
-  onResult: (result: {
-    points?: { name: string; east: number; north: number }[];
-    lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
-  }) => void;
+  onResult: (result: ToolResult) => void;
   category?: ToolDef["category"];
 }) {
   const [active, setActive] = useState<ToolDef | null>(null);
@@ -70,10 +67,7 @@ function ToolFormModal({
   points: WPoint[];
   lines: WLine[];
   onClose: () => void;
-  onResult: (result: {
-    points?: { name: string; east: number; north: number }[];
-    lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
-  }) => void;
+  onResult: (result: ToolResult) => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -94,7 +88,7 @@ function ToolFormModal({
     }
     try {
       const result = tool.run(resolved, { points, lines });
-      if (result.points?.length || result.lines?.length) onResult(result);
+      if (result.points?.length || result.lines?.length || result.arcs?.length) onResult(result);
       else if (result.message) setError(result.message); // informational read-out, not a failure
       else setError("No result.");
     } catch (e: any) {

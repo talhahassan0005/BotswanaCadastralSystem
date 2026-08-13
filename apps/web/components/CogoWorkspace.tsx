@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
-import type { WLine, WPoint } from "@/lib/cogoTools/types";
+import type { ToolResult, WArc, WLine, WPoint } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
@@ -55,38 +55,42 @@ export function CogoWorkspace({
   const [extra, setExtra] = useState<WPoint[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [lines, setLines] = useState<WLine[]>([]);
+  const [arcs, setArcs] = useState<WArc[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const idRef = useRef(1);
   const lineIdRef = useRef(1);
-  const past = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[] }[]>([]);
-  const future = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[] }[]>([]);
+  const arcIdRef = useRef(1);
+  const past = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[] }[]>([]);
+  const future = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[] }[]>([]);
   const [, setHistVer] = useState(0);
 
   const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
 
   function snapshot() {
-    past.current.push({ extra, hidden: new Set(hidden), lines });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs });
     if (past.current.length > 100) past.current.shift();
     future.current = [];
     setHistVer((v) => v + 1);
   }
   function undo() {
     if (!past.current.length) return;
-    future.current.push({ extra, hidden: new Set(hidden), lines });
+    future.current.push({ extra, hidden: new Set(hidden), lines, arcs });
     const prev = past.current.pop()!;
     setExtra(prev.extra);
     setHidden(prev.hidden);
     setLines(prev.lines);
+    setArcs(prev.arcs);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
   function redo() {
     if (!future.current.length) return;
-    past.current.push({ extra, hidden: new Set(hidden), lines });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs });
     const next = future.current.pop()!;
     setExtra(next.extra);
     setHidden(next.hidden);
     setLines(next.lines);
+    setArcs(next.arcs);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
@@ -102,7 +106,14 @@ export function CogoWorkspace({
       { id: `${l.id}-a`, name: "", east: l.aE, north: l.aN },
       { id: `${l.id}-b`, name: "", east: l.bE, north: l.bN },
     ]);
-    frameOn([...visible, ...linePts]);
+    // Frame each arc's bounding box corners (centre ± radius), not just its endpoints.
+    const arcPts: WPoint[] = arcs.flatMap((a) => [
+      { id: `${a.id}-n`, name: "", east: a.cE, north: a.cN + a.radius },
+      { id: `${a.id}-s`, name: "", east: a.cE, north: a.cN - a.radius },
+      { id: `${a.id}-e`, name: "", east: a.cE + a.radius, north: a.cN },
+      { id: `${a.id}-w`, name: "", east: a.cE - a.radius, north: a.cN },
+    ]);
+    frameOn([...visible, ...linePts, ...arcPts]);
   }
 
   function frameOn(pts: WPoint[]) {
@@ -115,8 +126,12 @@ export function CogoWorkspace({
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
   }
 
-  function addToolResult(result: { points?: { name: string; east: number; north: number }[]; lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[] }) {
+  function addToolResult(result: ToolResult) {
     snapshot();
+    if (result.replaceLineIds?.length) {
+      const drop = new Set(result.replaceLineIds);
+      setLines((ls) => ls.filter((l) => !drop.has(l.id)));
+    }
     if (result.points?.length) {
       setExtra((e) => [...e, ...result.points!.map((p, i) => ({ id: `tool-${Date.now()}-${idRef.current + i}`, ...p }))]);
       idRef.current += result.points.length;
@@ -124,6 +139,10 @@ export function CogoWorkspace({
     if (result.lines?.length) {
       setLines((ls) => [...ls, ...result.lines!.map((l, i) => ({ id: `line-${Date.now()}-${lineIdRef.current + i}`, ...l }))]);
       lineIdRef.current += result.lines.length;
+    }
+    if (result.arcs?.length) {
+      setArcs((as) => [...as, ...result.arcs!.map((a, i) => ({ id: `arc-${Date.now()}-${arcIdRef.current + i}`, ...a }))]);
+      arcIdRef.current += result.arcs.length;
     }
   }
 
@@ -221,7 +240,9 @@ export function CogoWorkspace({
         </button>
         {active && (
           <span className="text-xs text-slate-400">
-            Work station active — {visible.length} point(s){lines.length > 0 ? `, ${lines.length} line(s)` : ""}
+            Work station active — {visible.length} point(s)
+            {lines.length > 0 ? `, ${lines.length} line(s)` : ""}
+            {arcs.length > 0 ? `, ${arcs.length} arc(s)` : ""}
           </span>
         )}
       </div>
@@ -272,6 +293,9 @@ export function CogoWorkspace({
           {/* Row 4 — registry-driven COGO line-construction tools */}
           <CogoDrawingToolbar points={visible} lines={lines} category="line" onResult={addToolResult} />
 
+          {/* Row 5 — registry-driven COGO curve-construction tools */}
+          <CogoDrawingToolbar points={visible} lines={lines} category="curve" onResult={addToolResult} />
+
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
@@ -288,7 +312,23 @@ export function CogoWorkspace({
               const [x2, y2] = toScreen(l.bE, l.bN);
               return <line key={l.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#2563eb" strokeWidth={1.6} />;
             })}
-            {visible.length === 0 && lines.length === 0 ? (
+            {arcs.map((a) => {
+              const startRad = (a.startBearing * Math.PI) / 180;
+              const endRad = (a.endBearing * Math.PI) / 180;
+              const [x1, y1] = toScreen(a.cE + a.radius * Math.sin(startRad), a.cN + a.radius * Math.cos(startRad));
+              const [x2, y2] = toScreen(a.cE + a.radius * Math.sin(endRad), a.cN + a.radius * Math.cos(endRad));
+              const r = a.radius * view.zoom;
+              return (
+                <path
+                  key={a.id}
+                  d={`M ${x1} ${y1} A ${r} ${r} 0 ${a.largeArc} ${a.sweep} ${x2} ${y2}`}
+                  fill="none"
+                  stroke="#9333ea"
+                  strokeWidth={1.8}
+                />
+              );
+            })}
+            {visible.length === 0 && lines.length === 0 && arcs.length === 0 ? (
               <text x={W / 2} y={H / 2} textAnchor="middle" className="fill-slate-400 text-sm">
                 Import points, or use "Add point" to place one here
               </text>
