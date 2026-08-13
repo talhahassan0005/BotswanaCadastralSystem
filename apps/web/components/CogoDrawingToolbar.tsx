@@ -16,12 +16,20 @@ export function CogoDrawingToolbar({
   polygons,
   onResult,
   category = "point",
+  interceptIds,
+  activeId,
 }: {
   points: WPoint[];
   lines: WLine[];
   polygons: WPolygon[];
   onResult: (result: ToolResult) => void;
   category?: ToolDef["category"];
+  /** Tool ids in this map bypass the modal entirely — clicking them calls the
+   *  callback instead (used for click-to-draw canvas tools like Line/Polygon,
+   *  which build up their shape from canvas clicks, not a form). */
+  interceptIds?: Record<string, () => void>;
+  /** Tool id to show highlighted (the click-to-draw tool currently active on the canvas). */
+  activeId?: string | null;
 }) {
   const [active, setActive] = useState<ToolDef | null>(null);
   const tools = TOOL_REGISTRY.filter((t) => t.category === category);
@@ -33,10 +41,12 @@ export function CogoDrawingToolbar({
           <button
             key={t.id}
             type="button"
-            onClick={() => setActive(t)}
+            onClick={() => (interceptIds?.[t.id] ? interceptIds[t.id]() : setActive(t))}
             title={t.label}
             aria-label={t.label}
-            className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
+            className={`grid h-9 w-9 place-items-center rounded-md transition ${
+              activeId === t.id ? "bg-brand text-white" : "text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
+            }`}
           >
             {t.icon("currentColor")}
           </button>
