@@ -8,6 +8,7 @@
 
 import type { ToolDef } from "./types";
 import * as pt from "./pointTools";
+import * as ln from "./lineTools";
 
 const POINT_TOOLS: ToolDef[] = [
   {
@@ -159,9 +160,107 @@ const POINT_TOOLS: ToolDef[] = [
   },
 ];
 
-// Future phases (Line/Curve/Polygon/Traverse/Query/Annotation/Edit) append their
+const LINE_TOOLS: ToolDef[] = [
+  {
+    id: "line-between-points",
+    category: "line",
+    label: "Line Between Points",
+    description: "Draw a straight line connecting two known points.",
+    icon: iconLineBetween,
+    fields: [
+      { key: "pointA", label: "Point A", type: "point" },
+      { key: "pointB", label: "Point B", type: "point" },
+      { key: "name", label: "Line name (optional)", type: "text" },
+    ],
+    run: ln.lineBetweenPoints,
+  },
+  {
+    id: "line-bearing-distance",
+    category: "line",
+    label: "Line by Bearing & Distance",
+    description: "Draw a line from a known point along a bearing for a given distance (also plots the new end point).",
+    icon: iconLineBearingDistance,
+    fields: [
+      { key: "from", label: "From point", type: "point" },
+      { key: "bearing", label: "Bearing (DDD.MMSS or decimal)", type: "text" },
+      { key: "distance", label: "Distance (m)", type: "number" },
+      { key: "name", label: "New point name", type: "text", default: "New" },
+    ],
+    run: ln.lineByBearingDistance,
+  },
+  {
+    id: "polyline-traverse",
+    category: "line",
+    label: "Polyline / Traverse Line",
+    description: "From a start point, walk a sequence of bearing+distance legs, drawing a connected chain of segments.",
+    icon: iconPolyline,
+    fields: [
+      { key: "start", label: "Start point", type: "point" },
+      { key: "legs", label: "Legs — one per line: bearing, distance", type: "textarea", default: "0.00.00, 50" },
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: ln.polylineTraverse,
+  },
+  {
+    id: "extend-line",
+    category: "line",
+    label: "Extend Line",
+    description: "Lengthen a line past one of its ends by a given distance.",
+    icon: iconExtendLine,
+    fields: [
+      { key: "line", label: "Line", type: "line" },
+      { key: "end", label: "Extend past", type: "select", options: [{ value: "b", label: "End B" }, { value: "a", label: "End A" }] },
+      { key: "distance", label: "Extend by (m)", type: "number" },
+      { key: "name", label: "Result line name (optional)", type: "text" },
+    ],
+    run: ln.extendLine,
+  },
+  {
+    id: "trim-line",
+    category: "line",
+    label: "Trim Line",
+    description: "Shorten a line by pulling one end inward by a given distance.",
+    icon: iconTrimLine,
+    fields: [
+      { key: "line", label: "Line", type: "line" },
+      { key: "end", label: "Trim from", type: "select", options: [{ value: "b", label: "End B" }, { value: "a", label: "End A" }] },
+      { key: "distance", label: "Trim by (m)", type: "number" },
+      { key: "name", label: "Result line name (optional)", type: "text" },
+    ],
+    run: ln.trimLine,
+  },
+  {
+    id: "offset-line",
+    category: "line",
+    label: "Parallel / Offset Line",
+    description: "Draw a copy of a line offset to one side by a given distance.",
+    icon: iconOffsetLine,
+    fields: [
+      { key: "line", label: "Line", type: "line" },
+      { key: "offset", label: "Offset (m, + right / − left)", type: "number" },
+      { key: "name", label: "Result line name (optional)", type: "text" },
+    ],
+    run: ln.offsetLine,
+  },
+  {
+    id: "perpendicular-line",
+    category: "line",
+    label: "Perpendicular Line",
+    description: "Draw a line at 90° to a reference line, starting from a chosen point.",
+    icon: iconPerpLine,
+    fields: [
+      { key: "line", label: "Reference line", type: "line" },
+      { key: "from", label: "Start point", type: "point" },
+      { key: "length", label: "Length (m)", type: "number" },
+      { key: "name", label: "New point name", type: "text", default: "New" },
+    ],
+    run: ln.perpendicularLine,
+  },
+];
+
+// Future phases (Curve/Polygon/Traverse/Query/Annotation/Edit) append their
 // category arrays here — the toolbar and TOOL_REGISTRY don't change shape.
-export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS];
+export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS];
 
 function iconAddPoint(c: string) {
   return (
@@ -248,6 +347,69 @@ function iconMidpoint(c: string) {
       <circle cx="20" cy="4" r="1.8" />
       <path d="M4 20L20 4" strokeDasharray="2 2" />
       <circle cx="12" cy="12" r="2.4" fill={c} stroke="none" />
+    </svg>
+  );
+}
+
+function iconLineBetween(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="4" cy="20" r="1.8" fill={c} stroke="none" />
+      <circle cx="20" cy="4" r="1.8" fill={c} stroke="none" />
+      <path d="M4 20L20 4" />
+    </svg>
+  );
+}
+function iconLineBearingDistance(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="4" cy="20" r="1.8" fill={c} stroke="none" />
+      <path d="M4 20L19 5M19 5v6M19 5h-6" />
+    </svg>
+  );
+}
+function iconPolyline(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 19l6-10 5 4 7-10" strokeLinejoin="round" />
+      <circle cx="3" cy="19" r="1.5" fill={c} stroke="none" />
+      <circle cx="9" cy="9" r="1.5" fill={c} stroke="none" />
+      <circle cx="14" cy="13" r="1.5" fill={c} stroke="none" />
+      <circle cx="21" cy="3" r="1.5" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconExtendLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M2 20L14 8" />
+      <path d="M14 8L22 2" strokeDasharray="2.5 2.5" />
+      <circle cx="2" cy="20" r="1.6" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconTrimLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M6 18L18 6" />
+      <path d="M3 3l6 6M3 9l6-6" strokeWidth="1.6" />
+    </svg>
+  );
+}
+function iconOffsetLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 18L15 6" />
+      <path d="M8 21L20 9" strokeDasharray="2.5 2.5" />
+    </svg>
+  );
+}
+function iconPerpLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 15h18" />
+      <path d="M13 15V4" />
+      <path d="M13 15l-2-2M13 15l2-2" strokeWidth="1.4" />
     </svg>
   );
 }

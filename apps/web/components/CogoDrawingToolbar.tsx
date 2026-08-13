@@ -1,22 +1,27 @@
 "use client";
 
-// Registry-driven COGO drawing toolbar (client req 2026-08-13, Phase 1 = POINT
-// TOOLS). Every button here is generated from TOOL_REGISTRY — none are
-// hardcoded — and every tool opens the same generic form (built from the
-// tool's `fields`) so adding a new tool never touches this file.
+// Registry-driven COGO drawing toolbar (client req 2026-08-13). Every button
+// here is generated from TOOL_REGISTRY — none are hardcoded — and every tool
+// opens the same generic form (built from the tool's `fields`) so adding a
+// new tool never touches this file.
 
 import { useState } from "react";
 import { Button, Field, Input, Modal, Select } from "@/components/ui";
 import { TOOL_REGISTRY } from "@/lib/cogoTools/registry";
-import type { FieldDef, ToolDef, WPoint } from "@/lib/cogoTools/types";
+import type { FieldDef, ToolDef, WLine, WPoint } from "@/lib/cogoTools/types";
 
 export function CogoDrawingToolbar({
   points,
+  lines,
   onResult,
   category = "point",
 }: {
   points: WPoint[];
-  onResult: (pts: { name: string; east: number; north: number }[]) => void;
+  lines: WLine[];
+  onResult: (result: {
+    points?: { name: string; east: number; north: number }[];
+    lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
+  }) => void;
   category?: ToolDef["category"];
 }) {
   const [active, setActive] = useState<ToolDef | null>(null);
@@ -42,9 +47,10 @@ export function CogoDrawingToolbar({
         <ToolFormModal
           tool={active}
           points={points}
+          lines={lines}
           onClose={() => setActive(null)}
-          onResult={(pts) => {
-            onResult(pts);
+          onResult={(result) => {
+            onResult(result);
             setActive(null);
           }}
         />
@@ -56,13 +62,18 @@ export function CogoDrawingToolbar({
 function ToolFormModal({
   tool,
   points,
+  lines,
   onClose,
   onResult,
 }: {
   tool: ToolDef;
   points: WPoint[];
+  lines: WLine[];
   onClose: () => void;
-  onResult: (pts: { name: string; east: number; north: number }[]) => void;
+  onResult: (result: {
+    points?: { name: string; east: number; north: number }[];
+    lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
+  }) => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -77,12 +88,15 @@ function ToolFormModal({
     const resolved: Record<string, any> = {};
     for (const f of tool.fields) {
       const raw = values[f.key] ?? "";
-      resolved[f.key] = f.type === "point" ? points.find((p) => p.id === raw) : raw;
+      if (f.type === "point") resolved[f.key] = points.find((p) => p.id === raw);
+      else if (f.type === "line") resolved[f.key] = lines.find((l) => l.id === raw);
+      else resolved[f.key] = raw;
     }
     try {
-      const result = tool.run(resolved, { points });
-      if (result.points?.length) onResult(result.points);
+      const result = tool.run(resolved, { points, lines });
+      if (result.points?.length || result.lines?.length) onResult(result);
       else if (result.message) setError(result.message); // informational read-out, not a failure
+      else setError("No result.");
     } catch (e: any) {
       setError(e.message ?? String(e));
     }
@@ -93,8 +107,8 @@ function ToolFormModal({
       <p className="mb-3 text-sm text-slate-500">{tool.description}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {tool.fields.map((f) => (
-          <div key={f.key} className={f.type === "point" ? "sm:col-span-2" : ""}>
-            <FieldInput field={f} value={values[f.key] ?? ""} onChange={set(f.key)} points={points} />
+          <div key={f.key} className={f.type === "point" || f.type === "line" || f.type === "textarea" ? "sm:col-span-2" : ""}>
+            <FieldInput field={f} value={values[f.key] ?? ""} onChange={set(f.key)} points={points} lines={lines} />
           </div>
         ))}
       </div>
@@ -111,11 +125,13 @@ function FieldInput({
   value,
   onChange,
   points,
+  lines,
 }: {
   field: FieldDef;
   value: string;
   onChange: (v: string) => void;
   points: WPoint[];
+  lines: WLine[];
 }) {
   if (field.type === "point") {
     return (
@@ -131,10 +147,36 @@ function FieldInput({
       </Field>
     );
   }
+  if (field.type === "line") {
+    return (
+      <Field label={field.label}>
+        <Select
+          value={value}
+          onChange={onChange}
+          options={[
+            { value: "", label: "— select a line —" },
+            ...lines.map((l) => ({ value: l.id, label: l.name || `Line ${l.id.slice(-4)}` })),
+          ]}
+        />
+      </Field>
+    );
+  }
   if (field.type === "select") {
     return (
       <Field label={field.label}>
         <Select value={value || field.options![0].value} onChange={onChange} options={field.options!} />
+      </Field>
+    );
+  }
+  if (field.type === "textarea") {
+    return (
+      <Field label={field.label}>
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={4}
+          className="w-full rounded-lg border border-slate-200 p-3 font-mono text-sm focus:border-brand focus:outline-none"
+        />
       </Field>
     );
   }

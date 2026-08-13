@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
-import type { WPoint } from "@/lib/cogoTools/types";
+import type { WLine, WPoint } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
@@ -50,39 +50,43 @@ export function CogoWorkspace({
     north: p.north,
   }));
 
-  // ---- drafting state: points added/removed in the workspace only ----
+  // ---- drafting state: points/lines added/removed in the workspace only ----
   const [draftTool, setDraftTool] = useState<DraftTool>("select");
   const [extra, setExtra] = useState<WPoint[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [lines, setLines] = useState<WLine[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const idRef = useRef(1);
-  const past = useRef<{ extra: WPoint[]; hidden: Set<string> }[]>([]);
-  const future = useRef<{ extra: WPoint[]; hidden: Set<string> }[]>([]);
+  const lineIdRef = useRef(1);
+  const past = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[] }[]>([]);
+  const future = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[] }[]>([]);
   const [, setHistVer] = useState(0);
 
   const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
 
   function snapshot() {
-    past.current.push({ extra, hidden: new Set(hidden) });
+    past.current.push({ extra, hidden: new Set(hidden), lines });
     if (past.current.length > 100) past.current.shift();
     future.current = [];
     setHistVer((v) => v + 1);
   }
   function undo() {
     if (!past.current.length) return;
-    future.current.push({ extra, hidden: new Set(hidden) });
+    future.current.push({ extra, hidden: new Set(hidden), lines });
     const prev = past.current.pop()!;
     setExtra(prev.extra);
     setHidden(prev.hidden);
+    setLines(prev.lines);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
   function redo() {
     if (!future.current.length) return;
-    past.current.push({ extra, hidden: new Set(hidden) });
+    past.current.push({ extra, hidden: new Set(hidden), lines });
     const next = future.current.pop()!;
     setExtra(next.extra);
     setHidden(next.hidden);
+    setLines(next.lines);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
@@ -94,7 +98,11 @@ export function CogoWorkspace({
     setSelected(null);
   }
   function zoomExtents() {
-    frameOn(visible);
+    const linePts: WPoint[] = lines.flatMap((l) => [
+      { id: `${l.id}-a`, name: "", east: l.aE, north: l.aN },
+      { id: `${l.id}-b`, name: "", east: l.bE, north: l.bN },
+    ]);
+    frameOn([...visible, ...linePts]);
   }
 
   function frameOn(pts: WPoint[]) {
@@ -105,6 +113,18 @@ export function CogoWorkspace({
     const span = Math.max(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns), 1);
     const zoom = (Math.min(W, H) * 0.7) / span;
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
+  }
+
+  function addToolResult(result: { points?: { name: string; east: number; north: number }[]; lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[] }) {
+    snapshot();
+    if (result.points?.length) {
+      setExtra((e) => [...e, ...result.points!.map((p, i) => ({ id: `tool-${Date.now()}-${idRef.current + i}`, ...p }))]);
+      idRef.current += result.points.length;
+    }
+    if (result.lines?.length) {
+      setLines((ls) => [...ls, ...result.lines!.map((l, i) => ({ id: `line-${Date.now()}-${lineIdRef.current + i}`, ...l }))]);
+      lineIdRef.current += result.lines.length;
+    }
   }
 
   // Auto-frame the imported points whenever the point set changes size (e.g. a
@@ -199,7 +219,11 @@ export function CogoWorkspace({
           </svg>
           COGO
         </button>
-        {active && <span className="text-xs text-slate-400">Work station active — {visible.length} point(s) loaded</span>}
+        {active && (
+          <span className="text-xs text-slate-400">
+            Work station active — {visible.length} point(s){lines.length > 0 ? `, ${lines.length} line(s)` : ""}
+          </span>
+        )}
       </div>
 
       {active && (
@@ -243,14 +267,10 @@ export function CogoWorkspace({
           </div>
 
           {/* Row 3 — registry-driven COGO point-construction tools */}
-          <CogoDrawingToolbar
-            points={visible}
-            category="point"
-            onResult={(pts) => {
-              snapshot();
-              setExtra((e) => [...e, ...pts.map((p, i) => ({ id: `tool-${Date.now()}-${i}`, ...p }))]);
-            }}
-          />
+          <CogoDrawingToolbar points={visible} lines={lines} category="point" onResult={addToolResult} />
+
+          {/* Row 4 — registry-driven COGO line-construction tools */}
+          <CogoDrawingToolbar points={visible} lines={lines} category="line" onResult={addToolResult} />
 
           <svg
             ref={svgRef}
@@ -263,7 +283,12 @@ export function CogoWorkspace({
             onPointerLeave={() => (pan.current = null)}
             onWheel={onWheel}
           >
-            {visible.length === 0 ? (
+            {lines.map((l) => {
+              const [x1, y1] = toScreen(l.aE, l.aN);
+              const [x2, y2] = toScreen(l.bE, l.bN);
+              return <line key={l.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#2563eb" strokeWidth={1.6} />;
+            })}
+            {visible.length === 0 && lines.length === 0 ? (
               <text x={W / 2} y={H / 2} textAnchor="middle" className="fill-slate-400 text-sm">
                 Import points, or use "Add point" to place one here
               </text>

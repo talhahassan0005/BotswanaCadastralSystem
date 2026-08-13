@@ -14,13 +14,25 @@ export interface WPoint {
   north: number;
 }
 
-export type FieldType = "number" | "text" | "point" | "select";
+/** A straight segment, stored as resolved endpoint coordinates (a snapshot, not
+ *  a live link to the points it was built from — moving/deleting those points
+ *  does not move the line, matching how the reference COGO software behaves). */
+export interface WLine {
+  id: string;
+  name?: string;
+  aE: number;
+  aN: number;
+  bE: number;
+  bN: number;
+}
+
+export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "select";
 
 export interface FieldDef {
   key: string;
   label: string;
   type: FieldType;
-  /** For type "select": the choices. For type "point": ignored (populated from ctx.points). */
+  /** For type "select": the choices. For "point"/"line": ignored (populated from ctx). */
   options?: { value: string; label: string }[];
   default?: string;
   placeholder?: string;
@@ -29,6 +41,8 @@ export interface FieldDef {
 export interface ToolContext {
   /** Points currently plotted on the work station canvas (imports + prior tool results). */
   points: WPoint[];
+  /** Lines currently drawn on the work station canvas. */
+  lines: WLine[];
 }
 
 export type ToolCategory =
@@ -43,6 +57,7 @@ export type ToolCategory =
 
 export interface ToolResult {
   points?: { name: string; east: number; north: number }[];
+  lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
   /** Human-readable read-out for tools that report a value rather than geometry
    *  (e.g. a Query tool's angle or distance). Shown in the form modal on success. */
   message?: string;
