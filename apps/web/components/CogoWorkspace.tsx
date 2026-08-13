@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
-import type { ToolResult, WArc, WLine, WPoint } from "@/lib/cogoTools/types";
+import type { ToolResult, WArc, WLine, WPoint, WPolygon } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
@@ -56,41 +56,46 @@ export function CogoWorkspace({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [lines, setLines] = useState<WLine[]>([]);
   const [arcs, setArcs] = useState<WArc[]>([]);
+  const [polygons, setPolygons] = useState<WPolygon[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const idRef = useRef(1);
   const lineIdRef = useRef(1);
   const arcIdRef = useRef(1);
-  const past = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[] }[]>([]);
-  const future = useRef<{ extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[] }[]>([]);
+  const polyIdRef = useRef(1);
+  type HistEntry = { extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[]; polygons: WPolygon[] };
+  const past = useRef<HistEntry[]>([]);
+  const future = useRef<HistEntry[]>([]);
   const [, setHistVer] = useState(0);
 
   const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
 
   function snapshot() {
-    past.current.push({ extra, hidden: new Set(hidden), lines, arcs });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
     if (past.current.length > 100) past.current.shift();
     future.current = [];
     setHistVer((v) => v + 1);
   }
   function undo() {
     if (!past.current.length) return;
-    future.current.push({ extra, hidden: new Set(hidden), lines, arcs });
+    future.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
     const prev = past.current.pop()!;
     setExtra(prev.extra);
     setHidden(prev.hidden);
     setLines(prev.lines);
     setArcs(prev.arcs);
+    setPolygons(prev.polygons);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
   function redo() {
     if (!future.current.length) return;
-    past.current.push({ extra, hidden: new Set(hidden), lines, arcs });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
     const next = future.current.pop()!;
     setExtra(next.extra);
     setHidden(next.hidden);
     setLines(next.lines);
     setArcs(next.arcs);
+    setPolygons(next.polygons);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
@@ -113,7 +118,8 @@ export function CogoWorkspace({
       { id: `${a.id}-e`, name: "", east: a.cE + a.radius, north: a.cN },
       { id: `${a.id}-w`, name: "", east: a.cE - a.radius, north: a.cN },
     ]);
-    frameOn([...visible, ...linePts, ...arcPts]);
+    const polyPts: WPoint[] = polygons.flatMap((p) => p.points.map((v, i) => ({ id: `${p.id}-${i}`, name: "", east: v.east, north: v.north })));
+    frameOn([...visible, ...linePts, ...arcPts, ...polyPts]);
   }
 
   function frameOn(pts: WPoint[]) {
@@ -132,6 +138,10 @@ export function CogoWorkspace({
       const drop = new Set(result.replaceLineIds);
       setLines((ls) => ls.filter((l) => !drop.has(l.id)));
     }
+    if (result.replacePolygonIds?.length) {
+      const drop = new Set(result.replacePolygonIds);
+      setPolygons((ps) => ps.filter((p) => !drop.has(p.id)));
+    }
     if (result.points?.length) {
       setExtra((e) => [...e, ...result.points!.map((p, i) => ({ id: `tool-${Date.now()}-${idRef.current + i}`, ...p }))]);
       idRef.current += result.points.length;
@@ -143,6 +153,10 @@ export function CogoWorkspace({
     if (result.arcs?.length) {
       setArcs((as) => [...as, ...result.arcs!.map((a, i) => ({ id: `arc-${Date.now()}-${arcIdRef.current + i}`, ...a }))]);
       arcIdRef.current += result.arcs.length;
+    }
+    if (result.polygons?.length) {
+      setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: `poly-${Date.now()}-${polyIdRef.current + i}`, ...p }))]);
+      polyIdRef.current += result.polygons.length;
     }
   }
 
@@ -243,6 +257,7 @@ export function CogoWorkspace({
             Work station active — {visible.length} point(s)
             {lines.length > 0 ? `, ${lines.length} line(s)` : ""}
             {arcs.length > 0 ? `, ${arcs.length} arc(s)` : ""}
+            {polygons.length > 0 ? `, ${polygons.length} polygon(s)` : ""}
           </span>
         )}
       </div>
@@ -288,13 +303,16 @@ export function CogoWorkspace({
           </div>
 
           {/* Row 3 — registry-driven COGO point-construction tools */}
-          <CogoDrawingToolbar points={visible} lines={lines} category="point" onResult={addToolResult} />
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="point" onResult={addToolResult} />
 
           {/* Row 4 — registry-driven COGO line-construction tools */}
-          <CogoDrawingToolbar points={visible} lines={lines} category="line" onResult={addToolResult} />
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="line" onResult={addToolResult} />
 
           {/* Row 5 — registry-driven COGO curve-construction tools */}
-          <CogoDrawingToolbar points={visible} lines={lines} category="curve" onResult={addToolResult} />
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="curve" onResult={addToolResult} />
+
+          {/* Row 6 — registry-driven COGO polygon-construction tools */}
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="polygon" onResult={addToolResult} />
 
           <svg
             ref={svgRef}
@@ -307,6 +325,16 @@ export function CogoWorkspace({
             onPointerLeave={() => (pan.current = null)}
             onWheel={onWheel}
           >
+            {polygons.map((p) => (
+              <polygon
+                key={p.id}
+                points={p.points.map((v) => toScreen(v.east, v.north).join(",")).join(" ")}
+                fill="#f59e0b"
+                fillOpacity={0.15}
+                stroke="#d97706"
+                strokeWidth={1.4}
+              />
+            ))}
             {lines.map((l) => {
               const [x1, y1] = toScreen(l.aE, l.aN);
               const [x2, y2] = toScreen(l.bE, l.bN);
@@ -328,7 +356,7 @@ export function CogoWorkspace({
                 />
               );
             })}
-            {visible.length === 0 && lines.length === 0 && arcs.length === 0 ? (
+            {visible.length === 0 && lines.length === 0 && arcs.length === 0 && polygons.length === 0 ? (
               <text x={W / 2} y={H / 2} textAnchor="middle" className="fill-slate-400 text-sm">
                 Import points, or use "Add point" to place one here
               </text>

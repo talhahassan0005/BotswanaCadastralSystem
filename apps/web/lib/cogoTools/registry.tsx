@@ -10,6 +10,7 @@ import type { ToolDef } from "./types";
 import * as pt from "./pointTools";
 import * as ln from "./lineTools";
 import * as cv from "./curveTools";
+import * as pg from "./polygonTools";
 
 const POINT_TOOLS: ToolDef[] = [
   {
@@ -343,9 +344,87 @@ const CURVE_TOOLS: ToolDef[] = [
   },
 ];
 
-// Future phases (Polygon/Traverse/Query/Annotation/Edit) append their
-// category arrays here — the toolbar and TOOL_REGISTRY don't change shape.
-export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS, ...CURVE_TOOLS];
+const POLYGON_TOOLS: ToolDef[] = [
+  {
+    id: "draw-polygon",
+    category: "polygon",
+    label: "Draw Polygon",
+    description: "Build a closed polygon (closed traverse) from a list of already-plotted point names, in boundary order.",
+    icon: iconDrawPolygon,
+    fields: [
+      { key: "pointNames", label: "Vertices in order — one point name per line", type: "textarea" },
+      { key: "name", label: "Polygon name (optional)", type: "text" },
+    ],
+    run: pg.drawPolygon,
+  },
+  {
+    id: "auto-close-boundary",
+    category: "polygon",
+    label: "Auto-close Boundary",
+    description: "Adds the missing closing segment from the last point of an open chain back to its first point.",
+    icon: iconAutoClose,
+    fields: [
+      { key: "firstPoint", label: "First point of the chain", type: "point" },
+      { key: "lastPoint", label: "Last point of the chain", type: "point" },
+      { key: "name", label: "Closing line name (optional)", type: "text" },
+    ],
+    run: pg.autoCloseBoundary,
+  },
+  {
+    id: "calculate-area",
+    category: "polygon",
+    label: "Calculate Area",
+    description: "Area, hectares and perimeter of an already-drawn polygon.",
+    icon: iconCalcArea,
+    fields: [{ key: "polygon", label: "Polygon", type: "polygon" }],
+    run: pg.calculatePolygonArea,
+  },
+  {
+    id: "split-polygon",
+    category: "polygon",
+    label: "Split Polygon",
+    description: "Splits a polygon into two along the chord between two of its own vertices.",
+    icon: iconSplitPolygon,
+    fields: [
+      { key: "polygon", label: "Polygon", type: "polygon" },
+      { key: "vertexA", label: "First split vertex", type: "point" },
+      { key: "vertexB", label: "Second split vertex", type: "point" },
+      { key: "nameA", label: "First piece name (optional)", type: "text" },
+      { key: "nameB", label: "Second piece name (optional)", type: "text" },
+    ],
+    run: pg.splitPolygon,
+  },
+  {
+    id: "merge-polygons",
+    category: "polygon",
+    label: "Merge Polygons",
+    description: "Merges two polygons that share a boundary edge into one outer ring.",
+    icon: iconMergePolygons,
+    fields: [
+      { key: "polygonA", label: "First polygon", type: "polygon" },
+      { key: "polygonB", label: "Second polygon", type: "polygon" },
+      { key: "name", label: "Merged polygon name (optional)", type: "text" },
+    ],
+    run: pg.mergePolygons,
+  },
+  {
+    id: "offset-polygon",
+    category: "polygon",
+    label: "Offset / Buffer Polygon",
+    description: "Moves every vertex outward (or inward) along its corner bisector by a given distance.",
+    icon: iconOffsetPolygon,
+    fields: [
+      { key: "polygon", label: "Polygon", type: "polygon" },
+      { key: "offset", label: "Offset (m, + outward / − inward)", type: "number" },
+      { key: "name", label: "Result polygon name (optional)", type: "text" },
+    ],
+    run: pg.offsetPolygon,
+  },
+];
+
+// Future phases (Traverse/Query/Annotation/Edit) append their category arrays
+// here — the toolbar and TOOL_REGISTRY don't change shape.
+export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS, ...CURVE_TOOLS, ...POLYGON_TOOLS];
 
 function iconAddPoint(c: string) {
   return (
@@ -539,6 +618,55 @@ function iconFillet(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M3 4v9a8 8 0 0 0 8 8h9" />
       <path d="M3 13a8 8 0 0 1 8-8" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+function iconDrawPolygon(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 9l7-6 9 4-3 11-13 2z" fill={c} fillOpacity="0.12" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function iconAutoClose(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6v9l16 3V9z" strokeDasharray="0" />
+      <path d="M4 15l7-11" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+function iconCalcArea(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.6">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.18" />
+      <text x="12" y="14" fontSize="7" fill={c} stroke="none" textAnchor="middle">A</text>
+    </svg>
+  );
+}
+function iconSplitPolygon(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" />
+      <path d="M8 4.5L16 17" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+function iconMergePolygons(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 10l5-6 6 2-1 8-7 2z" fillOpacity="0" />
+      <path d="M10 6l6-2 5 6-2 8-6 2-2-6z" fillOpacity="0" />
+      <circle cx="10" cy="12" r="1.4" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconOffsetPolygon(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M6 8l6-3 6 3-2 8-8 2z" />
+      <path d="M3 5l7-3.5 7 3.5-2.3 9.3L3 13z" strokeDasharray="2 2" opacity="0.7" />
     </svg>
   );
 }

@@ -44,7 +44,15 @@ export interface WArc {
   sweep: 0 | 1;
 }
 
-export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "select";
+/** A closed polygon — an ordered, self-contained snapshot of its vertices
+ *  (not live-linked to the points it was built from). */
+export interface WPolygon {
+  id: string;
+  name?: string;
+  points: { name: string; east: number; north: number }[];
+}
+
+export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select";
 
 export interface FieldDef {
   key: string;
@@ -61,6 +69,8 @@ export interface ToolContext {
   points: WPoint[];
   /** Lines currently drawn on the work station canvas. */
   lines: WLine[];
+  /** Polygons currently drawn on the work station canvas. */
+  polygons: WPolygon[];
 }
 
 export type NewArc = Omit<WArc, "id">;
@@ -79,10 +89,13 @@ export interface ToolResult {
   points?: { name: string; east: number; north: number }[];
   lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
   arcs?: NewArc[];
+  polygons?: { name?: string; points: { name: string; east: number; north: number }[] }[];
   /** Existing line ids this result replaces (e.g. Fillet trims the two source
    *  lines back to their new tangent points) — removed before the new lines/
    *  arcs above are added. */
   replaceLineIds?: string[];
+  /** Existing polygon ids this result replaces (e.g. Split/Merge Polygon). */
+  replacePolygonIds?: string[];
   /** Human-readable read-out for tools that report a value rather than geometry
    *  (e.g. a Query tool's angle or distance). Shown in the form modal on success. */
   message?: string;
