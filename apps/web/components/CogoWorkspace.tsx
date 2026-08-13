@@ -10,12 +10,13 @@
 
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
+import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
+import type { WPoint } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
 const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not a pan
 
-type WPoint = { id: string; name: string; east: number; north: number };
 type DraftTool = "select" | "addpoint";
 
 const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element }[] = [
@@ -240,6 +241,16 @@ export function CogoWorkspace({
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton label="Zoom to extents" onClick={zoomExtents} icon={iconZoomExtents} />
           </div>
+
+          {/* Row 3 — registry-driven COGO point-construction tools */}
+          <CogoDrawingToolbar
+            points={visible}
+            category="point"
+            onResult={(pts) => {
+              snapshot();
+              setExtra((e) => [...e, ...pts.map((p, i) => ({ id: `tool-${Date.now()}-${i}`, ...p }))]);
+            }}
+          />
 
           <svg
             ref={svgRef}
