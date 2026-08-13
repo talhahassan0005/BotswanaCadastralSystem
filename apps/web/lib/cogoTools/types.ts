@@ -52,6 +52,15 @@ export interface WPolygon {
   points: { name: string; east: number; north: number }[];
 }
 
+/** A text annotation placed at a world coordinate. */
+export interface WText {
+  id: string;
+  text: string;
+  east: number;
+  north: number;
+  size: number;
+}
+
 export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select";
 
 export interface FieldDef {
@@ -90,6 +99,7 @@ export interface ToolResult {
   lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
   arcs?: NewArc[];
   polygons?: { name?: string; points: { name: string; east: number; north: number }[] }[];
+  texts?: { text: string; east: number; north: number; size?: number }[];
   /** Existing line ids this result replaces (e.g. Fillet trims the two source
    *  lines back to their new tangent points) — removed before the new lines/
    *  arcs above are added. */

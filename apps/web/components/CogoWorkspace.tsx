@@ -11,13 +11,13 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
-import type { ToolResult, WArc, WLine, WPoint, WPolygon } from "@/lib/cogoTools/types";
+import type { ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
 
 const W = 720;
 const H = 460;
 const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not a pan
 
-type DraftTool = "select" | "addpoint";
+type DraftTool = "select" | "addpoint" | "move";
 
 const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element }[] = [
   { id: "inverse", label: "Forward / Inverse", icon: iconInverse },
@@ -54,15 +54,19 @@ export function CogoWorkspace({
   const [draftTool, setDraftTool] = useState<DraftTool>("select");
   const [extra, setExtra] = useState<WPoint[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [moving, setMoving] = useState<string | null>(null); // point picked up by the Move tool, awaiting drop
+  const [snapEnabled, setSnapEnabled] = useState(false);
   const [lines, setLines] = useState<WLine[]>([]);
   const [arcs, setArcs] = useState<WArc[]>([]);
   const [polygons, setPolygons] = useState<WPolygon[]>([]);
+  const [texts, setTexts] = useState<WText[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const idRef = useRef(1);
   const lineIdRef = useRef(1);
   const arcIdRef = useRef(1);
   const polyIdRef = useRef(1);
-  type HistEntry = { extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[]; polygons: WPolygon[] };
+  const textIdRef = useRef(1);
+  type HistEntry = { extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[]; polygons: WPolygon[]; texts: WText[] };
   const past = useRef<HistEntry[]>([]);
   const future = useRef<HistEntry[]>([]);
   const [, setHistVer] = useState(0);
@@ -70,32 +74,34 @@ export function CogoWorkspace({
   const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
 
   function snapshot() {
-    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     if (past.current.length > 100) past.current.shift();
     future.current = [];
     setHistVer((v) => v + 1);
   }
   function undo() {
     if (!past.current.length) return;
-    future.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
+    future.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     const prev = past.current.pop()!;
     setExtra(prev.extra);
     setHidden(prev.hidden);
     setLines(prev.lines);
     setArcs(prev.arcs);
     setPolygons(prev.polygons);
+    setTexts(prev.texts);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
   function redo() {
     if (!future.current.length) return;
-    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons });
+    past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     const next = future.current.pop()!;
     setExtra(next.extra);
     setHidden(next.hidden);
     setLines(next.lines);
     setArcs(next.arcs);
     setPolygons(next.polygons);
+    setTexts(next.texts);
     setSelected(null);
     setHistVer((v) => v + 1);
   }
@@ -119,7 +125,8 @@ export function CogoWorkspace({
       { id: `${a.id}-w`, name: "", east: a.cE - a.radius, north: a.cN },
     ]);
     const polyPts: WPoint[] = polygons.flatMap((p) => p.points.map((v, i) => ({ id: `${p.id}-${i}`, name: "", east: v.east, north: v.north })));
-    frameOn([...visible, ...linePts, ...arcPts, ...polyPts]);
+    const textPts: WPoint[] = texts.map((t) => ({ id: t.id, name: "", east: t.east, north: t.north }));
+    frameOn([...visible, ...linePts, ...arcPts, ...polyPts, ...textPts]);
   }
 
   function frameOn(pts: WPoint[]) {
@@ -158,6 +165,13 @@ export function CogoWorkspace({
       setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: `poly-${Date.now()}-${polyIdRef.current + i}`, ...p }))]);
       polyIdRef.current += result.polygons.length;
     }
+    if (result.texts?.length) {
+      setTexts((ts) => [
+        ...ts,
+        ...result.texts!.map((t, i) => ({ ...t, id: `text-${Date.now()}-${textIdRef.current + i}`, size: t.size ?? 12 })),
+      ]);
+      textIdRef.current += result.texts.length;
+    }
   }
 
   // Auto-frame the imported points whenever the point set changes size (e.g. a
@@ -192,6 +206,35 @@ export function CogoWorkspace({
     return best;
   }
 
+  const SNAP_PX = 10;
+  /** Snap-to-point (exact), else snap-to-nearest-line (foot of perpendicular),
+   *  else snap-to-grid (nearest metre) — all gated behind the Snap toggle. */
+  function snapWorld(wx: number, wy: number): [number, number] {
+    if (!snapEnabled) return [wx, wy];
+    const [sx, sy] = toScreen(wx, wy);
+    let bestD = SNAP_PX * SNAP_PX;
+    let bestPt: [number, number] | null = null;
+    for (const p of visible) {
+      const [x, y] = toScreen(p.east, p.north);
+      const d = (x - sx) ** 2 + (y - sy) ** 2;
+      if (d <= bestD) { bestD = d; bestPt = [p.east, p.north]; }
+    }
+    if (bestPt) return bestPt;
+    for (const l of lines) {
+      const [x1, y1] = toScreen(l.aE, l.aN);
+      const [x2, y2] = toScreen(l.bE, l.bN);
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx * dx + dy * dy;
+      let t = len2 > 0 ? ((sx - x1) * dx + (sy - y1) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const px = x1 + t * dx, py = y1 + t * dy;
+      const d = (px - sx) ** 2 + (py - sy) ** 2;
+      if (d <= bestD) { bestD = d; bestPt = toWorld(px, py); }
+    }
+    if (bestPt) return bestPt;
+    return [Math.round(wx), Math.round(wy)];
+  }
+
   function onPointerMove(ev: RPointerEvent<SVGSVGElement>) {
     const [vbx, vby] = eventToVb(ev);
     const [e, n] = toWorld(vbx, vby);
@@ -213,11 +256,28 @@ export function CogoWorkspace({
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
       if (draftTool === "addpoint") {
-        const [wx, wy] = toWorld(vbx, vby);
+        const [wx, wy] = snapWorld(...toWorld(vbx, vby));
         const name = window.prompt("Point name", `New${idRef.current}`) ?? `New${idRef.current}`;
         idRef.current += 1;
         snapshot();
         setExtra((e) => [...e, { id: `new-${Date.now()}-${idRef.current}`, name, east: wx, north: wy }]);
+      } else if (draftTool === "move") {
+        if (!moving) {
+          const hit = nearestVisible(vbx, vby);
+          if (hit) { setMoving(hit.id); setSelected(hit.id); }
+        } else {
+          const [wx, wy] = snapWorld(...toWorld(vbx, vby));
+          snapshot();
+          if (moving.startsWith("imp-")) {
+            const orig = basePoints.find((p) => p.id === moving);
+            setHidden((h) => new Set(h).add(moving));
+            setExtra((e) => [...e, { id: `moved-${Date.now()}`, name: orig?.name ?? "Moved", east: wx, north: wy }]);
+          } else {
+            setExtra((e) => e.map((p) => (p.id === moving ? { ...p, east: wx, north: wy } : p)));
+          }
+          setMoving(null);
+          setSelected(null);
+        }
       } else {
         const hit = nearestVisible(vbx, vby);
         setSelected(hit?.id ?? null);
@@ -258,6 +318,7 @@ export function CogoWorkspace({
             {lines.length > 0 ? `, ${lines.length} line(s)` : ""}
             {arcs.length > 0 ? `, ${arcs.length} arc(s)` : ""}
             {polygons.length > 0 ? `, ${polygons.length} polygon(s)` : ""}
+            {texts.length > 0 ? `, ${texts.length} label(s)` : ""}
           </span>
         )}
       </div>
@@ -294,12 +355,24 @@ export function CogoWorkspace({
               onClick={() => setDraftTool("addpoint")}
               icon={iconAddPoint}
             />
+            <DraftButton
+              active={draftTool === "move"}
+              label="Move point (click to pick up, click again to drop)"
+              onClick={() => { setDraftTool("move"); setMoving(null); }}
+              icon={iconMove}
+            />
             <DraftButton label="Delete selected point" onClick={deleteSelected} disabled={!selected} icon={iconDelete} />
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton label="Undo" onClick={undo} disabled={!past.current.length} icon={iconUndo} />
             <DraftButton label="Redo" onClick={redo} disabled={!future.current.length} icon={iconRedo} />
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton label="Zoom to extents" onClick={zoomExtents} icon={iconZoomExtents} />
+            <DraftButton
+              active={snapEnabled}
+              label="Snap to point / line / grid"
+              onClick={() => setSnapEnabled((s) => !s)}
+              icon={iconSnap}
+            />
           </div>
 
           {/* Row 3 — registry-driven COGO point-construction tools */}
@@ -314,11 +387,20 @@ export function CogoWorkspace({
           {/* Row 6 — registry-driven COGO polygon-construction tools */}
           <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="polygon" onResult={addToolResult} />
 
+          {/* Row 7 — registry-driven traverse & adjustment tools (same computeTraverse() engine as the COGO Engine tab) */}
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="traverse" onResult={addToolResult} />
+
+          {/* Row 8 — registry-driven query tools (read-only) */}
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="query" onResult={addToolResult} />
+
+          {/* Row 9 — registry-driven annotation tools */}
+          <CogoDrawingToolbar points={visible} lines={lines} polygons={polygons} category="annotation" onResult={addToolResult} />
+
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
             className="w-full touch-none bg-slate-50"
-            style={{ cursor: draftTool === "addpoint" ? "crosshair" : pan.current ? "grabbing" : "default" }}
+            style={{ cursor: draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default" }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -356,7 +438,15 @@ export function CogoWorkspace({
                 />
               );
             })}
-            {visible.length === 0 && lines.length === 0 && arcs.length === 0 && polygons.length === 0 ? (
+            {texts.map((t) => {
+              const [x, y] = toScreen(t.east, t.north);
+              return (
+                <text key={t.id} x={x} y={y} fontSize={t.size} className="fill-slate-800 font-medium">
+                  {t.text}
+                </text>
+              );
+            })}
+            {visible.length === 0 && lines.length === 0 && arcs.length === 0 && polygons.length === 0 && texts.length === 0 ? (
               <text x={W / 2} y={H / 2} textAnchor="middle" className="fill-slate-400 text-sm">
                 Import points, or use "Add point" to place one here
               </text>
@@ -378,7 +468,13 @@ export function CogoWorkspace({
 
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
             <span>
-              {draftTool === "addpoint" ? "Click to place a point" : "Click a point to select · Drag to pan · Scroll to zoom"}
+              {draftTool === "addpoint"
+                ? `Click to place a point${snapEnabled ? " (snap on)" : ""}`
+                : draftTool === "move"
+                ? moving
+                  ? `Click where to drop it${snapEnabled ? " (snap on)" : ""}`
+                  : "Click a point to pick it up"
+                : "Click a point to select · Drag to pan · Scroll to zoom"}
             </span>
             <span className="font-mono">
               Y = {cursor ? cursor.e.toFixed(3) : "—"}&nbsp;&nbsp;X = {cursor ? cursor.n.toFixed(3) : "—"}
@@ -503,6 +599,22 @@ function iconZoomExtents(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx="12" cy="12" r="1.6" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconMove(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M12 3v18M3 12h18" />
+      <path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconSnap(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 4v4M4 4h4M20 4v4M20 4h-4M4 20v-4M4 20h4M20 20v-4M20 20h-4" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="2" fill={c} stroke="none" />
     </svg>
   );
 }

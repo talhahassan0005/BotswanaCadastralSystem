@@ -11,6 +11,9 @@ import * as pt from "./pointTools";
 import * as ln from "./lineTools";
 import * as cv from "./curveTools";
 import * as pg from "./polygonTools";
+import * as tv from "./traverseTools";
+import * as qy from "./queryTools";
+import * as an from "./annotationTools";
 
 const POINT_TOOLS: ToolDef[] = [
   {
@@ -422,9 +425,177 @@ const POLYGON_TOOLS: ToolDef[] = [
   },
 ];
 
-// Future phases (Traverse/Query/Annotation/Edit) append their category arrays
-// here — the toolbar and TOOL_REGISTRY don't change shape.
-export const TOOL_REGISTRY: ToolDef[] = [...POINT_TOOLS, ...LINE_TOOLS, ...CURVE_TOOLS, ...POLYGON_TOOLS];
+const LEGS_FIELD = { key: "legs", label: "Legs — one per line: bearing, distance[, name]", type: "textarea" as const, default: "0.00.00, 50" };
+
+const TRAVERSE_TOOLS: ToolDef[] = [
+  {
+    id: "traverse-input",
+    category: "traverse",
+    label: "Traverse Input",
+    description: "Plot a sequential bearing/distance traverse from a start point (unadjusted). Closed or open only — link traverses use the main COGO Engine tab.",
+    icon: iconTraverseInput,
+    fields: [
+      { key: "startPoint", label: "Start point", type: "point" },
+      LEGS_FIELD,
+      { key: "type", label: "Type", type: "select", options: [{ value: "closed", label: "Closed loop" }, { value: "open", label: "Open" }] },
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: tv.traverseInput,
+  },
+  {
+    id: "closure-check",
+    category: "traverse",
+    label: "Closure Check",
+    description: "Linear misclosure and relative precision of a closed-loop traverse, without plotting it.",
+    icon: iconClosureCheck,
+    fields: [
+      { key: "startPoint", label: "Start point", type: "point" },
+      LEGS_FIELD,
+    ],
+    run: tv.closureCheck,
+  },
+  {
+    id: "bowditch-adjustment",
+    category: "traverse",
+    label: "Bowditch (Compass Rule) Adjustment",
+    description: "Adjusts a closed-loop traverse by the Bowditch rule and plots the corrected points.",
+    icon: iconBowditch,
+    fields: [
+      { key: "startPoint", label: "Start point", type: "point" },
+      LEGS_FIELD,
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: tv.bowditchAdjustment,
+  },
+  {
+    id: "transit-adjustment",
+    category: "traverse",
+    label: "Transit Rule Adjustment",
+    description: "Adjusts a closed-loop traverse by the Transit rule and plots the corrected points.",
+    icon: iconTransitRule,
+    fields: [
+      { key: "startPoint", label: "Start point", type: "point" },
+      LEGS_FIELD,
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: tv.transitAdjustment,
+  },
+  {
+    id: "lsq-adjustment",
+    category: "traverse",
+    label: "Least Squares Adjustment",
+    description: "Adjusts a closed-loop traverse by least squares and plots the corrected points.",
+    icon: iconLsq,
+    fields: [
+      { key: "startPoint", label: "Start point", type: "point" },
+      LEGS_FIELD,
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: tv.leastSquaresAdjustment,
+  },
+];
+
+const QUERY_TOOLS: ToolDef[] = [
+  {
+    id: "inverse-2points",
+    category: "query",
+    label: "Inverse Between 2 Points",
+    description: "Bearing and distance from point A to point B.",
+    icon: iconQueryInverse,
+    fields: [
+      { key: "pointA", label: "Point A", type: "point" },
+      { key: "pointB", label: "Point B", type: "point" },
+    ],
+    run: qy.inverseBetweenPoints,
+  },
+  {
+    id: "point-info",
+    category: "query",
+    label: "Point Info Lookup",
+    description: "Name and coordinates of a plotted point.",
+    icon: iconPointInfo,
+    fields: [{ key: "point", label: "Point", type: "point" }],
+    run: qy.pointInfoLookup,
+  },
+  {
+    id: "angle-3points",
+    category: "query",
+    label: "Angle Between 3 Points",
+    description: "The angle at a vertex point between rays to two other points.",
+    icon: iconAngle3,
+    fields: [
+      { key: "vertex", label: "Vertex (angle measured here)", type: "point" },
+      { key: "pointA", label: "First point", type: "point" },
+      { key: "pointB", label: "Second point", type: "point" },
+    ],
+    run: qy.angleBetween3Points,
+  },
+];
+
+const LABEL_SIZE_FIELD = { key: "size", label: "Text size", type: "number" as const, default: "12" };
+
+const ANNOTATION_TOOLS: ToolDef[] = [
+  {
+    id: "point-label",
+    category: "annotation",
+    label: "Point Label",
+    description: "Places a text label at a point showing its name (and optionally coordinates).",
+    icon: iconPointLabel,
+    fields: [
+      { key: "point", label: "Point", type: "point" },
+      { key: "format", label: "Format", type: "select", options: [{ value: "coords", label: "Name + coordinates" }, { value: "name", label: "Name only" }] },
+      LABEL_SIZE_FIELD,
+    ],
+    run: an.pointLabel,
+  },
+  {
+    id: "line-label",
+    category: "annotation",
+    label: "Line Label",
+    description: "Places a bearing + distance label at a line's midpoint.",
+    icon: iconLineLabel,
+    fields: [
+      { key: "line", label: "Line", type: "line" },
+      LABEL_SIZE_FIELD,
+    ],
+    run: an.lineLabel,
+  },
+  {
+    id: "area-label",
+    category: "annotation",
+    label: "Area Label",
+    description: "Places an area (hectares) label at a polygon's centroid.",
+    icon: iconAreaLabel,
+    fields: [
+      { key: "polygon", label: "Polygon", type: "polygon" },
+      LABEL_SIZE_FIELD,
+    ],
+    run: an.areaLabel,
+  },
+  {
+    id: "text-note",
+    category: "annotation",
+    label: "Text / Note",
+    description: "Places free-form note text anchored at a point.",
+    icon: iconTextNote,
+    fields: [
+      { key: "point", label: "Anchor point", type: "point" },
+      { key: "text", label: "Note text", type: "text" },
+      LABEL_SIZE_FIELD,
+    ],
+    run: an.noteTool,
+  },
+];
+
+export const TOOL_REGISTRY: ToolDef[] = [
+  ...POINT_TOOLS,
+  ...LINE_TOOLS,
+  ...CURVE_TOOLS,
+  ...POLYGON_TOOLS,
+  ...TRAVERSE_TOOLS,
+  ...QUERY_TOOLS,
+  ...ANNOTATION_TOOLS,
+];
 
 function iconAddPoint(c: string) {
   return (
@@ -667,6 +838,115 @@ function iconOffsetPolygon(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M6 8l6-3 6 3-2 8-8 2z" />
       <path d="M3 5l7-3.5 7 3.5-2.3 9.3L3 13z" strokeDasharray="2 2" opacity="0.7" />
+    </svg>
+  );
+}
+
+function iconTraverseInput(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 20l4-10 6 3 8-9" strokeLinejoin="round" />
+      <circle cx="3" cy="20" r="1.4" fill={c} stroke="none" />
+      <circle cx="7" cy="10" r="1.4" fill={c} stroke="none" />
+      <circle cx="13" cy="13" r="1.4" fill={c} stroke="none" />
+      <circle cx="21" cy="4" r="1.4" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconClosureCheck(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 12a8 8 0 1 1 3 6.2" />
+      <path d="M4 12l6 2M4 12l2-6" strokeLinecap="round" />
+      <path d="M15 9l2 2 4-4" strokeWidth="2" />
+    </svg>
+  );
+}
+function iconBowditch(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 18l5-9 6 2 5-8" strokeDasharray="2 2" opacity="0.5" />
+      <path d="M4 18l4.5-8 6 1.7 4.5-6.7" />
+    </svg>
+  );
+}
+function iconTransitRule(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 18l5-9 6 2 5-8" strokeDasharray="2 2" opacity="0.5" />
+      <path d="M4 18l4 -8.3 6 1.4 4.5-6.4" />
+      <path d="M3 4h4M3 4v4" strokeWidth="1.3" />
+    </svg>
+  );
+}
+function iconLsq(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 20L21 4" strokeDasharray="2 2" />
+      <circle cx="6" cy="16" r="1.5" fill={c} stroke="none" />
+      <circle cx="11" cy="13" r="1.5" fill={c} stroke="none" />
+      <circle cx="15" cy="9" r="1.5" fill={c} stroke="none" />
+      <circle cx="19" cy="7" r="1.5" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconQueryInverse(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="5" cy="19" r="1.8" />
+      <circle cx="19" cy="5" r="1.8" />
+      <path d="M6.3 17.7L17.7 6.3" />
+      <text x="9" y="10" fontSize="7" fill={c} stroke="none">?</text>
+    </svg>
+  );
+}
+function iconPointInfo(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8v.01" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconAngle3(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 20L4 4M4 20l16-6" />
+      <path d="M4 13a7 7 0 0 1 6.8-2" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+function iconPointLabel(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="5" cy="19" r="1.8" fill={c} stroke="none" />
+      <rect x="9" y="4" width="12" height="7" rx="1.5" />
+      <path d="M9 7h8M9 9h5" strokeWidth="1.2" />
+    </svg>
+  );
+}
+function iconLineLabel(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 19L21 5" />
+      <rect x="7" y="9" width="11" height="5" rx="1" fill="#fff" />
+      <path d="M9 11.5h7" strokeWidth="1.2" />
+    </svg>
+  );
+}
+function iconAreaLabel(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.6">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.1" />
+      <text x="12" y="14" fontSize="6" fill={c} stroke="none" textAnchor="middle">ha</text>
+    </svg>
+  );
+}
+function iconTextNote(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="4" y="4" width="16" height="14" rx="1.5" />
+      <path d="M7 8h10M7 11h10M7 14h6" strokeWidth="1.3" />
     </svg>
   );
 }
