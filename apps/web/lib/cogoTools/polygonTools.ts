@@ -6,7 +6,7 @@
 
 import { inverse, polygonArea, type Point } from "@/lib/server/geometry";
 import { normalizeDeg } from "@/lib/server/angles";
-import type { ToolResult, WPoint, WPolygon } from "./types";
+import type { ToolContext, ToolResult, WPoint, WPolygon } from "./types";
 
 type Vtx = { name: string; east: number; north: number };
 
@@ -172,4 +172,35 @@ export function offsetPolygon(v: Record<string, any>): ToolResult {
     return { name: cur.name, east: cur.east + miter * Math.sin(b), north: cur.north + miter * Math.cos(b) };
   });
   return { polygons: [{ name: v.name || `${poly.name || "Poly"} offset`, points: out }] };
+}
+
+const NAME_PATTERN = /^([A-Za-z]+)0*(\d+)$/;
+
+/** Scans every plotted point's name for a "letter-prefix + number" pattern
+ *  (e.g. A1, A2, A3 / C1..C5) and auto-builds one closed plot per prefix,
+ *  ordering vertices by ascending number (gaps allowed — A1, A3, A7 is still
+ *  one plot). Prefixes with fewer than 3 matching points are skipped (not
+ *  enough vertices for a polygon), silently — mixed reference-mark names that
+ *  don't match the pattern at all are ignored too. */
+export function autoGroupIntoPlots(_v: Record<string, any>, ctx: ToolContext): ToolResult {
+  const groups = new Map<string, { num: number; point: WPoint }[]>();
+  for (const p of ctx.points) {
+    const m = p.name.trim().match(NAME_PATTERN);
+    if (!m) continue;
+    const prefix = m[1].toUpperCase();
+    const num = parseInt(m[2], 10);
+    if (!groups.has(prefix)) groups.set(prefix, []);
+    groups.get(prefix)!.push({ num, point: p });
+  }
+
+  const polygons: NonNullable<ToolResult["polygons"]> = [];
+  for (const [prefix, items] of groups) {
+    if (items.length < 3) continue;
+    items.sort((a, b) => a.num - b.num);
+    polygons.push({ name: prefix, points: items.map((i) => ({ name: i.point.name, east: i.point.east, north: i.point.north })) });
+  }
+  if (!polygons.length) {
+    throw new Error('No points matched a "letter + number" name pattern with at least 3 points per letter (e.g. A1, A2, A3).');
+  }
+  return { polygons };
 }

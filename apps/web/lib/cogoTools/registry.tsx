@@ -423,6 +423,15 @@ const POLYGON_TOOLS: ToolDef[] = [
     ],
     run: pg.offsetPolygon,
   },
+  {
+    id: "auto-group-plots",
+    category: "polygon",
+    label: "Auto-group into Plots",
+    description: 'Scans every plotted point\'s name for a letter + number pattern (A1, A2, A3… / C1..C5) and builds one closed plot per letter, ordered by ascending number. Groups with fewer than 3 points are skipped.',
+    icon: iconAutoGroup,
+    fields: [],
+    run: pg.autoGroupIntoPlots,
+  },
 ];
 
 const LEGS_FIELD = { key: "legs", label: "Legs — one per line: bearing, distance[, name]", type: "textarea" as const, default: "0.00.00, 50" };
@@ -838,6 +847,16 @@ function iconOffsetPolygon(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M6 8l6-3 6 3-2 8-8 2z" />
       <path d="M3 5l7-3.5 7 3.5-2.3 9.3L3 13z" strokeDasharray="2 2" opacity="0.7" />
+    </svg>
+  );
+}
+
+function iconAutoGroup(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6l4-1.5 4 1.5-1.3 5.3L4 11z" fill={c} fillOpacity="0.15" />
+      <path d="M14 12l4-1.5 4 1.5-1.3 5.3-4.7.7z" fill={c} fillOpacity="0.15" />
+      <path d="M9 20a3 3 0 1 0 0.01 0" strokeDasharray="1.5 1.5" />
     </svg>
   );
 }
