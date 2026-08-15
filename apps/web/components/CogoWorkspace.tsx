@@ -37,6 +37,21 @@ const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element 
   { id: "transform", label: "Transform", icon: iconTransform },
 ];
 
+// Edit Tools (Select/Add/Move/Delete/Undo/Redo/Zoom/Snap) stay permanently
+// visible — they're used constantly regardless of which drawing category is
+// open. Everything else is tabbed so the toolbar doesn't read as a wall of icons.
+const TOOL_GROUPS = [
+  { id: "cogo", label: "COGO Calculators" },
+  { id: "point", label: "Point Tools" },
+  { id: "line", label: "Line Tools" },
+  { id: "curve", label: "Curve Tools" },
+  { id: "polygon", label: "Polygon Tools" },
+  { id: "traverse", label: "Traverse & Adjustment" },
+  { id: "query", label: "Query Tools" },
+  { id: "annotation", label: "Annotation Tools" },
+] as const;
+type ToolGroupId = (typeof TOOL_GROUPS)[number]["id"];
+
 export function CogoWorkspace({
   points,
   onTool,
@@ -45,6 +60,10 @@ export function CogoWorkspace({
   onTool: (id: ToolId) => void;
 }) {
   const [active, setActive] = useState(false);
+  // Which toolbar group's icon row is showing — a tab bar instead of 9
+  // permanently-stacked rows, so the toolbar reads as one screenful instead
+  // of a wall of icons (client req 2026-08-16).
+  const [activeGroup, setActiveGroup] = useState<ToolGroupId>("point");
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
@@ -552,23 +571,8 @@ export function CogoWorkspace({
 
       {active && (
         <>
-          {/* Row 1 — COGO calculation tools */}
-          <ToolGroup label="COGO Calculators">
-            {COGO_TOOLS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onTool(t.id)}
-                title={t.label}
-                aria-label={t.label}
-                className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
-              >
-                {t.icon("currentColor")}
-              </button>
-            ))}
-          </ToolGroup>
-
-          {/* Row 2 — drafting basics on the plotted points */}
+          {/* Always-visible — used constantly regardless of which drawing
+              category tab (below) is open. */}
           <ToolGroup label="Edit Tools">
             <DraftButton
               active={draftTool === "select"}
@@ -602,55 +606,85 @@ export function CogoWorkspace({
             />
           </ToolGroup>
 
-          {/* Row 3 — registry-driven COGO point-construction tools. "Add Point"
-              is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
-          <CogoDrawingToolbar
-            category="point"
-            onOpenTool={openFormTool}
-            interceptIds={{ "add-point": () => activateDrawTool("addpoint") }}
-            activeId={draftTool === "addpoint" ? "add-point" : null}
-          />
+          {/* Tab bar — pick a category to see just its icons, instead of every
+              category's row stacked on screen at once (client req 2026-08-16). */}
+          <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-2 py-1">
+            {TOOL_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => setActiveGroup(g.id)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${
+                  activeGroup === g.id ? "bg-brand text-white" : "text-slate-500 hover:bg-slate-100"
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Row 4 — registry-driven COGO line-construction tools. Line,
-              Polyline and Offset are click-to-draw; Bearing&Distance/Extend/
-              Trim/Perpendicular open the command bar (need exact numeric input). */}
-          <CogoDrawingToolbar
-            category="line"
-            onOpenTool={openFormTool}
-            interceptIds={{
-              "line-between-points": () => activateDrawTool("line"),
-              "polyline-traverse": () => activateDrawTool("polyline"),
-              "offset-line": () => activateDrawTool("offset"),
-            }}
-            activeId={draftTool === "line" ? "line-between-points" : draftTool === "polyline" ? "polyline-traverse" : draftTool === "offset" ? "offset-line" : null}
-          />
-
-          {/* Row 5 — registry-driven COGO curve-construction tools. Arc by 3
-              Points is click-to-draw; the numeric-input arc methods + Fillet open the command bar. */}
-          <CogoDrawingToolbar
-            category="curve"
-            onOpenTool={openFormTool}
-            interceptIds={{ "arc-3points": () => activateDrawTool("curve") }}
-            activeId={draftTool === "curve" ? "arc-3points" : null}
-          />
-
-          {/* Row 6 — registry-driven COGO polygon-construction tools. Draw
-              Polygon is click-to-draw; Split/Merge/Offset/Area open the command bar. */}
-          <CogoDrawingToolbar
-            category="polygon"
-            onOpenTool={openFormTool}
-            interceptIds={{ "draw-polygon": () => activateDrawTool("polygon") }}
-            activeId={draftTool === "polygon" ? "draw-polygon" : null}
-          />
-
-          {/* Row 7 — registry-driven traverse & adjustment tools (same computeTraverse() engine as the COGO Engine tab) */}
-          <CogoDrawingToolbar category="traverse" onOpenTool={openFormTool} />
-
-          {/* Row 8 — registry-driven query tools (read-only) */}
-          <CogoDrawingToolbar category="query" onOpenTool={openFormTool} />
-
-          {/* Row 9 — registry-driven annotation tools */}
-          <CogoDrawingToolbar category="annotation" onOpenTool={openFormTool} />
+          {/* Only the selected tab's tools render below. */}
+          {activeGroup === "cogo" && (
+            <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+              {COGO_TOOLS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onTool(t.id)}
+                  title={t.label}
+                  aria-label={t.label}
+                  className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
+                >
+                  {t.icon("currentColor")}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* "Add Point" is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
+          {activeGroup === "point" && (
+            <CogoDrawingToolbar
+              category="point"
+              onOpenTool={openFormTool}
+              interceptIds={{ "add-point": () => activateDrawTool("addpoint") }}
+              activeId={draftTool === "addpoint" ? "add-point" : null}
+            />
+          )}
+          {/* Line, Polyline and Offset are click-to-draw; Bearing&Distance/
+              Extend/Trim/Perpendicular open the command bar (need exact numeric input). */}
+          {activeGroup === "line" && (
+            <CogoDrawingToolbar
+              category="line"
+              onOpenTool={openFormTool}
+              interceptIds={{
+                "line-between-points": () => activateDrawTool("line"),
+                "polyline-traverse": () => activateDrawTool("polyline"),
+                "offset-line": () => activateDrawTool("offset"),
+              }}
+              activeId={draftTool === "line" ? "line-between-points" : draftTool === "polyline" ? "polyline-traverse" : draftTool === "offset" ? "offset-line" : null}
+            />
+          )}
+          {/* Arc by 3 Points is click-to-draw; the numeric-input arc methods + Fillet open the command bar. */}
+          {activeGroup === "curve" && (
+            <CogoDrawingToolbar
+              category="curve"
+              onOpenTool={openFormTool}
+              interceptIds={{ "arc-3points": () => activateDrawTool("curve") }}
+              activeId={draftTool === "curve" ? "arc-3points" : null}
+            />
+          )}
+          {/* Draw Polygon is click-to-draw; Split/Merge/Offset/Area open the command bar. */}
+          {activeGroup === "polygon" && (
+            <CogoDrawingToolbar
+              category="polygon"
+              onOpenTool={openFormTool}
+              interceptIds={{ "draw-polygon": () => activateDrawTool("polygon") }}
+              activeId={draftTool === "polygon" ? "draw-polygon" : null}
+            />
+          )}
+          {/* Same computeTraverse() engine as the COGO Engine tab. */}
+          {activeGroup === "traverse" && <CogoDrawingToolbar category="traverse" onOpenTool={openFormTool} />}
+          {activeGroup === "query" && <CogoDrawingToolbar category="query" onOpenTool={openFormTool} />}
+          {activeGroup === "annotation" && <CogoDrawingToolbar category="annotation" onOpenTool={openFormTool} />}
 
           {(draftTool === "polyline" || draftTool === "polygon") && (
             <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
