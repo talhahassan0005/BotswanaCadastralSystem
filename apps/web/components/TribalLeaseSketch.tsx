@@ -2,6 +2,7 @@
 
 import { forwardRef } from "react";
 import { fmtCoord, fmtDist, toDotted, type DiagramPoint, type DiagramSide } from "./SgDiagram";
+import { wrapSvgWords } from "@/lib/wrapSvgText";
 
 /** Land Board "Tribal Lease Sketch" — compiled by Mapping from a base map. */
 export interface LeaseMeta {
@@ -38,8 +39,20 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
   ref
 ) {
   const W = 1000;
-  const H = 1400;
-  const figureLetters = points.map((p) => p.name ?? "?").join("");
+  const figureLetters = points.map((p) => p.name ?? "?").join(" ");
+  // On a beacon-heavy plot this declaration line is too long for the sheet
+  // width — wrap it instead of running past the border. figureLetters needs
+  // to stay space-separated (not the old no-space join) so it can wrap.
+  const DECL_FONT = 12;
+  const DECL_LINE_H = 17;
+  const declLines = wrapSvgWords(
+    ["The", "figure", ...figureLetters.split(" "), "represents", "about", Math.round(meta.areaM2).toLocaleString(), "square", "metres", "of", "land"],
+    W - 80,
+    DECL_FONT
+  );
+  const declExtraH = (declLines.length - 1) * DECL_LINE_H;
+  // The sheet grows to fit extra wrapped declaration lines instead of clipping the witness blocks.
+  const H = 1400 + declExtraH;
 
   // ---- Boundary sketch figure transform (bottom-right panel) ----
   const bs = { x: 560, y: 760, w: 400, h: 230 };
@@ -172,23 +185,23 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
 
       {/* ---------- Declaration ---------- */}
       <g fontSize={12}>
-        <text x={40} y={1075}>
-          The figure {figureLetters} represents about {Math.round(meta.areaM2).toLocaleString()} square metres of land
-        </text>
-        <text x={40} y={1098} fontSize={11}>
+        {declLines.map((line, i) => (
+          <text key={i} x={40} y={1075 + i * DECL_LINE_H}>{line}</text>
+        ))}
+        <text x={40} y={1098 + declExtraH} fontSize={11}>
           This sketch is to be submitted to the land board in support of an application for tribal lease. It does
         </text>
-        <text x={40} y={1114} fontSize={11}>not imply any rights to the land.</text>
+        <text x={40} y={1114 + declExtraH} fontSize={11}>not imply any rights to the land.</text>
       </g>
 
       {/* ---------- Witness blocks (with signature / name / date lines) ---------- */}
       <g fontSize={11}>
-        <line x1={40} y1={1135} x2={W - 40} y2={1135} stroke="black" strokeWidth={0.7} />
-        <text x={48} y={1158} fontWeight="bold">LAND BOARD WITNESSES</text>
-        <text x={W / 2 + 20} y={1158} fontWeight="bold">LESSEE WITNESSES</text>
-        <line x1={W / 2} y1={1135} x2={W / 2} y2={1300} stroke="black" strokeWidth={0.5} />
+        <line x1={40} y1={1135 + declExtraH} x2={W - 40} y2={1135 + declExtraH} stroke="black" strokeWidth={0.7} />
+        <text x={48} y={1158 + declExtraH} fontWeight="bold">LAND BOARD WITNESSES</text>
+        <text x={W / 2 + 20} y={1158 + declExtraH} fontWeight="bold">LESSEE WITNESSES</text>
+        <line x1={W / 2} y1={1135 + declExtraH} x2={W / 2} y2={1300 + declExtraH} stroke="black" strokeWidth={0.5} />
         {[0, 1].map((i) => {
-          const y = 1196 + i * 52;
+          const y = 1196 + declExtraH + i * 52;
           return (
             <g key={`w${i}`}>
               <line x1={48} y1={y} x2={W / 2 - 30} y2={y} stroke="black" strokeWidth={0.4} />
@@ -198,7 +211,7 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
             </g>
           );
         })}
-        <line x1={40} y1={1300} x2={W - 40} y2={1300} stroke="black" strokeWidth={0.7} />
+        <line x1={40} y1={1300 + declExtraH} x2={W - 40} y2={1300 + declExtraH} stroke="black" strokeWidth={0.7} />
       </g>
     </svg>
   );

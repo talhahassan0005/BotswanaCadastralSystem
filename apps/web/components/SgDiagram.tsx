@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
+import { wrapSvgWords } from "@/lib/wrapSvgText";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -188,6 +189,16 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const polyPoints = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
   const figureLetters =
     points.map((p) => p.name ?? "?").join(" ") + (meta.closed ? ` ${points[0]?.name ?? ""}` : "");
+  // On a beacon-heavy parcel this line is too long for the sheet width — wrap
+  // it onto as many lines as it needs instead of running past the border.
+  const FIGURE_FONT = 15;
+  const FIGURE_LINE_H = 22;
+  const figureLines = wrapSvgWords(
+    ["THE", "FIGURE", ...figureLetters.split(/\s+/).filter(Boolean), "REPRESENTS", ...areaText(meta.areaHa).split(" "), "OF", "LAND", "CALLED"],
+    tw - 60,
+    FIGURE_FONT
+  );
+  const figureExtraH = (figureLines.length - 1) * FIGURE_LINE_H;
   // "LAND CALLED" line carries the village/location too, e.g. "LOT 323 CHARLESHILL".
   const landCalled =
     meta.location && !meta.lotName.toUpperCase().includes(meta.location.trim().toUpperCase())
@@ -331,25 +342,27 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       <g textAnchor="middle">
-        <text x={VB_W / 2} y={1200} fontSize={15} fontWeight="bold">
-          THE FIGURE {figureLetters} REPRESENTS {areaText(meta.areaHa)} OF LAND CALLED
-        </text>
-        <text x={VB_W / 2} y={1224} fontSize={15} fontWeight="bold" textDecoration="underline">{landCalled}</text>
-        <text x={VB_W / 2} y={1247} fontSize={14}>({meta.parent})</text>
-        <text x={VB_W / 2} y={1269} fontSize={14}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
+        {figureLines.map((line, i) => (
+          <text key={i} x={VB_W / 2} y={1200 + i * FIGURE_LINE_H} fontSize={FIGURE_FONT} fontWeight="bold">
+            {line}
+          </text>
+        ))}
+        <text x={VB_W / 2} y={1224 + figureExtraH} fontSize={15} fontWeight="bold" textDecoration="underline">{landCalled}</text>
+        <text x={VB_W / 2} y={1247 + figureExtraH} fontSize={14}>({meta.parent})</text>
+        <text x={VB_W / 2} y={1269 + figureExtraH} fontSize={14}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
       </g>
 
       {/* ===================== certification + surveyor ===================== */}
-      <text x={tx + 20} y={1330} fontSize={14}>
+      <text x={tx + 20} y={1330 + figureExtraH} fontSize={14}>
         {meta.kind === "compiled"
           ? `Compiled from ${dash(meta.sourceRef) || "—"}`
           : meta.kind === "framed"
           ? `Framed from ${dash(meta.sourceRef) || "—"}`
           : "Surveyed"}
       </text>
-      <text x={tx + 40} y={1352} fontSize={14}>IN {meta.surveyedDate} BY ME,</text>
-      <text x={VB_W - 300} y={1350} fontSize={14} fontWeight="bold">{meta.surveyor}</text>
-      <text x={VB_W - 300} y={1370} fontSize={12}>LAND SURVEYOR</text>
+      <text x={tx + 40} y={1352 + figureExtraH} fontSize={14}>IN {meta.surveyedDate} BY ME,</text>
+      <text x={VB_W - 300} y={1350 + figureExtraH} fontSize={14} fontWeight="bold">{meta.surveyor}</text>
+      <text x={VB_W - 300} y={1370 + figureExtraH} fontSize={12}>LAND SURVEYOR</text>
 
       {/* ===================== DEDUCTIONS + deeds/annexure table ===================== */}
       <text x={tx + 4} y={annTop - 6} fontSize={9}>DEDUCTIONS FROM THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
