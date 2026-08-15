@@ -12,6 +12,19 @@
 import { TOOL_REGISTRY } from "@/lib/cogoTools/registry";
 import type { ToolDef } from "@/lib/cogoTools/types";
 
+/** Human-readable heading shown above each row so a dense icon strip reads as
+ *  a named group instead of one unbroken row of unlabelled buttons. */
+const CATEGORY_LABELS: Record<ToolDef["category"], string> = {
+  point: "Point Tools",
+  line: "Line Tools",
+  curve: "Curve Tools",
+  polygon: "Polygon Tools",
+  traverse: "Traverse & Adjustment",
+  query: "Query Tools",
+  annotation: "Annotation Tools",
+  edit: "Edit Tools",
+};
+
 export function CogoDrawingToolbar({
   category = "point",
   interceptIds,
@@ -31,21 +44,26 @@ export function CogoDrawingToolbar({
   const tools = TOOL_REGISTRY.filter((t) => t.category === category);
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
-      {tools.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => (interceptIds?.[t.id] ? interceptIds[t.id]() : onOpenTool(t))}
-          title={t.label}
-          aria-label={t.label}
-          className={`grid h-9 w-9 place-items-center rounded-md transition ${
-            activeId === t.id ? "bg-brand text-white" : "text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
-          }`}
-        >
-          {t.icon("currentColor")}
-        </button>
-      ))}
+    <div className="border-b border-slate-200 bg-slate-50">
+      <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {CATEGORY_LABELS[category]}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5">
+        {tools.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => (interceptIds?.[t.id] ? interceptIds[t.id]() : onOpenTool(t))}
+            title={t.label}
+            aria-label={t.label}
+            className={`grid h-9 w-9 place-items-center rounded-md transition ${
+              activeId === t.id ? "bg-brand text-white" : "text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
+            }`}
+          >
+            {t.icon("currentColor")}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

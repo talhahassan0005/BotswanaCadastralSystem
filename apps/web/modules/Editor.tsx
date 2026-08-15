@@ -773,8 +773,6 @@ export function Editor() {
             <Button variant="ghost" onClick={redo} disabled={!future.current.length}>↷ Redo</Button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="ghost" onClick={() => zoomBy(1.25)}>Zoom in</Button>
-            <Button variant="ghost" onClick={() => zoomBy(1 / 1.25)}>Zoom out</Button>
             <Button variant="ghost" onClick={fit}>Fit</Button>
             <Button variant="ghost" onClick={clearAll}>Clear</Button>
           </div>
@@ -798,6 +796,7 @@ export function Editor() {
       {/* Canvas */}
       <Card title="Drafting Canvas" className="overflow-hidden">
         <p className="mb-2 text-xs text-slate-500">Wheel = zoom · drag empty space = pan · coordinates in survey metres (E, N).</p>
+        <div className="relative">
         <div tabIndex={0} onKeyDown={onKeyDown} className="rounded-lg border border-slate-200 outline-none focus:ring-1 focus:ring-brand">
           <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg"
             style={{ width: "100%", height: "auto", background: "#f8fafc", touchAction: "none", cursor: cursorMode }}
@@ -845,6 +844,27 @@ export function Editor() {
             </g>
           </svg>
         </div>
+
+        {/* Floating zoom control (client req 2026-08-14 — the old sidebar text
+            buttons, buried below layer/style/undo controls, were too easy to
+            miss or mistake for a nearby button). Sits directly on the canvas
+            like a map app's zoom control, so it's unmistakable. */}
+        <div className="absolute right-3 top-3 flex flex-col gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-1 shadow-md">
+          <button type="button" onClick={() => zoomBy(1.25)} title="Zoom in" aria-label="Zoom in"
+            className="grid h-8 w-8 place-items-center rounded-md text-slate-700 hover:bg-slate-100">
+            {zoomIcon("in")}
+          </button>
+          <button type="button" onClick={() => zoomBy(1 / 1.25)} title="Zoom out" aria-label="Zoom out"
+            className="grid h-8 w-8 place-items-center rounded-md text-slate-700 hover:bg-slate-100">
+            {zoomIcon("out")}
+          </button>
+          <div className="mx-1 h-px bg-slate-200" />
+          <button type="button" onClick={fit} title="Fit to screen" aria-label="Fit to screen"
+            className="grid h-8 w-8 place-items-center rounded-md text-slate-700 hover:bg-slate-100">
+            {fitIcon()}
+          </button>
+        </div>
+        </div>
       </Card>
     </div>
   );
@@ -872,6 +892,23 @@ export function Editor() {
 // ---------------------------------------------------------------------------
 // Rendering helpers
 // ---------------------------------------------------------------------------
+function zoomIcon(dir: "in" | "out") {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5L21 21" strokeLinecap="round" />
+      <path d="M7.5 10.5h6" strokeLinecap="round" />
+      {dir === "in" && <path d="M10.5 7.5v6" strokeLinecap="round" />}
+    </svg>
+  );
+}
+function fitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function symbolGlyph(kind: SymbolKind, x: number, y: number, c: string, lw: number) {
   const sw = Math.max(1, lw);
   switch (kind) {

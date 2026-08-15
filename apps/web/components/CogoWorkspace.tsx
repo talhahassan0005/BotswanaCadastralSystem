@@ -8,7 +8,7 @@
 // provided. A second toolbar row adds basic drafting (add/delete point,
 // undo/redo, zoom-extents) so the canvas isn't view-only.
 
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type WheelEvent as RWheelEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
@@ -553,7 +553,7 @@ export function CogoWorkspace({
       {active && (
         <>
           {/* Row 1 — COGO calculation tools */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+          <ToolGroup label="COGO Calculators">
             {COGO_TOOLS.map((t) => (
               <button
                 key={t.id}
@@ -566,10 +566,10 @@ export function CogoWorkspace({
                 {t.icon("currentColor")}
               </button>
             ))}
-          </div>
+          </ToolGroup>
 
           {/* Row 2 — drafting basics on the plotted points */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+          <ToolGroup label="Edit Tools">
             <DraftButton
               active={draftTool === "select"}
               label="Select / move"
@@ -593,14 +593,14 @@ export function CogoWorkspace({
             <DraftButton label="Undo" onClick={undo} disabled={!past.current.length} icon={iconUndo} />
             <DraftButton label="Redo" onClick={redo} disabled={!future.current.length} icon={iconRedo} />
             <div className="mx-1 h-5 w-px bg-slate-200" />
-            <DraftButton label="Zoom to extents" onClick={zoomExtents} icon={iconZoomExtents} />
+            <DraftButton label="Zoom to extents (fit all)" onClick={zoomExtents} icon={iconZoomExtents} />
             <DraftButton
               active={snapEnabled}
               label="Snap to point / line / grid"
               onClick={() => setSnapEnabled((s) => !s)}
               icon={iconSnap}
             />
-          </div>
+          </ToolGroup>
 
           {/* Row 3 — registry-driven COGO point-construction tools. "Add Point"
               is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
@@ -870,6 +870,18 @@ export function CogoWorkspace({
   );
 }
 
+/** Labelled icon-row wrapper — same "heading above the strip" pattern as
+ *  CogoDrawingToolbar's registry-driven rows, so a dense toolbar reads as
+ *  named groups instead of one unbroken run of icons (client req 2026-08-14). */
+function ToolGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="border-b border-slate-200 bg-slate-50">
+      <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5">{children}</div>
+    </div>
+  );
+}
+
 function DraftButton({
   label,
   onClick,
@@ -995,10 +1007,12 @@ function iconMove(c: string) {
   );
 }
 function iconSnap(c: string) {
+  // A magnet — distinct from the corner-bracket "zoom to extents" icon so the
+  // two aren't mistaken for each other (client feedback 2026-08-14).
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M4 4v4M4 4h4M20 4v4M20 4h-4M4 20v-4M4 20h4M20 20v-4M20 20h-4" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="2" fill={c} stroke="none" />
+      <path d="M6 4v8a6 6 0 0 0 12 0V4" strokeLinecap="round" />
+      <path d="M6 4h5v5H6zM13 4h5v5h-5z" fill={c} fillOpacity="0.15" />
     </svg>
   );
 }
