@@ -30,7 +30,12 @@ const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not 
 // are click-to-draw tools (client req 2026-08-14): clicking their toolbar
 // icon (Rows 3-6) activates the mode below instead of opening a modal; the
 // user then clicks points directly on the canvas, like a CAD tool.
-type DraftTool = "select" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
+// "select-box"/"select-lasso" (client req 2026-08-20, Part 10) are area
+// multi-select modes — drag a rectangle / freehand outline to add every
+// point (and, for the box, every fully-enclosed line/polygon) to the
+// current canvasSelection, instead of the plain "select" tool's one-at-a-
+// time click-to-add.
+type DraftTool = "select" | "select-box" | "select-lasso" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
 const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element }[] = [
@@ -144,6 +149,12 @@ export function CogoWorkspace({
   const [polygons, setPolygons] = useState<WPolygon[]>([]);
   const [texts, setTexts] = useState<WText[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // ---- Multi-select (Part 10) — click-to-add / box-drag / lasso-drag build
+  // up this set; Delete and (for points) Move act on it as a group. ----
+  const [canvasSelection, setCanvasSelection] = useState<Set<string>>(new Set());
+  const [rectSelect, setRectSelect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
+  const groupMoveOrigin = useRef<Record<string, { east: number; north: number }> | null>(null);
   const idRef = useRef(1);
   const lineIdRef = useRef(1);
   const arcIdRef = useRef(1);
@@ -189,10 +200,35 @@ export function CogoWorkspace({
     setHistVer((v) => v + 1);
   }
   function deleteSelected() {
+    // Part 10e: a multi-selection (box/lasso/click-to-add) deletes as a
+    // group, across points/lines/polygons together; otherwise fall back to
+    // the single last-clicked point (unchanged single-item behavior).
+    if (canvasSelection.size) {
+      snapshot();
+      const lineIds = new Set<string>(), polyIds = new Set<string>(), pointIds = new Set<string>();
+      canvasSelection.forEach((id) => {
+        if (lines.some((l) => l.id === id)) lineIds.add(id);
+        else if (polygons.some((p) => p.id === id)) polyIds.add(id);
+        else pointIds.add(id);
+      });
+      if (pointIds.size) {
+        setExtra((e) => e.filter((p) => !pointIds.has(p.id)));
+        setHidden((h) => { const n = new Set(h); pointIds.forEach((id) => n.add(id)); return n; });
+      }
+      if (lineIds.size) setLines((ls) => ls.filter((l) => !lineIds.has(l.id)));
+      if (polyIds.size) setPolygons((ps) => ps.filter((p) => !polyIds.has(p.id)));
+      setCanvasSelection(new Set());
+      setSelected(null);
+      return;
+    }
     if (!selected) return;
     snapshot();
     if (selected.startsWith("imp-")) setHidden((h) => new Set(h).add(selected));
     else setExtra((e) => e.filter((p) => p.id !== selected));
+    setSelected(null);
+  }
+  function clearSelection() {
+    setCanvasSelection(new Set());
     setSelected(null);
   }
   function zoomBy(f: number) {
@@ -322,6 +358,9 @@ export function CogoWorkspace({
     setDiagramPrompt(null);
     setCoordEntry(null);
     setMoveCoordInput(null);
+    setRectSelect(null);
+    setLassoPath(null);
+    groupMoveOrigin.current = null;
     setDraftTool(tool);
   }
 
@@ -610,6 +649,18 @@ export function CogoWorkspace({
     }
     return inside;
   }
+  /** Screen-space point-in-polygon test — used by the freehand lasso select
+   *  (Part 10a) to test each point's on-screen position against the dragged
+   *  outline, and unrelated to `pointInPolygon`'s world-coordinate polygons. */
+  function pointInScreenPolygon(sx: number, sy: number, path: { x: number; y: number }[]): boolean {
+    let inside = false;
+    for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+      const a = path[i], b = path[j];
+      const hit = a.y > sy !== b.y > sy && sx < ((b.x - a.x) * (sy - a.y)) / (b.y - a.y) + a.x;
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
   function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
     const [wx, wy] = toWorld(sx, sy);
     const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
@@ -806,16 +857,24 @@ export function CogoWorkspace({
     const [e, n] = toWorld(vbx, vby);
     setCursor({ e, n });
     if (pan.current) {
-      const dx = (vbx - pan.current.vbx) / view.zoom;
-      const dy = (vby - pan.current.vby) / view.zoom;
       pan.current.moved += Math.abs(vbx - pan.current.vbx) + Math.abs(vby - pan.current.vby);
-      setView((v) => ({ ...v, cx: pan.current!.cx - dx, cy: pan.current!.cy + dy }));
+      if (draftTool === "select-box") {
+        setRectSelect((r) => (r ? { ...r, x2: vbx, y2: vby } : r));
+      } else if (draftTool === "select-lasso") {
+        setLassoPath((p) => (p ? [...p, { x: vbx, y: vby }] : p));
+      } else {
+        const dx = (vbx - pan.current.vbx) / view.zoom;
+        const dy = (vby - pan.current.vby) / view.zoom;
+        setView((v) => ({ ...v, cx: pan.current!.cx - dx, cy: pan.current!.cy + dy }));
+      }
     }
   }
   function onPointerDown(ev: RPointerEvent<SVGSVGElement>) {
     svgRef.current?.setPointerCapture(ev.pointerId);
     const [vbx, vby] = eventToVb(ev);
     pan.current = { vbx, vby, cx: view.cx, cy: view.cy, moved: 0 };
+    if (draftTool === "select-box") setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
+    else if (draftTool === "select-lasso") setLassoPath([{ x: vbx, y: vby }]);
   }
   const DRAW_TOOLS: DraftTool[] = ["line", "polyline", "curve", "polygon", "offset"];
 
@@ -883,11 +942,38 @@ export function CogoWorkspace({
       } else if (draftTool === "move") {
         if (!moving) {
           const hit = nearestVisible(vbx, vby);
-          if (hit) { setMoving(hit.id); setSelected(hit.id); setMoveCoordInput({ east: hit.east.toFixed(3), north: hit.north.toFixed(3) }); }
+          if (hit) {
+            setMoving(hit.id);
+            setSelected(hit.id);
+            setMoveCoordInput({ east: hit.east.toFixed(3), north: hit.north.toFixed(3) });
+            // Part 10e: picking up a point that's part of the current
+            // multi-selection moves the whole group together by the same delta.
+            if (canvasSelection.size > 1 && canvasSelection.has(hit.id)) {
+              const origin: Record<string, { east: number; north: number }> = {};
+              visible.forEach((p) => { if (canvasSelection.has(p.id)) origin[p.id] = { east: p.east, north: p.north }; });
+              groupMoveOrigin.current = origin;
+            } else {
+              groupMoveOrigin.current = null;
+            }
+          }
         } else {
           const [wx, wy] = snapWorld(...toWorld(vbx, vby));
           snapshot();
-          if (moving.startsWith("imp-")) {
+          const anchorOrig = groupMoveOrigin.current?.[moving];
+          if (anchorOrig && groupMoveOrigin.current) {
+            const dE = wx - anchorOrig.east, dN = wy - anchorOrig.north;
+            const origin = groupMoveOrigin.current;
+            const impIds = Object.keys(origin).filter((id) => id.startsWith("imp-"));
+            if (impIds.length) setHidden((h) => { const n = new Set(h); impIds.forEach((id) => n.add(id)); return n; });
+            setExtra((e) => {
+              const moved = e.map((p) => (origin[p.id] ? { ...p, east: origin[p.id].east + dE, north: origin[p.id].north + dN } : p));
+              const newImp = impIds.map((id) => {
+                const bp = basePoints.find((p) => p.id === id);
+                return { id: `moved-${Date.now()}-${id}`, name: bp?.name ?? "Moved", east: origin[id].east + dE, north: origin[id].north + dN };
+              });
+              return [...moved, ...newImp];
+            });
+          } else if (moving.startsWith("imp-")) {
             const orig = basePoints.find((p) => p.id === moving);
             setHidden((h) => new Set(h).add(moving));
             setExtra((e) => [...e, { id: `moved-${Date.now()}`, name: orig?.name ?? "Moved", east: wx, north: wy }]);
@@ -897,6 +983,7 @@ export function CogoWorkspace({
           setMoving(null);
           setSelected(null);
           setMoveCoordInput(null);
+          groupMoveOrigin.current = null;
         }
       } else if (draftTool === "line" || draftTool === "curve") {
         const vertex = addVertexPoint(resolveVertex(vbx, vby));
@@ -920,17 +1007,88 @@ export function CogoWorkspace({
             setOffsetInput({ screenX: vbx, screenY: vby, side: cross > 0 ? 1 : -1, value: "" });
           }
         }
+      } else if (tablesOpen && tableTab === "lines") {
+        // Two-way canvas<->table highlight sync (Part 9e) — Lines tab.
+        const hit = nearestLineHit(vbx, vby);
+        setTableAnchor(hit?.id ?? null);
+        setTableSelected(hit ? new Set([hit.id]) : new Set());
+      } else if (tablesOpen && tableTab === "polygons") {
+        // Two-way canvas<->table highlight sync (Part 9e) — Polygons tab.
+        const [wx, wy] = toWorld(vbx, vby);
+        const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
+        setTableAnchor(hit?.id ?? null);
+        setTableSelected(hit ? new Set([hit.id]) : new Set());
       } else {
+        // Click-to-add multi-select (Part 10a/10c/10d): a point or line click
+        // adds to the current selection; a polygon click toggles membership.
         const hit = nearestVisible(vbx, vby);
         setSelected(hit?.id ?? null);
+        if (hit) {
+          setCanvasSelection((s) => new Set(s).add(hit.id));
+        } else {
+          const lineHit = nearestLineHit(vbx, vby);
+          if (lineHit) {
+            setCanvasSelection((s) => new Set(s).add(lineHit.id));
+          } else {
+            const [wx, wy] = toWorld(vbx, vby);
+            const polyHit = polygons.find((p) => pointInPolygon(wx, wy, p));
+            if (polyHit) {
+              setCanvasSelection((s) => {
+                const n = new Set(s);
+                if (n.has(polyHit.id)) n.delete(polyHit.id); else n.add(polyHit.id);
+                return n;
+              });
+            }
+          }
+        }
         if (tablesOpen && tableTab === "points") {
-          // Two-way canvas<->table highlight sync (Part 9e).
+          // Two-way canvas<->table highlight sync (Part 9e) — Points tab.
           setTableAnchor(hit?.id ?? null);
           setTableSelected(hit ? new Set([hit.id]) : new Set());
         }
       }
+    } else if (draftTool === "select-box" && rectSelect) {
+      // Box/rectangle multi-select (Part 10a/10c/10d) — a real drag ended.
+      const x1 = Math.min(rectSelect.x1, rectSelect.x2), x2 = Math.max(rectSelect.x1, rectSelect.x2);
+      const y1 = Math.min(rectSelect.y1, rectSelect.y2), y2 = Math.max(rectSelect.y1, rectSelect.y2);
+      const hitIds = new Set<string>();
+      visible.forEach((p) => {
+        const [sx, sy] = toScreen(p.east, p.north);
+        if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) hitIds.add(p.id);
+      });
+      lines.forEach((l) => {
+        const [ax, ay] = toScreen(l.aE, l.aN);
+        const [bx, by] = toScreen(l.bE, l.bN);
+        if (ax >= x1 && ax <= x2 && ay >= y1 && ay <= y2 && bx >= x1 && bx <= x2 && by >= y1 && by <= y2) hitIds.add(l.id);
+      });
+      polygons.forEach((pg) => {
+        if (!pg.points.length) return;
+        const allIn = pg.points.every((v) => {
+          const [sx, sy] = toScreen(v.east, v.north);
+          return sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2;
+        });
+        if (allIn) hitIds.add(pg.id);
+      });
+      if (hitIds.size) setCanvasSelection((s) => new Set([...s, ...hitIds]));
+      setRectSelect(null);
+    } else if (draftTool === "select-lasso" && lassoPath) {
+      // Freehand lasso multi-select (Part 10a) — points only, per spec.
+      if (lassoPath.length > 2) {
+        const hitIds = new Set<string>();
+        visible.forEach((p) => {
+          const [sx, sy] = toScreen(p.east, p.north);
+          if (pointInScreenPolygon(sx, sy, lassoPath)) hitIds.add(p.id);
+        });
+        if (hitIds.size) setCanvasSelection((s) => new Set([...s, ...hitIds]));
+      }
+      setLassoPath(null);
     }
     pan.current = null;
+    // Safety: a plain click (not a drag) in box/lasso mode falls through to
+    // the click-to-add branch above and never reaches its own finalizer —
+    // clear any leftover zero-size rect/path so it doesn't linger.
+    setRectSelect(null);
+    setLassoPath(null);
   }
   function onDoubleClick() {
     if (draftTool === "polyline" || draftTool === "polygon") finishDraft();
@@ -1020,11 +1178,35 @@ export function CogoWorkspace({
             />
             <DraftButton
               active={draftTool === "move"}
-              label="Move point (click to pick up, click again to drop)"
+              label="Move point (click to pick up, click again to drop — moves the whole selection together if the picked-up point is part of one)"
               onClick={() => activateDrawTool("move")}
               icon={iconMove}
             />
-            <DraftButton label="Delete selected point" onClick={deleteSelected} disabled={!selected} icon={iconDelete} />
+            <div className="mx-1 h-5 w-px bg-slate-200" />
+            <DraftButton
+              active={draftTool === "select-box"}
+              label="Box select — drag a rectangle to select every point/line/polygon inside it"
+              onClick={() => activateDrawTool("select-box")}
+              icon={iconBoxSelect}
+            />
+            <DraftButton
+              active={draftTool === "select-lasso"}
+              label="Lasso select — drag a freehand outline to select every point inside it"
+              onClick={() => activateDrawTool("select-lasso")}
+              icon={iconLassoSelect}
+            />
+            <DraftButton
+              label={`Clear selection${canvasSelection.size ? ` (${canvasSelection.size})` : ""}`}
+              onClick={clearSelection}
+              disabled={!canvasSelection.size && !selected}
+              icon={iconClearSelection}
+            />
+            <DraftButton
+              label={`Delete selected${canvasSelection.size > 1 ? ` (${canvasSelection.size})` : ""}`}
+              onClick={deleteSelected}
+              disabled={!selected && !canvasSelection.size}
+              icon={iconDelete}
+            />
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton label="Undo" onClick={undo} disabled={!past.current.length} icon={iconUndo} />
             <DraftButton label="Redo" onClick={redo} disabled={!future.current.length} icon={iconRedo} />
@@ -1178,7 +1360,13 @@ export function CogoWorkspace({
             viewBox={`0 0 ${W} ${H}`}
             className="w-full touch-none bg-slate-50"
             style={{
-              cursor: diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) || draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default",
+              cursor:
+                diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
+                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso"
+                  ? "crosshair"
+                  : pan.current
+                  ? "grabbing"
+                  : "default",
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -1188,7 +1376,7 @@ export function CogoWorkspace({
             onWheel={onWheel}
           >
             {polygons.map((p) => {
-              const isTableSel = tablesOpen && tableTab === "polygons" && tableSelected.has(p.id);
+              const isTableSel = (tablesOpen && tableTab === "polygons" && tableSelected.has(p.id)) || canvasSelection.has(p.id);
               return (
                 <polygon
                   key={p.id}
@@ -1203,7 +1391,7 @@ export function CogoWorkspace({
             {lines.map((l) => {
               const [x1, y1] = toScreen(l.aE, l.aN);
               const [x2, y2] = toScreen(l.bE, l.bN);
-              const isTableSel = tablesOpen && tableTab === "lines" && tableSelected.has(l.id);
+              const isTableSel = (tablesOpen && tableTab === "lines" && tableSelected.has(l.id)) || canvasSelection.has(l.id);
               return <line key={l.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={isTableSel ? "#dc2626" : "#2563eb"} strokeWidth={isTableSel ? 3 : 1.6} />;
             })}
             {arcs.map((a) => {
@@ -1237,7 +1425,7 @@ export function CogoWorkspace({
             ) : (
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
-                const isSel = p.id === selected || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
+                const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
                 return (
                   <g key={p.id}>
                     <circle cx={x} cy={y} r={isSel ? 6 : 4} fill={isSel ? "#dc2626" : "#059669"} />
@@ -1291,6 +1479,31 @@ export function CogoWorkspace({
                 </g>
               );
             })}
+            {/* Box select rubber-band rectangle (Part 10a/10c/10d). */}
+            {rectSelect && (
+              <rect
+                x={Math.min(rectSelect.x1, rectSelect.x2)}
+                y={Math.min(rectSelect.y1, rectSelect.y2)}
+                width={Math.abs(rectSelect.x2 - rectSelect.x1)}
+                height={Math.abs(rectSelect.y2 - rectSelect.y1)}
+                fill="#2563eb"
+                fillOpacity={0.08}
+                stroke="#2563eb"
+                strokeWidth={1.2}
+                strokeDasharray="4 3"
+              />
+            )}
+            {/* Freehand lasso outline (Part 10a). */}
+            {lassoPath && lassoPath.length > 1 && (
+              <polyline
+                points={lassoPath.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="#2563eb"
+                fillOpacity={0.08}
+                stroke="#2563eb"
+                strokeWidth={1.4}
+                strokeDasharray="4 3"
+              />
+            )}
             {/* Snap highlight: ring around the existing point the cursor would snap to. */}
             {(draftTool === "addpoint" || draftTool === "move" || DRAW_TOOLS.includes(draftTool)) && cursor && (() => {
               const [sx, sy] = toScreen(cursor.e, cursor.n);
@@ -1487,6 +1700,10 @@ export function CogoWorkspace({
                 ? "Click a point on the canvas to start the traverse from"
                 : travChoosingTo
                 ? "Click an existing point — its direction & distance from the current point will be filled in"
+                : draftTool === "select-box"
+                ? "Drag a rectangle to select every point/line/polygon inside it"
+                : draftTool === "select-lasso"
+                ? "Drag a freehand outline to select every point inside it"
                 : draftTool === "addpoint"
                 ? `Click to place a point${snapEnabled ? " (snap on)" : ""}`
                 : draftTool === "move"
@@ -1732,6 +1949,33 @@ function iconMove(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M12 3v18M3 12h18" />
       <path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconBoxSelect(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" />
+      <circle cx="9" cy="9" r="1.3" fill={c} stroke="none" />
+      <circle cx="16" cy="14" r="1.3" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconLassoSelect(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M12 3c4.4 0 8 2.5 8 6s-3 5-6 5c-2 0-2.5 1-2.5 2.2 0 1 .8 1.8 1.8 1.8" strokeDasharray="2.5 2" strokeLinecap="round" />
+      <circle cx="13.3" cy="18" r="1.6" fill={c} stroke="none" />
+      <circle cx="8" cy="10" r="1.3" fill={c} stroke="none" />
+      <circle cx="15" cy="7" r="1.3" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconClearSelection(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
+      <path d="M8 8l8 8M16 8l-8 8" strokeWidth="2" />
     </svg>
   );
 }
