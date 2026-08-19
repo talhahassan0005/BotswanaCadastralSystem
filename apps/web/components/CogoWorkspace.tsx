@@ -12,8 +12,9 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type R
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
-import { inverse } from "@/lib/server/geometry";
-import { formatDms } from "@/lib/server/angles";
+import { forward, inverse } from "@/lib/server/geometry";
+import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
+import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
 import type { ToolDef, ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
@@ -94,6 +95,23 @@ export function CogoWorkspace({
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
+  // ---- side-docked traverse leg-entry panel (Part 6b) — supersedes the
+  // command bar for Line by Bearing&Distance / Polyline-Traverse / Traverse
+  // Input: live preview line while typing, immediate draw + label on Add Leg. ----
+  const [travOpen, setTravOpen] = useState(false);
+  const [travStartPoint, setTravStartPoint] = useState<WPoint | null>(null);
+  const [travFrom, setTravFrom] = useState<WPoint | null>(null);
+  const [travToName, setTravToName] = useState("");
+  const [travDir, setTravDir] = useState("");
+  const [travDist, setTravDist] = useState("");
+  const [travPickingStart, setTravPickingStart] = useState(false);
+  const [travChoosingTo, setTravChoosingTo] = useState(false);
+  const [travPointSource, setTravPointSource] = useState<"table" | "background-point" | "background-line">("table");
+  const [travMemory, setTravMemory] = useState<{ dir: string; dist: string } | null>(null);
+  const [travEditIndex, setTravEditIndex] = useState<number | null>(null);
+  interface TravLeg { point: WPoint; direction: string; distance: string; lineId: string; labelId: string; fromName: string }
+  const [travLegs, setTravLegs] = useState<TravLeg[]>([]);
+  const travIdRef = useRef(1);
   const [lines, setLines] = useState<WLine[]>([]);
   const [arcs, setArcs] = useState<WArc[]>([]);
   const [polygons, setPolygons] = useState<WPolygon[]>([]);
@@ -149,6 +167,9 @@ export function CogoWorkspace({
     if (selected.startsWith("imp-")) setHidden((h) => new Set(h).add(selected));
     else setExtra((e) => e.filter((p) => p.id !== selected));
     setSelected(null);
+  }
+  function zoomBy(f: number) {
+    setView((v) => ({ ...v, zoom: Math.min(50, Math.max(0.01, v.zoom * f)) }));
   }
   function zoomExtents() {
     const linePts: WPoint[] = lines.flatMap((l) => [
@@ -261,6 +282,9 @@ export function CogoWorkspace({
     setMoving(null);
     setRename(null);
     setFormTool(null);
+    setTravOpen(false);
+    setTravPickingStart(false);
+    setTravChoosingTo(false);
     setDraftTool(tool);
   }
   /** Open the command bar for a numeric-input tool, discarding any
@@ -268,6 +292,155 @@ export function CogoWorkspace({
   function openFormTool(tool: ToolDef) {
     activateDrawTool("select");
     setFormTool(tool);
+    setTravOpen(false);
+  }
+
+  // ---- traverse leg-entry panel (Part 6b) ----
+  function openTraversePanel() {
+    activateDrawTool("select");
+    setFormTool(null);
+    setTravOpen(true);
+  }
+  /** Live preview endpoint — recomputed on every render as travDir/travDist
+   *  change, so the dashed preview line updates on every keystroke with no
+   *  extra wiring. Null (no preview) on any unparsable/incomplete input. */
+  const travPreview = (() => {
+    if (!travOpen || !travFrom || !travDir.trim() || !travDist.trim()) return null;
+    try {
+      const brg = parseBearing(travDir);
+      const dist = Number(travDist);
+      if (!Number.isFinite(dist) || dist <= 0) return null;
+      return forward({ east: travFrom.east, north: travFrom.north }, brg, dist);
+    } catch {
+      return null;
+    }
+  })();
+  function travSetStart(v: { east: number; north: number; existingId?: string }) {
+    let p: WPoint;
+    if (v.existingId) {
+      p = visible.find((pp) => pp.id === v.existingId)!;
+    } else {
+      const name = `S${travIdRef.current}`;
+      const id = `travstart-${Date.now()}-${travIdRef.current}`;
+      travIdRef.current += 1;
+      snapshot();
+      setExtra((e) => [...e, { id, name, east: v.east, north: v.north }]);
+      p = { id, name, east: v.east, north: v.north };
+    }
+    setTravStartPoint(p);
+    setTravFrom(p);
+    setTravPickingStart(false);
+  }
+  /** "Choose To": click an existing point instead of typing — back-computes
+   *  the direction/distance from the current from-point to it. */
+  function travChooseTo(v: { east: number; north: number; existingId?: string }) {
+    setTravChoosingTo(false);
+    if (!travFrom) { window.alert("Pick a start point first."); return; }
+    if (!v.existingId) { window.alert("Click an existing point for Choose To."); return; }
+    const target = visible.find((p) => p.id === v.existingId)!;
+    const [brg, dist] = inverse({ east: travFrom.east, north: travFrom.north }, { east: target.east, north: target.north });
+    setTravDir(formatDms(brg));
+    setTravDist(dist.toFixed(3));
+    setTravToName(target.name);
+  }
+  function travEditDirDistHint() {
+    if (travEditIndex == null) window.alert("Click a leg in the list above to edit it.");
+  }
+  function travAddLeg() {
+    if (!travFrom) { window.alert("Pick a start point first (Start Pt)."); return; }
+    if (!travPreview) { window.alert("Enter a valid direction and distance."); return; }
+    const name = travToName.trim() || `T${travIdRef.current}`;
+    const pointId = `trav-${Date.now()}-${travIdRef.current}`;
+    const lineId = `travline-${Date.now()}-${travIdRef.current}`;
+    const labelId = `travlabel-${Date.now()}-${travIdRef.current}`;
+    travIdRef.current += 1;
+    const midE = (travFrom.east + travPreview.east) / 2;
+    const midN = (travFrom.north + travPreview.north) / 2;
+    snapshot();
+    if (travEditIndex != null) {
+      // Editing an already-committed leg: drop it and everything chained after
+      // it, then re-add from here — simplest correct way to cascade the change.
+      const stale = travLegs.slice(travEditIndex);
+      const staleIds = new Set(stale.flatMap((l) => [l.point.id, l.lineId, l.labelId]));
+      setExtra((e) => e.filter((p) => !staleIds.has(p.id)));
+      setLines((ls) => ls.filter((l) => !staleIds.has(l.id)));
+      setTexts((ts) => ts.filter((t) => !staleIds.has(t.id)));
+      setTravLegs((legs) => legs.slice(0, travEditIndex));
+      setTravEditIndex(null);
+    }
+    const newPoint: WPoint = { id: pointId, name, east: travPreview.east, north: travPreview.north };
+    setExtra((e) => [...e, newPoint]);
+    setLines((ls) => [...ls, { id: lineId, aE: travFrom.east, aN: travFrom.north, bE: travPreview.east, bN: travPreview.north }]);
+    setTexts((ts) => [...ts, { id: labelId, text: `${travDir}  ${travDist}m`, east: midE, north: midN, size: 11 }]);
+    setTravLegs((legs) => [...legs, { point: newPoint, direction: travDir, distance: travDist, lineId, labelId, fromName: travFrom.name }]);
+    setTravFrom(newPoint);
+    setTravToName("");
+    setTravDir("");
+    setTravDist("");
+  }
+  function travEditLeg(i: number) {
+    const leg = travLegs[i];
+    const from = i === 0 ? travStartPoint : travLegs[i - 1].point;
+    if (!from) return;
+    setTravFrom(from);
+    setTravToName(leg.point.name);
+    setTravDir(leg.direction);
+    setTravDist(leg.distance);
+    setTravEditIndex(i);
+  }
+  function travUndo() {
+    setTravLegs((legs) => {
+      if (!legs.length) return legs;
+      const last = legs[legs.length - 1];
+      setExtra((e) => e.filter((p) => p.id !== last.point.id));
+      setLines((ls) => ls.filter((l) => l.id !== last.lineId));
+      setTexts((ts) => ts.filter((t) => t.id !== last.labelId));
+      const rest = legs.slice(0, -1);
+      setTravFrom(rest.length ? rest[rest.length - 1].point : travStartPoint);
+      return rest;
+    });
+  }
+  function travClear() {
+    const ids = new Set(travLegs.flatMap((l) => [l.point.id, l.lineId, l.labelId]));
+    if (ids.size) {
+      setExtra((e) => e.filter((p) => !ids.has(p.id)));
+      setLines((ls) => ls.filter((l) => !ids.has(l.id)));
+      setTexts((ts) => ts.filter((t) => !ids.has(t.id)));
+    }
+    setTravLegs([]);
+    setTravFrom(travStartPoint);
+    setTravToName("");
+    setTravDir("");
+    setTravDist("");
+    setTravEditIndex(null);
+  }
+  function travSwapDir() {
+    try {
+      setTravDir(formatDms(normalizeDeg(parseBearing(travDir) + 180)));
+    } catch {
+      /* nothing valid typed yet — ignore */
+    }
+  }
+  function travMemorize() {
+    if (travDir.trim() || travDist.trim()) setTravMemory({ dir: travDir, dist: travDist });
+  }
+  function travRecall() {
+    if (travMemory) { setTravDir(travMemory.dir); setTravDist(travMemory.dist); }
+  }
+  function travCalculate() {
+    if (!travLegs.length) { window.alert("No legs entered yet."); return; }
+    const totalDist = travLegs.reduce((s, l) => s + (Number(l.distance) || 0), 0);
+    const last = travLegs[travLegs.length - 1].point;
+    const closeMsg = travStartPoint
+      ? `  ·  Distance back to start: ${inverse({ east: travStartPoint.east, north: travStartPoint.north }, { east: last.east, north: last.north })[1].toFixed(3)}m`
+      : "";
+    window.alert(`Legs: ${travLegs.length}  ·  Total distance: ${totalDist.toFixed(3)}m${closeMsg}`);
+  }
+  function travClose() {
+    setTravOpen(false);
+    setTravPickingStart(false);
+    setTravChoosingTo(false);
+    setTravEditIndex(null);
   }
   function finishDraftWith(rawPts: DraftPt[]) {
     // A double-click's second click can land on (and snap to) the vertex the
@@ -439,7 +612,15 @@ export function CogoWorkspace({
     const wasClick = !!pan.current && pan.current.moved < CLICK_SLOP_PX;
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
-      if (formTool) {
+      if (travPickingStart) {
+        // Traverse panel's "Start Pt" — the next canvas click sets/replaces
+        // the point the leg-entry chain begins from.
+        travSetStart(resolveVertex(vbx, vby));
+      } else if (travChoosingTo) {
+        // Traverse panel's "Choose To" — click an existing point to back-fill
+        // Direction/Distance instead of typing them.
+        travChooseTo(resolveVertex(vbx, vby));
+      } else if (formTool) {
         // Command bar open (Part 5): clicking a point/line on canvas fills
         // whichever field is focused (or the first empty matching field)
         // instead of doing the normal select/pan/draw behaviour.
@@ -518,11 +699,12 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (formTool) setFormTool(null);
+        if (travOpen) travClose();
+        else if (formTool) setFormTool(null);
         else cancelDraft();
       } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
         e.preventDefault();
@@ -535,7 +717,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool]);
+  }, [draftTool, draft, formTool, travOpen]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -597,6 +779,8 @@ export function CogoWorkspace({
             <DraftButton label="Undo" onClick={undo} disabled={!past.current.length} icon={iconUndo} />
             <DraftButton label="Redo" onClick={redo} disabled={!future.current.length} icon={iconRedo} />
             <div className="mx-1 h-5 w-px bg-slate-200" />
+            <DraftButton label="Zoom in" onClick={() => zoomBy(1.25)} icon={iconZoomIn} />
+            <DraftButton label="Zoom out" onClick={() => zoomBy(1 / 1.25)} icon={iconZoomOut} />
             <DraftButton label="Zoom to extents (fit all)" onClick={zoomExtents} icon={iconZoomExtents} />
             <DraftButton
               active={snapEnabled}
@@ -649,18 +833,22 @@ export function CogoWorkspace({
               activeId={draftTool === "addpoint" ? "add-point" : null}
             />
           )}
-          {/* Line, Polyline and Offset are click-to-draw; Bearing&Distance/
-              Extend/Trim/Perpendicular open the command bar (need exact numeric input). */}
+          {/* Line and Offset are click-to-draw. Line by Bearing&Distance and
+              Polyline/Traverse open the side traverse panel (Part 6b, live
+              preview + immediate leg drawing) instead of the click-to-draw
+              engine or the bottom command bar. Extend/Trim/Perpendicular
+              still open the command bar (need exact numeric input). */}
           {activeGroup === "line" && (
             <CogoDrawingToolbar
               category="line"
               onOpenTool={openFormTool}
               interceptIds={{
                 "line-between-points": () => activateDrawTool("line"),
-                "polyline-traverse": () => activateDrawTool("polyline"),
+                "line-bearing-distance": () => openTraversePanel(),
+                "polyline-traverse": () => openTraversePanel(),
                 "offset-line": () => activateDrawTool("offset"),
               }}
-              activeId={draftTool === "line" ? "line-between-points" : draftTool === "polyline" ? "polyline-traverse" : draftTool === "offset" ? "offset-line" : null}
+              activeId={draftTool === "line" ? "line-between-points" : draftTool === "offset" ? "offset-line" : null}
             />
           )}
           {/* Arc by 3 Points is click-to-draw; the numeric-input arc methods + Fillet open the command bar. */}
@@ -681,8 +869,17 @@ export function CogoWorkspace({
               activeId={draftTool === "polygon" ? "draw-polygon" : null}
             />
           )}
-          {/* Same computeTraverse() engine as the COGO Engine tab. */}
-          {activeGroup === "traverse" && <CogoDrawingToolbar category="traverse" onOpenTool={openFormTool} />}
+          {/* Same computeTraverse() engine as the COGO Engine tab. Traverse
+              Input opens the side leg-entry panel (Part 6b); Closure Check /
+              Bowditch / Transit / Least-Squares open the command bar. */}
+          {activeGroup === "traverse" && (
+            <CogoDrawingToolbar
+              category="traverse"
+              onOpenTool={openFormTool}
+              interceptIds={{ "traverse-input": () => openTraversePanel() }}
+              activeId={travOpen ? "traverse-input" : null}
+            />
+          )}
           {activeGroup === "query" && <CogoDrawingToolbar category="query" onOpenTool={openFormTool} />}
           {activeGroup === "annotation" && <CogoDrawingToolbar category="annotation" onOpenTool={openFormTool} />}
 
@@ -711,13 +908,14 @@ export function CogoWorkspace({
             </div>
           )}
 
-          <div className="relative">
+          <div className="flex items-stretch">
+          <div className="relative min-w-0 flex-1">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
             className="w-full touch-none bg-slate-50"
             style={{
-              cursor: DRAW_TOOLS.includes(draftTool) || draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default",
+              cursor: travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) || draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default",
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -818,6 +1016,22 @@ export function CogoWorkspace({
               const [x, y] = toScreen(hit.east, hit.north);
               return <circle cx={x} cy={y} r={9} fill="none" stroke="#059669" strokeWidth={1.6} />;
             })()}
+            {/* Traverse panel (Part 6b): faint dashed preview of the leg being
+                typed, updating live on every keystroke — before Add Leg commits it. */}
+            {travOpen && travFrom && travPreview && (() => {
+              const [x1, y1] = toScreen(travFrom.east, travFrom.north);
+              const [x2, y2] = toScreen(travPreview.east, travPreview.north);
+              return (
+                <>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0891b2" strokeWidth={1.6} strokeDasharray="6 4" opacity={0.85} />
+                  <circle cx={x2} cy={y2} r={4} fill="none" stroke="#0891b2" strokeWidth={1.6} />
+                </>
+              );
+            })()}
+            {travOpen && travFrom && (() => {
+              const [x, y] = toScreen(travFrom.east, travFrom.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#0891b2" strokeWidth={2} />;
+            })()}
           </svg>
 
           {rename && (
@@ -854,6 +1068,42 @@ export function CogoWorkspace({
           )}
           </div>
 
+          {/* Side-docked traverse leg-entry panel (Part 6b) — sits beside the
+              canvas (never covers it) while a Line by Bearing&Distance /
+              Polyline-Traverse / Traverse Input tool is open. */}
+          {travOpen && (
+            <CogoTraversePanel
+              legs={travLegs}
+              startName={travStartPoint?.name ?? null}
+              fromName={travFrom?.name ?? null}
+              toName={travToName}
+              direction={travDir}
+              distance={travDist}
+              pickingStart={travPickingStart}
+              pointSource={travPointSource}
+              editIndex={travEditIndex}
+              hasMemory={!!travMemory}
+              onToName={setTravToName}
+              onDirection={setTravDir}
+              onDistance={setTravDist}
+              onPointSource={setTravPointSource}
+              onStartPt={() => setTravPickingStart(true)}
+              onChooseTo={() => setTravChoosingTo(true)}
+              onAddLeg={travAddLeg}
+              onSwapDir={travSwapDir}
+              onUndo={travUndo}
+              onClear={travClear}
+              onEditLeg={travEditLeg}
+              onEditDirDist={travEditDirDistHint}
+              onMemorize={travMemorize}
+              onRecall={travRecall}
+              onCalculate={travCalculate}
+              onZoom={zoomExtents}
+              onClose={travClose}
+            />
+          )}
+          </div>
+
           {/* Bottom-docked command bar (Part 5) — numeric-input tools land here
               instead of a centered modal, so the canvas stays visible/pannable
               while typing. Point/line fields can also be filled by clicking
@@ -871,7 +1121,11 @@ export function CogoWorkspace({
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
             <span>
-              {draftTool === "addpoint"
+              {travPickingStart
+                ? "Click a point on the canvas to start the traverse from"
+                : travChoosingTo
+                ? "Click an existing point — its direction & distance from the current point will be filled in"
+                : draftTool === "addpoint"
                 ? `Click to place a point${snapEnabled ? " (snap on)" : ""}`
                 : draftTool === "move"
                 ? moving
@@ -1021,6 +1275,24 @@ function iconRedo(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M17 8h3V5" />
       <path d="M20 8c-2-3-5-4.5-8.5-4.5A8.5 8.5 0 1 0 19.4 15" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconZoomIn(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="2">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5L21 21" strokeLinecap="round" />
+      <path d="M7.5 10.5h6M10.5 7.5v6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconZoomOut(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="2">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5L21 21" strokeLinecap="round" />
+      <path d="M7.5 10.5h6" strokeLinecap="round" />
     </svg>
   );
 }
