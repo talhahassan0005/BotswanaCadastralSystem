@@ -15,6 +15,7 @@ import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoComm
 import { forward, inverse, polygonArea } from "@/lib/server/geometry";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
+import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore } from "@/lib/store";
 import type { CogoLeg, CogoResult } from "@/lib/types";
 import * as curveMath from "@/lib/cogoTools/curveTools";
@@ -101,6 +102,15 @@ export function CogoWorkspace({
   // ---- Move Point by typed Y/X (Part 8f) — once a point is picked up with
   // the Move tool, its coordinates can be typed instead of dragged. ----
   const [moveCoordInput, setMoveCoordInput] = useState<{ east: string; north: string } | null>(null);
+  // ---- Points/Lines/Polygons data table panel (Part 9) ----
+  const [tablesOpen, setTablesOpen] = useState(false);
+  const [tableTab, setTableTab] = useState<"points" | "lines" | "polygons">("points");
+  const [tableSelected, setTableSelected] = useState<Set<string>>(new Set());
+  const [tableAnchor, setTableAnchor] = useState<string | null>(null);
+  const [pointMeta, setPointMeta] = useState<Record<string, PointMeta>>({});
+  const [lineMeta, setLineMeta] = useState<Record<string, LineMeta>>({});
+  const [polygonMeta, setPolygonMeta] = useState<Record<string, PolygonMeta>>({});
+  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; erf: string; area: string } | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
@@ -351,6 +361,63 @@ export function CogoWorkspace({
     setMoving(null);
     setSelected(null);
     setMoveCoordInput(null);
+  }
+
+  // ---- Points/Lines/Polygons data table panel (Part 9) ----
+  function currentTableIds(): string[] {
+    if (tableTab === "points") return visible.map((p) => p.id);
+    if (tableTab === "lines") return lines.map((l) => l.id);
+    return polygons.map((p) => p.id);
+  }
+  function tableRowMouseDown(id: string, shiftKey: boolean) {
+    if (shiftKey && tableAnchor) {
+      const ids = currentTableIds();
+      const ai = ids.indexOf(tableAnchor), bi = ids.indexOf(id);
+      if (ai !== -1 && bi !== -1) {
+        const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+        setTableSelected(new Set(ids.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    setTableAnchor(id);
+    setTableSelected(new Set([id]));
+    if (tableTab === "points") setSelected(id); // two-way sync: table click also highlights the point on canvas
+  }
+  function tableRowMouseEnter(id: string) {
+    if (!tableAnchor) return;
+    const ids = currentTableIds();
+    const ai = ids.indexOf(tableAnchor), bi = ids.indexOf(id);
+    if (ai === -1 || bi === -1) return;
+    const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+    setTableSelected(new Set(ids.slice(lo, hi + 1)));
+  }
+  function deleteTableSelection() {
+    if (!tableSelected.size) return;
+    snapshot();
+    if (tableTab === "points") {
+      setExtra((e) => e.filter((p) => !tableSelected.has(p.id)));
+      setHidden((h) => { const n = new Set(h); tableSelected.forEach((id) => n.add(id)); return n; });
+    } else if (tableTab === "lines") {
+      setLines((ls) => ls.filter((l) => !tableSelected.has(l.id)));
+    } else {
+      setPolygons((ps) => ps.filter((p) => !tableSelected.has(p.id)));
+    }
+    setTableSelected(new Set());
+    setTableAnchor(null);
+    setSelected(null);
+  }
+  function openPolygonAttrs(id: string) {
+    const poly = polygons.find((p) => p.id === id);
+    if (!poly) return;
+    const m = polygonMeta[id] ?? {};
+    const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
+    setPolygonAttrDialog({ id, position: m.position ?? "", erf: m.erf ?? "", area: `${(areaM2 / 10000).toFixed(4)} ha` });
+  }
+  function savePolygonAttrs() {
+    if (!polygonAttrDialog) return;
+    const { id, position, erf } = polygonAttrDialog;
+    setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, erf } }));
+    setPolygonAttrDialog(null);
   }
   /** Open the command bar for a numeric-input tool, discarding any
    *  in-progress click-to-draw shape first (only one mode at a time). */
@@ -856,6 +923,11 @@ export function CogoWorkspace({
       } else {
         const hit = nearestVisible(vbx, vby);
         setSelected(hit?.id ?? null);
+        if (tablesOpen && tableTab === "points") {
+          // Two-way canvas<->table highlight sync (Part 9e).
+          setTableAnchor(hit?.id ?? null);
+          setTableSelected(hit ? new Set([hit.id]) : new Set());
+        }
       }
     }
     pan.current = null;
@@ -972,6 +1044,12 @@ export function CogoWorkspace({
               label="Diagram — click a plot to generate its diagram sheet"
               onClick={() => { setDiagramPicking((v) => !v); setDiagramPrompt(null); }}
               icon={iconDiagram}
+            />
+            <DraftButton
+              active={tablesOpen}
+              label="Tables — Points / Lines / Polygons data (Part 9)"
+              onClick={() => setTablesOpen((v) => !v)}
+              icon={iconTables}
             />
           </ToolGroup>
 
@@ -1109,20 +1187,24 @@ export function CogoWorkspace({
             onPointerLeave={() => (pan.current = null)}
             onWheel={onWheel}
           >
-            {polygons.map((p) => (
-              <polygon
-                key={p.id}
-                points={p.points.map((v) => toScreen(v.east, v.north).join(",")).join(" ")}
-                fill="#f59e0b"
-                fillOpacity={0.15}
-                stroke="#d97706"
-                strokeWidth={1.4}
-              />
-            ))}
+            {polygons.map((p) => {
+              const isTableSel = tablesOpen && tableTab === "polygons" && tableSelected.has(p.id);
+              return (
+                <polygon
+                  key={p.id}
+                  points={p.points.map((v) => toScreen(v.east, v.north).join(",")).join(" ")}
+                  fill={isTableSel ? "#dc2626" : "#f59e0b"}
+                  fillOpacity={isTableSel ? 0.28 : 0.15}
+                  stroke={isTableSel ? "#dc2626" : "#d97706"}
+                  strokeWidth={isTableSel ? 2.4 : 1.4}
+                />
+              );
+            })}
             {lines.map((l) => {
               const [x1, y1] = toScreen(l.aE, l.aN);
               const [x2, y2] = toScreen(l.bE, l.bN);
-              return <line key={l.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#2563eb" strokeWidth={1.6} />;
+              const isTableSel = tablesOpen && tableTab === "lines" && tableSelected.has(l.id);
+              return <line key={l.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={isTableSel ? "#dc2626" : "#2563eb"} strokeWidth={isTableSel ? 3 : 1.6} />;
             })}
             {arcs.map((a) => {
               const startRad = (a.startBearing * Math.PI) / 180;
@@ -1155,7 +1237,7 @@ export function CogoWorkspace({
             ) : (
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
-                const isSel = p.id === selected;
+                const isSel = p.id === selected || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
                 return (
                   <g key={p.id}>
                     <circle cx={x} cy={y} r={isSel ? 6 : 4} fill={isSel ? "#dc2626" : "#059669"} />
@@ -1437,6 +1519,62 @@ export function CogoWorkspace({
             </span>
           </div>
           )}
+
+          {/* Points/Lines/Polygons data table panel (Part 9). */}
+          {tablesOpen && (
+            <CogoTablesPanel
+              tab={tableTab}
+              onTab={(t) => { setTableTab(t); setTableSelected(new Set()); setTableAnchor(null); }}
+              points={visible}
+              lines={lines}
+              polygons={polygons}
+              pointMeta={pointMeta}
+              lineMeta={lineMeta}
+              polygonMeta={polygonMeta}
+              selected={tableSelected}
+              onRowMouseDown={tableRowMouseDown}
+              onRowMouseEnter={tableRowMouseEnter}
+              onSetPointMeta={(id, patch) => setPointMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
+              onSetLineMeta={(id, patch) => setLineMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
+              onSetPolygonMeta={(id, patch) => setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
+              onDeleteSelection={deleteTableSelection}
+              onOpenPolygonAttrs={openPolygonAttrs}
+              onClose={() => { setTablesOpen(false); setTableSelected(new Set()); setTableAnchor(null); }}
+            />
+          )}
+
+          {/* Polygon quick-edit dialog (Part 9f) — Position, ID/Erf, Area, Cancel/OK. */}
+          {polygonAttrDialog && (
+            <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setPolygonAttrDialog(null)}>
+              <div className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">Polygon Attributes</h3>
+                <label className="mb-2 block">
+                  <span className="mb-0.5 block text-slate-500">Position</span>
+                  <input
+                    value={polygonAttrDialog.position}
+                    onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, position: e.target.value })}
+                    className="w-full rounded border border-slate-200 px-2 py-1.5"
+                  />
+                </label>
+                <label className="mb-2 block">
+                  <span className="mb-0.5 block text-slate-500">ID / Erf</span>
+                  <input
+                    value={polygonAttrDialog.erf}
+                    onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, erf: e.target.value })}
+                    className="w-full rounded border border-slate-200 px-2 py-1.5"
+                  />
+                </label>
+                <label className="mb-3 block">
+                  <span className="mb-0.5 block text-slate-500">Area</span>
+                  <input value={polygonAttrDialog.area} readOnly className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-500" />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+                  <button type="button" onClick={savePolygonAttrs} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1594,6 +1732,14 @@ function iconMove(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M12 3v18M3 12h18" />
       <path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconTables(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M3 10h18M3 16h18M9 4v16M15 4v16" strokeWidth="1.3" />
     </svg>
   );
 }
