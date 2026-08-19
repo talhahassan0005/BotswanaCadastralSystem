@@ -141,7 +141,7 @@ export function CogoTraversePanel({
       {/* Buttons */}
       <div className="grid grid-cols-2 gap-1.5 px-2.5 py-2">
         <PBtn active={pickingStart} onClick={onStartPt}>Start Pt</PBtn>
-        <PBtn onClick={onUndo} disabled={legs.length === 0}>Undo</PBtn>
+        <PBtn onClick={onUndo} title="Undoes the last leg — or, before any leg is added, the last point pick">Undo</PBtn>
         <PBtn onClick={onEditDirDist}>Edit Dir/Dist</PBtn>
         <PBtn onClick={onSwapDir} disabled={!direction}>Swap Dir</PBtn>
         <PBtn onClick={onAddLeg} primary disabled={!fromName || !direction || !distance}>Add Leg</PBtn>
@@ -175,18 +175,21 @@ function PBtn({
   active,
   primary,
   disabled,
+  title,
 }: {
   children: ReactNode;
   onClick: () => void;
   active?: boolean;
   primary?: boolean;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={`rounded-md border px-1.5 py-1 text-center font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
         primary
           ? "border-brand bg-brand text-white hover:bg-brand-dark"

@@ -12,9 +12,11 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type R
 import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
-import { forward, inverse } from "@/lib/server/geometry";
+import { forward, inverse, polygonArea } from "@/lib/server/geometry";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
+import { useStore } from "@/lib/store";
+import type { CogoLeg, CogoResult } from "@/lib/types";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
 import type { ToolDef, ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
@@ -60,6 +62,7 @@ export function CogoWorkspace({
   points: { name?: string | null; east: number; north: number }[];
   onTool: (id: ToolId) => void;
 }) {
+  const { config, setDiagramFigure, setDiagramInput, setActiveTab } = useStore();
   const [active, setActive] = useState(false);
   // Which toolbar group's icon row is showing — a tab bar instead of 9
   // permanently-stacked rows, so the toolbar reads as one screenful instead
@@ -100,6 +103,7 @@ export function CogoWorkspace({
   // Input: live preview line while typing, immediate draw + label on Add Leg. ----
   const [travOpen, setTravOpen] = useState(false);
   const [travStartPoint, setTravStartPoint] = useState<WPoint | null>(null);
+  const [travStartHistory, setTravStartHistory] = useState<WPoint[]>([]); // previous start-point picks, for Undo-before-any-leg (7b)
   const [travFrom, setTravFrom] = useState<WPoint | null>(null);
   const [travToName, setTravToName] = useState("");
   const [travDir, setTravDir] = useState("");
@@ -112,6 +116,10 @@ export function CogoWorkspace({
   interface TravLeg { point: WPoint; direction: string; distance: string; lineId: string; labelId: string; fromName: string }
   const [travLegs, setTravLegs] = useState<TravLeg[]>([]);
   const travIdRef = useRef(1);
+  // ---- per-plot diagram generation (Part 7d): click a specific plot on the
+  // canvas, confirm a scale, generate the Diagrams-tab sheet for just that plot. ----
+  const [diagramPicking, setDiagramPicking] = useState(false);
+  const [diagramPrompt, setDiagramPrompt] = useState<{ polygon: WPolygon; screenX: number; screenY: number; value: string } | null>(null);
   const [lines, setLines] = useState<WLine[]>([]);
   const [arcs, setArcs] = useState<WArc[]>([]);
   const [polygons, setPolygons] = useState<WPolygon[]>([]);
@@ -285,6 +293,8 @@ export function CogoWorkspace({
     setTravOpen(false);
     setTravPickingStart(false);
     setTravChoosingTo(false);
+    setDiagramPicking(false);
+    setDiagramPrompt(null);
     setDraftTool(tool);
   }
   /** Open the command bar for a numeric-input tool, discarding any
@@ -315,18 +325,24 @@ export function CogoWorkspace({
       return null;
     }
   })();
+  /** Client requirement 2026-08-17 (7a): joining points must snap to an
+   *  existing point — clicking near-but-not-on one must never silently
+   *  create a new point. New points only ever come from the explicit Add
+   *  Point (by click or by coordinate) tool. So Start Pt stays armed and
+   *  does nothing on a miss, rather than falling back to creating a point. */
   function travSetStart(v: { east: number; north: number; existingId?: string }) {
-    let p: WPoint;
-    if (v.existingId) {
-      p = visible.find((pp) => pp.id === v.existingId)!;
-    } else {
-      const name = `S${travIdRef.current}`;
-      const id = `travstart-${Date.now()}-${travIdRef.current}`;
-      travIdRef.current += 1;
-      snapshot();
-      setExtra((e) => [...e, { id, name, east: v.east, north: v.north }]);
-      p = { id, name, east: v.east, north: v.north };
+    if (!v.existingId) return;
+    const p = visible.find((pp) => pp.id === v.existingId)!;
+    if (travLegs.length) {
+      // 7c: picking a new start point after legs already exist begins the
+      // NEXT adjacent plot in the same sheet — everything already drawn
+      // stays on the canvas, only the leg-tracking chain resets.
+      setTravLegs([]);
+      setTravEditIndex(null);
     }
+    // 7b: remember the previous pick so a wrong snap can be undone before
+    // any leg is committed (the Undo button below does double duty).
+    setTravStartHistory((h) => (travStartPoint ? [...h, travStartPoint] : h));
     setTravStartPoint(p);
     setTravFrom(p);
     setTravPickingStart(false);
@@ -388,17 +404,34 @@ export function CogoWorkspace({
     setTravDist(leg.distance);
     setTravEditIndex(i);
   }
+  /** Undoes the last committed leg — or, if no leg has been committed yet
+   *  (7b), the last point *pick* instead, so an accidental snap-to-the-
+   *  wrong-point during Start Pt can be corrected before it ever becomes a leg. */
   function travUndo() {
-    setTravLegs((legs) => {
-      if (!legs.length) return legs;
-      const last = legs[legs.length - 1];
-      setExtra((e) => e.filter((p) => p.id !== last.point.id));
-      setLines((ls) => ls.filter((l) => l.id !== last.lineId));
-      setTexts((ts) => ts.filter((t) => t.id !== last.labelId));
-      const rest = legs.slice(0, -1);
-      setTravFrom(rest.length ? rest[rest.length - 1].point : travStartPoint);
-      return rest;
-    });
+    if (travLegs.length) {
+      setTravLegs((legs) => {
+        if (!legs.length) return legs;
+        const last = legs[legs.length - 1];
+        setExtra((e) => e.filter((p) => p.id !== last.point.id));
+        setLines((ls) => ls.filter((l) => l.id !== last.lineId));
+        setTexts((ts) => ts.filter((t) => t.id !== last.labelId));
+        const rest = legs.slice(0, -1);
+        setTravFrom(rest.length ? rest[rest.length - 1].point : travStartPoint);
+        return rest;
+      });
+      return;
+    }
+    if (travStartHistory.length) {
+      const prev = travStartHistory[travStartHistory.length - 1];
+      setTravStartHistory((h) => h.slice(0, -1));
+      setTravStartPoint(prev);
+      setTravFrom(prev);
+    } else if (travStartPoint) {
+      setTravStartPoint(null);
+      setTravFrom(null);
+    } else {
+      window.alert("Nothing to undo.");
+    }
   }
   function travClear() {
     const ids = new Set(travLegs.flatMap((l) => [l.point.id, l.lineId, l.labelId]));
@@ -413,6 +446,7 @@ export function CogoWorkspace({
     setTravDir("");
     setTravDist("");
     setTravEditIndex(null);
+    setTravStartHistory([]);
   }
   function travSwapDir() {
     try {
@@ -441,6 +475,76 @@ export function CogoWorkspace({
     setTravPickingStart(false);
     setTravChoosingTo(false);
     setTravEditIndex(null);
+  }
+
+  // ---- per-plot diagram generation (Part 7d) ----
+  function pointInPolygon(wx: number, wy: number, poly: WPolygon): boolean {
+    const pts = poly.points;
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      const hit = a.north > wy !== b.north > wy && wx < ((b.east - a.east) * (wy - a.north)) / (b.north - a.north) + a.east;
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+  function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
+    const [wx, wy] = toWorld(sx, sy);
+    const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
+    setDiagramPicking(false);
+    if (!hit) { window.alert("Click inside one of the drawn plots (polygons) to generate its diagram."); return; }
+    setDiagramPrompt({ polygon: hit, screenX, screenY, value: "2000" });
+  }
+  function diagramConfirm() {
+    if (!diagramPrompt) return;
+    const scale = Number(diagramPrompt.value) || 2000;
+    const poly = diagramPrompt.polygon;
+    const pts = poly.points;
+    const legsOut: CogoLeg[] = pts.map((p, i) => {
+      const next = pts[(i + 1) % pts.length];
+      const [brg, dist] = inverse({ east: p.east, north: p.north }, { east: next.east, north: next.north });
+      return { index: i + 1, from: p.name, to: next.name, bearing: brg, bearing_dms: formatDms(brg), distance: dist, d_east_adj: next.east - p.east, d_north_adj: next.north - p.north };
+    });
+    const areaM2 = Math.abs(polygonArea(pts));
+    const perim = legsOut.reduce((s, l) => s + l.distance, 0);
+    const fig: CogoResult = {
+      type: "closed",
+      adjustment: "none",
+      closure: { misclose_east: 0, misclose_north: 0, linear_misclosure: 0, total_distance: perim, relative_precision: null, relative_precision_text: "exact (plot boundary)" },
+      area_m2: areaM2,
+      area_ha: areaM2 / 10000,
+      sigma0: 0,
+      points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })),
+      legs: legsOut,
+      residuals: [],
+    };
+    setDiagramFigure(fig);
+    setDiagramInput({
+      kind: "surveyed",
+      meta: {
+        lotName: poly.name || "PLOT",
+        parent: "",
+        location: "",
+        tribalArea: "",
+        surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
+        surveyedDate: "",
+        coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
+        scale,
+        dsmNo: "",
+        srNo: "",
+        gpNo: "",
+        degreeSquare: "",
+        parentDiagram: "",
+        beaconDescription: "ALL: 12mm iron peg",
+        areaHa: areaM2 / 10000,
+        sourceRef: "",
+        boreholeNo: "",
+        boreholeE: 0,
+        boreholeN: 0,
+      },
+    });
+    setDiagramPrompt(null);
+    setActiveTab("diagrams");
   }
   function finishDraftWith(rawPts: DraftPt[]) {
     // A double-click's second click can land on (and snap to) the vertex the
@@ -511,7 +615,7 @@ export function CogoWorkspace({
     return best;
   }
 
-  const SNAP_PX = 10;
+  const SNAP_PX = 16; // generous/forgiving on purpose (client req 2026-08-17, 7a) — "close enough" should snap
   /** Nearest existing point within snap radius (screen space), if any. Point
    *  snapping is always on while drawing — needed to close traverses/
    *  polygons cleanly onto an existing vertex. */
@@ -612,7 +716,11 @@ export function CogoWorkspace({
     const wasClick = !!pan.current && pan.current.moved < CLICK_SLOP_PX;
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
-      if (travPickingStart) {
+      if (diagramPicking) {
+        // "Diagram" action (7d): the next canvas click picks which specific
+        // plot/polygon to generate a diagram for.
+        diagramPickAt(vbx, vby, vbx, vby);
+      } else if (travPickingStart) {
         // Traverse panel's "Start Pt" — the next canvas click sets/replaces
         // the point the leg-entry chain begins from.
         travSetStart(resolveVertex(vbx, vby));
@@ -699,11 +807,13 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (travOpen) travClose();
+        if (diagramPrompt) setDiagramPrompt(null);
+        else if (diagramPicking) setDiagramPicking(false);
+        else if (travOpen) travClose();
         else if (formTool) setFormTool(null);
         else cancelDraft();
       } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
@@ -717,7 +827,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen]);
+  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -787,6 +897,13 @@ export function CogoWorkspace({
               label="Snap to point / line / grid"
               onClick={() => setSnapEnabled((s) => !s)}
               icon={iconSnap}
+            />
+            <div className="mx-1 h-5 w-px bg-slate-200" />
+            <DraftButton
+              active={diagramPicking}
+              label="Diagram — click a plot to generate its diagram sheet"
+              onClick={() => { setDiagramPicking((v) => !v); setDiagramPrompt(null); }}
+              icon={iconDiagram}
             />
           </ToolGroup>
 
@@ -915,7 +1032,7 @@ export function CogoWorkspace({
             viewBox={`0 0 ${W} ${H}`}
             className="w-full touch-none bg-slate-50"
             style={{
-              cursor: travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) || draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default",
+              cursor: diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) || draftTool === "addpoint" || draftTool === "move" ? "crosshair" : pan.current ? "grabbing" : "default",
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -1066,6 +1183,27 @@ export function CogoWorkspace({
               style={{ left: `${(offsetInput.screenX / W) * 100}%`, top: `${(offsetInput.screenY / H) * 100 - 3}%` }}
             />
           )}
+          {diagramPrompt && (
+            <div
+              className="absolute z-10 flex items-center gap-1.5 rounded border border-brand bg-white px-2 py-1.5 text-xs shadow-md"
+              style={{ left: `${(diagramPrompt.screenX / W) * 100}%`, top: `${(diagramPrompt.screenY / H) * 100 - 3}%` }}
+            >
+              <span className="text-slate-500">Scale 1:</span>
+              <input
+                autoFocus
+                type="number"
+                value={diagramPrompt.value}
+                onChange={(e) => setDiagramPrompt({ ...diagramPrompt, value: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") diagramConfirm();
+                  if (e.key === "Escape") setDiagramPrompt(null);
+                }}
+                className="w-16 rounded border border-slate-200 px-1 py-0.5"
+              />
+              <button type="button" onClick={diagramConfirm} className="rounded bg-brand px-1.5 py-0.5 font-semibold text-white">OK</button>
+              <button type="button" onClick={() => setDiagramPrompt(null)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+          )}
           </div>
 
           {/* Side-docked traverse leg-entry panel (Part 6b) — sits beside the
@@ -1121,7 +1259,9 @@ export function CogoWorkspace({
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
             <span>
-              {travPickingStart
+              {diagramPicking
+                ? "Click inside a plot (polygon) to generate its diagram"
+                : travPickingStart
                 ? "Click a point on the canvas to start the traverse from"
                 : travChoosingTo
                 ? "Click an existing point — its direction & distance from the current point will be filled in"
@@ -1319,6 +1459,15 @@ function iconSnap(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M6 4v8a6 6 0 0 0 12 0V4" strokeLinecap="round" />
       <path d="M6 4h5v5H6zM13 4h5v5h-5z" fill={c} fillOpacity="0.15" />
+    </svg>
+  );
+}
+function iconDiagram(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.6">
+      <rect x="3" y="3" width="18" height="18" rx="1.5" />
+      <path d="M8 7l6-2 6 2.5-2 9-8 1z" fill={c} fillOpacity="0.15" />
+      <path d="M6 17h5M6 19h3" strokeWidth="1.2" />
     </svg>
   );
 }
