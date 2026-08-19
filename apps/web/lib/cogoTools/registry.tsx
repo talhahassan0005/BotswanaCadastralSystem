@@ -37,7 +37,7 @@ const POINT_TOOLS: ToolDef[] = [
     icon: iconBearingDistance,
     fields: [
       { key: "from", label: "From point", type: "point" },
-      { key: "bearing", label: "Bearing (DDD.MMSS or decimal)", type: "text" },
+      { key: "bearing", label: "Bearing (DDD.MMSS or decimal)", type: "bearing" },
       { key: "distance", label: "Distance (m)", type: "number" },
       { key: "name", label: "New point name", type: "text", default: "New" },
     ],
@@ -66,9 +66,9 @@ const POINT_TOOLS: ToolDef[] = [
     icon: iconIntersectBB,
     fields: [
       { key: "pointA", label: "Point A", type: "point" },
-      { key: "bearingA", label: "Bearing from A", type: "text" },
+      { key: "bearingA", label: "Bearing from A", type: "bearing" },
       { key: "pointB", label: "Point B", type: "point" },
-      { key: "bearingB", label: "Bearing from B", type: "text" },
+      { key: "bearingB", label: "Bearing from B", type: "bearing" },
       { key: "name", label: "New point name", type: "text", default: "New" },
     ],
     run: pt.intersectionBB,
@@ -97,7 +97,7 @@ const POINT_TOOLS: ToolDef[] = [
     icon: iconIntersectBD,
     fields: [
       { key: "pointA", label: "Point A (bearing origin)", type: "point" },
-      { key: "bearingA", label: "Bearing from A", type: "text" },
+      { key: "bearingA", label: "Bearing from A", type: "bearing" },
       { key: "pointB", label: "Point B (radius origin)", type: "point" },
       { key: "radiusB", label: "Radius from B (m)", type: "number" },
       { key: "solution", label: "Solution", type: "select", options: [{ value: "far", label: "Far intersection" }, { value: "near", label: "Near intersection" }] },
@@ -187,7 +187,7 @@ const LINE_TOOLS: ToolDef[] = [
     icon: iconLineBearingDistance,
     fields: [
       { key: "from", label: "From point", type: "point" },
-      { key: "bearing", label: "Bearing (DDD.MMSS or decimal)", type: "text" },
+      { key: "bearing", label: "Bearing (DDD.MMSS or decimal)", type: "bearing" },
       { key: "distance", label: "Distance (m)", type: "number" },
       { key: "name", label: "New point name", type: "text", default: "New" },
     ],
@@ -305,7 +305,7 @@ const CURVE_TOOLS: ToolDef[] = [
     icon: iconArcChordBearing,
     fields: [
       { key: "pointA", label: "Start point", type: "point" },
-      { key: "chordBearing", label: "Chord bearing", type: "text" },
+      { key: "chordBearing", label: "Chord bearing", type: "bearing" },
       { key: "chordLength", label: "Chord length (m)", type: "number" },
       { key: "radius", label: "Radius (m)", type: "number" },
       { key: "side", label: "Centre side", type: "select", options: SIDE_OPTIONS },
@@ -322,7 +322,7 @@ const CURVE_TOOLS: ToolDef[] = [
     icon: iconArcTangent,
     fields: [
       { key: "pointA", label: "PC (start) point", type: "point" },
-      { key: "tangentBearing", label: "Tangent-in bearing", type: "text" },
+      { key: "tangentBearing", label: "Tangent-in bearing", type: "bearing" },
       { key: "radius", label: "Radius (m)", type: "number" },
       { key: "deflection", label: "Deflection angle (°)", type: "number" },
       { key: "turn", label: "Turn direction", type: "select", options: [{ value: "right", label: "Right" }, { value: "left", label: "Left" }] },

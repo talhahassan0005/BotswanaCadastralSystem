@@ -61,7 +61,7 @@ export interface WText {
   size: number;
 }
 
-export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select";
+export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select" | "bearing";
 
 export interface FieldDef {
   key: string;

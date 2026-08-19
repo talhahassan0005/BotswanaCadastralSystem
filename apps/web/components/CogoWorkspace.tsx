@@ -95,9 +95,18 @@ export function CogoWorkspace({
   const [offsetLineId, setOffsetLineId] = useState<string | null>(null); // source line picked for the Offset tool
   const [offsetInput, setOffsetInput] = useState<{ screenX: number; screenY: number; side: 1 | -1; value: string } | null>(null);
   const draftIdRef = useRef(1);
+  // ---- Add Point by Coordinates (Part 8e) — a typed alternative to
+  // click-to-place, available while the Add Point tool is active. ----
+  const [coordEntry, setCoordEntry] = useState<{ name: string; east: string; north: string } | null>(null);
+  // ---- Move Point by typed Y/X (Part 8f) — once a point is picked up with
+  // the Move tool, its coordinates can be typed instead of dragged. ----
+  const [moveCoordInput, setMoveCoordInput] = useState<{ east: string; north: string } | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
+  // Live "ghost" preview (Part 8b) of whatever the open command-bar tool would
+  // currently produce — rendered dashed/translucent on the canvas.
+  const [cmdPreview, setCmdPreview] = useState<ToolResult | null>(null);
   // ---- side-docked traverse leg-entry panel (Part 6b) — supersedes the
   // command bar for Line by Bearing&Distance / Polyline-Traverse / Traverse
   // Input: live preview line while typing, immediate draw + label on Add Leg. ----
@@ -206,7 +215,7 @@ export function CogoWorkspace({
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
   }
 
-  function addToolResult(result: ToolResult) {
+  function addToolResult(result: ToolResult): { pointIds: string[]; lineIds: string[] } {
     snapshot();
     if (result.replaceLineIds?.length) {
       const drop = new Set(result.replaceLineIds);
@@ -216,29 +225,35 @@ export function CogoWorkspace({
       const drop = new Set(result.replacePolygonIds);
       setPolygons((ps) => ps.filter((p) => !drop.has(p.id)));
     }
+    const now = Date.now();
+    let pointIds: string[] = [];
+    let lineIds: string[] = [];
     if (result.points?.length) {
-      setExtra((e) => [...e, ...result.points!.map((p, i) => ({ id: `tool-${Date.now()}-${idRef.current + i}`, ...p }))]);
+      pointIds = result.points.map((_, i) => `tool-${now}-${idRef.current + i}`);
+      setExtra((e) => [...e, ...result.points!.map((p, i) => ({ id: pointIds[i], ...p }))]);
       idRef.current += result.points.length;
     }
     if (result.lines?.length) {
-      setLines((ls) => [...ls, ...result.lines!.map((l, i) => ({ id: `line-${Date.now()}-${lineIdRef.current + i}`, ...l }))]);
+      lineIds = result.lines.map((_, i) => `line-${now}-${lineIdRef.current + i}`);
+      setLines((ls) => [...ls, ...result.lines!.map((l, i) => ({ id: lineIds[i], ...l }))]);
       lineIdRef.current += result.lines.length;
     }
     if (result.arcs?.length) {
-      setArcs((as) => [...as, ...result.arcs!.map((a, i) => ({ id: `arc-${Date.now()}-${arcIdRef.current + i}`, ...a }))]);
+      setArcs((as) => [...as, ...result.arcs!.map((a, i) => ({ id: `arc-${now}-${arcIdRef.current + i}`, ...a }))]);
       arcIdRef.current += result.arcs.length;
     }
     if (result.polygons?.length) {
-      setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: `poly-${Date.now()}-${polyIdRef.current + i}`, ...p }))]);
+      setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: `poly-${now}-${polyIdRef.current + i}`, ...p }))]);
       polyIdRef.current += result.polygons.length;
     }
     if (result.texts?.length) {
       setTexts((ts) => [
         ...ts,
-        ...result.texts!.map((t, i) => ({ ...t, id: `text-${Date.now()}-${textIdRef.current + i}`, size: t.size ?? 12 })),
+        ...result.texts!.map((t, i) => ({ ...t, id: `text-${now}-${textIdRef.current + i}`, size: t.size ?? 12 })),
       ]);
       textIdRef.current += result.texts.length;
     }
+    return { pointIds, lineIds };
   }
 
   // ---- click-to-draw: each click either snaps onto an existing point or
@@ -295,7 +310,47 @@ export function CogoWorkspace({
     setTravChoosingTo(false);
     setDiagramPicking(false);
     setDiagramPrompt(null);
+    setCoordEntry(null);
+    setMoveCoordInput(null);
     setDraftTool(tool);
+  }
+
+  // ---- Add Point by Coordinates (Part 8e) — Name/Y/X form as an alternative
+  // to clicking on the canvas. ----
+  function coordEntryOpen() {
+    setCoordEntry({ name: `New${idRef.current}`, east: "", north: "" });
+  }
+  function coordEntryUpdate() {
+    if (!coordEntry) return;
+    const east = Number(coordEntry.east), north = Number(coordEntry.north);
+    if (!Number.isFinite(east) || !Number.isFinite(north)) { window.alert("Enter valid Y (Easting) and X (Northing) values."); return; }
+    snapshot();
+    const newId = `coord-${Date.now()}-${idRef.current}`;
+    const name = coordEntry.name || `New${idRef.current}`;
+    idRef.current += 1;
+    setExtra((e) => [...e, { id: newId, name, east, north }]);
+    setCoordEntry({ name: `New${idRef.current}`, east: "", north: "" });
+  }
+  function coordEntryNew() {
+    setCoordEntry({ name: `New${idRef.current}`, east: "", north: "" });
+  }
+
+  // ---- Move Point by typed Y/X (Part 8f) ----
+  function applyMoveCoords() {
+    if (!moving || !moveCoordInput) return;
+    const east = Number(moveCoordInput.east), north = Number(moveCoordInput.north);
+    if (!Number.isFinite(east) || !Number.isFinite(north)) { window.alert("Enter valid Y (Easting) and X (Northing) values."); return; }
+    snapshot();
+    if (moving.startsWith("imp-")) {
+      const orig = basePoints.find((p) => p.id === moving);
+      setHidden((h) => new Set(h).add(moving));
+      setExtra((e) => [...e, { id: `moved-${Date.now()}`, name: orig?.name ?? "Moved", east, north }]);
+    } else {
+      setExtra((e) => e.map((p) => (p.id === moving ? { ...p, east, north } : p)));
+    }
+    setMoving(null);
+    setSelected(null);
+    setMoveCoordInput(null);
   }
   /** Open the command bar for a numeric-input tool, discarding any
    *  in-progress click-to-draw shape first (only one mode at a time). */
@@ -731,12 +786,22 @@ export function CogoWorkspace({
       } else if (formTool) {
         // Command bar open (Part 5): clicking a point/line on canvas fills
         // whichever field is focused (or the first empty matching field)
-        // instead of doing the normal select/pan/draw behaviour.
-        const p = snapPoint(vbx, vby);
-        if (p) commandBarRef.current?.pickFromCanvas("point", p.id);
-        else {
+        // instead of doing the normal select/pan/draw behaviour. If a
+        // "bearing"-type field is focused, a line click instead copies that
+        // line's bearing into it as text (Part 8a).
+        if (commandBarRef.current?.getFocusedFieldType() === "bearing") {
           const l = nearestLineHit(vbx, vby);
-          if (l) commandBarRef.current?.pickFromCanvas("line", l.id);
+          if (l) {
+            const [brg] = inverse({ east: l.aE, north: l.aN }, { east: l.bE, north: l.bN });
+            commandBarRef.current.pickFromCanvas("bearing", formatDms(brg));
+          }
+        } else {
+          const p = snapPoint(vbx, vby);
+          if (p) commandBarRef.current?.pickFromCanvas("point", p.id);
+          else {
+            const l = nearestLineHit(vbx, vby);
+            if (l) commandBarRef.current?.pickFromCanvas("line", l.id);
+          }
         }
       } else if (draftTool === "addpoint") {
         const v = resolveVertex(vbx, vby);
@@ -751,7 +816,7 @@ export function CogoWorkspace({
       } else if (draftTool === "move") {
         if (!moving) {
           const hit = nearestVisible(vbx, vby);
-          if (hit) { setMoving(hit.id); setSelected(hit.id); }
+          if (hit) { setMoving(hit.id); setSelected(hit.id); setMoveCoordInput({ east: hit.east.toFixed(3), north: hit.north.toFixed(3) }); }
         } else {
           const [wx, wy] = snapWorld(...toWorld(vbx, vby));
           snapshot();
@@ -764,6 +829,7 @@ export function CogoWorkspace({
           }
           setMoving(null);
           setSelected(null);
+          setMoveCoordInput(null);
         }
       } else if (draftTool === "line" || draftTool === "curve") {
         const vertex = addVertexPoint(resolveVertex(vbx, vby));
@@ -807,7 +873,7 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -815,6 +881,8 @@ export function CogoWorkspace({
         else if (diagramPicking) setDiagramPicking(false);
         else if (travOpen) travClose();
         else if (formTool) setFormTool(null);
+        else if (coordEntry) setCoordEntry(null);
+        else if (moveCoordInput) { setMoving(null); setSelected(null); setMoveCoordInput(null); }
         else cancelDraft();
       } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
         e.preventDefault();
@@ -827,7 +895,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt]);
+  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1125,6 +1193,22 @@ export function CogoWorkspace({
               const [x2, y2] = toScreen(line.bE + nE * cross, line.bN + nN * cross);
               return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#9333ea" strokeWidth={1.4} strokeDasharray="5 4" />;
             })()}
+            {/* Command bar live "ghost" preview (Part 8b) — what the open
+                numeric tool would currently produce, before Compute is pressed. */}
+            {cmdPreview?.lines?.map((l, i) => {
+              const [x1, y1] = toScreen(l.aE, l.aN);
+              const [x2, y2] = toScreen(l.bE, l.bN);
+              return <line key={`cp-l-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0891b2" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.75} />;
+            })}
+            {cmdPreview?.points?.map((p, i) => {
+              const [x, y] = toScreen(p.east, p.north);
+              return (
+                <g key={`cp-p-${i}`} opacity={0.8}>
+                  <circle cx={x} cy={y} r={6} fill="none" stroke="#0891b2" strokeWidth={1.6} strokeDasharray="2 2" />
+                  <circle cx={x} cy={y} r={2} fill="#0891b2" />
+                </g>
+              );
+            })}
             {/* Snap highlight: ring around the existing point the cursor would snap to. */}
             {(draftTool === "addpoint" || draftTool === "move" || DRAW_TOOLS.includes(draftTool)) && cursor && (() => {
               const [sx, sy] = toScreen(cursor.e, cursor.n);
@@ -1204,6 +1288,57 @@ export function CogoWorkspace({
               <button type="button" onClick={() => setDiagramPrompt(null)} className="text-slate-400 hover:text-slate-700">✕</button>
             </div>
           )}
+
+          {/* Add Point by Coordinates (Part 8e) — typed alternative to
+              click-to-place, while the Add Point tool is active. */}
+          {coordEntry && (
+            <div className="absolute right-2 top-2 z-10 w-52 rounded border border-brand bg-white p-2 text-xs shadow-md">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="font-semibold text-brand-dark">Add Point by Coordinates</span>
+                <button type="button" onClick={() => setCoordEntry(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+              </div>
+              <label className="mb-1 block">
+                <span className="mb-0.5 block text-slate-500">Name</span>
+                <input value={coordEntry.name} onChange={(e) => setCoordEntry({ ...coordEntry, name: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+              </label>
+              <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                <label className="block">
+                  <span className="mb-0.5 block text-slate-500">Y (East)</span>
+                  <input type="number" value={coordEntry.east} onChange={(e) => setCoordEntry({ ...coordEntry, east: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-slate-500">X (North)</span>
+                  <input type="number" value={coordEntry.north} onChange={(e) => setCoordEntry({ ...coordEntry, north: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+                </label>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button type="button" onClick={coordEntryUpdate} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Update</button>
+                <button type="button" onClick={coordEntryNew} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">New</button>
+                <button type="button" onClick={() => setCoordEntry(null)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Move Point by typed Y/X (Part 8f) — alternative to dragging, once a point is picked up. */}
+          {draftTool === "move" && moving && moveCoordInput && (
+            <div className="absolute right-2 top-2 z-10 w-48 rounded border border-brand bg-white p-2 text-xs shadow-md">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="font-semibold text-brand-dark">Move to Coordinates</span>
+                <button type="button" onClick={() => { setMoving(null); setSelected(null); setMoveCoordInput(null); }} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+              </div>
+              <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                <label className="block">
+                  <span className="mb-0.5 block text-slate-500">Y (East)</span>
+                  <input type="number" value={moveCoordInput.east} onChange={(e) => setMoveCoordInput({ ...moveCoordInput, east: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-slate-500">X (North)</span>
+                  <input type="number" value={moveCoordInput.north} onChange={(e) => setMoveCoordInput({ ...moveCoordInput, north: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+                </label>
+              </div>
+              <button type="button" onClick={applyMoveCoords} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
+            </div>
+          )}
           </div>
 
           {/* Side-docked traverse leg-entry panel (Part 6b) — sits beside the
@@ -1252,8 +1387,13 @@ export function CogoWorkspace({
             points={visible}
             lines={lines}
             polygons={polygons}
-            onResult={(result) => { addToolResult(result); setFormTool(null); }}
+            onResult={(result, opts) => {
+              const ids = addToolResult(result);
+              if (!opts?.keepOpen) setFormTool(null);
+              return ids;
+            }}
             onClose={() => setFormTool(null)}
+            onPreview={setCmdPreview}
           />
 
           {!formTool && (
@@ -1281,6 +1421,11 @@ export function CogoWorkspace({
                 ? "Click a line, then a side, then type the distance"
                 : "Click a point to select · Drag to pan · Scroll to zoom"}
             </span>
+            {draftTool === "addpoint" && !coordEntry && (
+              <button type="button" onClick={coordEntryOpen} className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
+                By Coordinates
+              </button>
+            )}
             <span className="font-mono">
               {DRAW_TOOLS.includes(draftTool) && draft.length > 0 && cursor
                 ? (() => {
