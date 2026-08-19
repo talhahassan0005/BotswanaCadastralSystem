@@ -117,6 +117,19 @@ function CogoCommandBarImpl(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
+  // "Automatic Calc'n" (Part 8c): once Bearing + Distance are both filled in
+  // and the user pauses typing, compute automatically — no Compute click (or
+  // Enter, which a plain <form> already submits on regardless of this
+  // checkbox) required. Debounced so it fires once the value settles, not on
+  // every keystroke of a still-incomplete bearing/distance.
+  useEffect(() => {
+    if (!isPBD || !pbdAuto || !tool) return;
+    if (!values.from || !String(values.bearing ?? "").trim() || !String(values.distance ?? "").trim()) return;
+    const t = setTimeout(() => submit(), 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPBD, pbdAuto, tool, values.from, values.bearing, values.distance]);
+
   useImperativeHandle(ref, () => ({
     pickFromCanvas(kind, id) {
       if (!tool) return;
@@ -206,7 +219,7 @@ function CogoCommandBarImpl(
           <span className="mx-1 h-4 w-px bg-slate-200" />
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={pbdAuto} onChange={(e) => setPbdAuto(e.target.checked)} />
-            Automatic Calc&apos;n (Enter in Distance computes)
+            Automatic Calc&apos;n (plots as soon as you finish typing — no Compute click needed)
           </label>
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={pbdAddLine} onChange={(e) => setPbdAddLine(e.target.checked)} />
@@ -223,7 +236,6 @@ function CogoCommandBarImpl(
               value={values[f.key] ?? ""}
               onChange={set(f.key)}
               onFocus={() => setFocusedField(f.key)}
-              onEnterSubmit={isPBD && pbdAuto && f.key === "distance" ? submit : undefined}
               points={points}
               lines={lines}
               polygons={polygons}
@@ -250,7 +262,6 @@ function CommandField({
   value,
   onChange,
   onFocus,
-  onEnterSubmit,
   points,
   lines,
   polygons,
@@ -259,9 +270,6 @@ function CommandField({
   value: string;
   onChange: (v: string) => void;
   onFocus: () => void;
-  /** When set (Part 8c "Automatic Calc'n"), pressing Enter in this field
-   *  computes immediately instead of requiring the Compute button. */
-  onEnterSubmit?: () => void;
   points: WPoint[];
   lines: WLine[];
   polygons: WPolygon[];
@@ -273,23 +281,7 @@ function CommandField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={onFocus}
-          onKeyDown={(e) => { if (e.key === "Enter" && onEnterSubmit) { e.preventDefault(); onEnterSubmit(); } }}
           placeholder="DDD.MMSS"
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-        />
-      </Field>
-    );
-  }
-  if (onEnterSubmit) {
-    return (
-      <Field label={field.label}>
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={onFocus}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onEnterSubmit(); } }}
-          type={field.type === "number" ? "number" : "text"}
-          placeholder={field.placeholder}
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
         />
       </Field>
