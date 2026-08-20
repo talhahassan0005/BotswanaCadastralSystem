@@ -358,7 +358,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {points.map((p, i) => {
         const bx = toX(p.east), by = toY(p.north);
         const dx = bx - cx, dy = by - cy, len = Math.hypot(dx, dy) || 1;
-        const lx = bx + (dx / len) * 18, ly = by + (dy / len) * 18;
+        const lx = bx + (dx / len) * 24, ly = by + (dy / len) * 24;
         return (
           <g key={`bcn${i}`}>
             <circle cx={bx} cy={by} r={4} fill="white" stroke="black" strokeWidth={1.2} />
@@ -371,7 +371,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           whichever side of the line is actually outside the polygon
           (tested directly, not guessed from the centroid — a centroid
           direction is wrong for concave/irregular boundaries and was
-          putting labels on top of the figure). */}
+          putting labels on top of the figure). Short sides use a smaller
+          font and a proportionally smaller offset, so on a tight zigzag of
+          short legs the label doesn't overshoot into the next side's own
+          label or the neighboring vertex letter (both offset independently). */}
       {sides.map((s, i) => {
         const a = points[i], b = points[(i + 1) % points.length];
         if (!a || !b) return null;
@@ -382,8 +385,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         let nx = -dy / len, ny = dx / len;
         const probe = 6; // small offset — enough to clear the line without crossing a nearby vertex
         if (insidePoly(mx + nx * probe, my + ny * probe)) { nx = -nx; ny = -ny; }
+        const short = len < 60;
+        const off = short ? 16 : 22;
+        const fs = short ? 10 : 12;
         return (
-          <text key={`sd${i}`} x={mx + nx * 22} y={my + ny * 22 + 4} textAnchor="middle" fontSize={12}>
+          <text key={`sd${i}`} x={mx + nx * off} y={my + ny * off + 4} textAnchor="middle" fontSize={fs}>
             {s.distance.toFixed(2)}
           </text>
         );
