@@ -79,7 +79,12 @@ export function Diagrams() {
       .map((b) => ({ name: b.id, east: b.east, north: b.north }));
   }, [pdoc, selParcelId]);
   // Restore saved diagram form state from the project, else derive defaults from config.
-  const di = (diagramInput ?? {}) as { kind?: DiagramKind; meta?: Omit<DiagramMeta, "closed" | "kind">; leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem"> };
+  const di = (diagramInput ?? {}) as {
+    kind?: DiagramKind;
+    meta?: Omit<DiagramMeta, "closed" | "kind">;
+    leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
+    neighborLabels?: string[];
+  };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
@@ -119,6 +124,12 @@ export function Diagrams() {
       })),
     [fig]
   );
+  // Adjoining-parcel label per side (client req 2026-08-21, Part 20a) — e.g.
+  // "REMAINDER OF CADASTRE 477", drawn as a dashed extension line on the
+  // generated diagram. Blank/absent entries simply get no extension line.
+  const [neighborLabels, setNeighborLabels] = useState<string[]>(di.neighborLabels ?? []);
+  const setNeighborLabel = (i: number, v: string) =>
+    setNeighborLabels((arr) => { const next = [...arr]; next[i] = v; return next; });
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -152,8 +163,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta, leaseMeta });
-  }, [kind, meta, leaseMeta, setDiagramInput]);
+    setDiagramInput({ kind, meta, leaseMeta, neighborLabels });
+  }, [kind, meta, leaseMeta, neighborLabels, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: meta.coordinateSystem,
@@ -164,6 +175,25 @@ export function Diagrams() {
     if (!svgRef.current) return null;
     const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  /** Print-specific serialization (client req 2026-08-21, Parts 17/18/21) —
+   *  the real root cause of "3 sheets of paper": SgDiagram's root <svg> has
+   *  an inline style (width:100%;height:auto — correct for the responsive
+   *  on-screen preview) that, once serialized, has HIGHER CSS specificity
+   *  than the print document's `svg{width:160mm;height:270mm}` rule, so the
+   *  print rule was silently never taking effect — the SVG was rendering at
+   *  the print window's full content width with an auto (often >297mm)
+   *  height instead. Strips just the inline width/height here so the print
+   *  CSS can actually apply; downloadSvg()'s plain serializeSvg() is
+   *  untouched since a downloaded standalone file should stay responsive. */
+  function serializeSvgForPrint(): string | null {
+    if (!svgRef.current) return null;
+    const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.style.removeProperty("width");
+    clone.style.removeProperty("height");
     return new XMLSerializer().serializeToString(clone);
   }
 
@@ -180,7 +210,7 @@ export function Diagrams() {
   }
 
   function printDiagram() {
-    const svg = serializeSvg();
+    const svg = serializeSvgForPrint();
     if (!svg) return;
     const w = window.open("", "_blank", "width=1200,height=850");
     if (!w) {
@@ -359,6 +389,21 @@ export function Diagrams() {
                   )}
                 </div>
               </Card>
+              {!isBorehole && sides.length > 0 && (
+                <Card title="Adjoining Parcels">
+                  <p className="mb-2 text-xs text-slate-400">
+                    Optional — e.g. "REMAINDER OF CADASTRE 477". Leave blank for sides with no known neighbor;
+                    only sides with a label get a dashed extension line on the diagram.
+                  </p>
+                  <div className="space-y-2">
+                    {sides.map((s, i) => (
+                      <Field key={i} label={`${s.from ?? "?"} → ${s.to ?? "?"}`}>
+                        <Input value={neighborLabels[i] ?? ""} onChange={(v) => setNeighborLabel(i, v)} placeholder="e.g. REMAINDER OF CADASTRE 477" />
+                      </Field>
+                    ))}
+                  </div>
+                </Card>
+              )}
               <Card title="Registration">
                 <div className="space-y-3">
                   <Field label="D.S.M No."><Input value={meta.dsmNo} onChange={set("dsmNo")} /></Field>
@@ -396,7 +441,7 @@ export function Diagrams() {
             ) : isBorehole ? (
               <BoreholeDiagram ref={svgRef} meta={fullMeta} points={points} />
             ) : (
-              <SgDiagram ref={svgRef} meta={fullMeta} points={points} sides={sides} extraPoints={extraPoints} />
+              <SgDiagram ref={svgRef} meta={fullMeta} points={points} sides={sides} extraPoints={extraPoints} neighborLabels={neighborLabels} />
             )}
           </div>
           <p className="mt-3 text-xs text-slate-400">

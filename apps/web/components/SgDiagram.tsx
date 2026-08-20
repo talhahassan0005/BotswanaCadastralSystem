@@ -78,6 +78,11 @@ interface Props {
    *  the traverse — no boundary side, no coordinate-table row (e.g. a nearby
    *  reference/witness point the surveyor wants visible). */
   extraPoints?: DiagramPoint[];
+  /** Optional adjoining-parcel identifier per boundary side, e.g. "REMAINDER
+   *  OF CADASTRE 477" (client req 2026-08-21, Part 20a) — same index as
+   *  `sides`/the point pair (points[i] -> points[i+1]). A blank/missing
+   *  entry means that side gets no extension line, matching the reference. */
+  neighborLabels?: string[];
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -140,7 +145,7 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points, sides, parcels, extraPoints },
+  { meta, points, sides, parcels, extraPoints, neighborLabels },
   ref
 ) {
   const VB_W = 1000;
@@ -356,6 +361,30 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           <text key={`sd${i}`} x={mx + nx * 16} y={my + ny * 16 + 4} textAnchor="middle" fontSize={12}>
             {s.distance.toFixed(2)}
           </text>
+        );
+      })}
+      {/* Adjoining-parcel extension lines (client req 2026-08-21, Part 20a) —
+          a dashed line continuing past this side's end point, labeled with
+          the neighboring parcel's identifier. Only drawn where the user
+          actually entered a label; sides with none get no extension at all. */}
+      {sides.map((s, i) => {
+        const label = neighborLabels?.[i];
+        if (!label || !label.trim()) return null;
+        const a = points[i], b = points[(i + 1) % points.length];
+        if (!a || !b) return null;
+        const ax = toX(a.east), ay = toY(a.north);
+        const bx = toX(b.east), by = toY(b.north);
+        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const extLen = 90;
+        const ex = bx + ux * extLen, ey = by + uy * extLen;
+        const midx = (bx + ex) / 2, midy = (by + ey) / 2;
+        const nx = -uy, ny = ux;
+        return (
+          <g key={`nb${i}`}>
+            <line x1={bx} y1={by} x2={ex} y2={ey} stroke="black" strokeWidth={1} strokeDasharray="6 4" />
+            <text x={midx + nx * 14} y={midy + ny * 14} fontSize={11} textAnchor="middle">{label}</text>
+          </g>
         );
       })}
       {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse
