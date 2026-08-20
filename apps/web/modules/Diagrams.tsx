@@ -187,9 +187,15 @@ export function Diagrams() {
       alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
       return;
     }
+    // Sized with a few mm of slack below A4's exact 210x297mm (client report
+    // 2026-08-21: the sheet was landing right on the page boundary, and
+    // browser print-engine rounding pushed it onto a mostly-blank second
+    // page). content(159x268) + margins(34+14, 13+12) = 207x293mm — same SG
+    // sheet proportions (aspect ratio unchanged), just enough buffer to
+    // always land on one page.
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
-        `<style>@page{size:A4 portrait;margin:0}body{margin:0}svg{width:160mm;height:270mm;display:block;margin:14mm 15mm 13mm 35mm}</style></head>` +
+        `<style>@page{size:A4 portrait;margin:0}body{margin:0}svg{width:159mm;height:268mm;display:block;margin:13mm 14mm 12mm 34mm}</style></head>` +
         `<body onload="window.print()">${svg}</body></html>`
     );
     w.document.close();
