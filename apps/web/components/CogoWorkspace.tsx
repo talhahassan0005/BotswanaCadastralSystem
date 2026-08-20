@@ -696,12 +696,30 @@ export function CogoWorkspace({
     }
     return inside;
   }
+  /** Best-fit scale suggestion for the A4 SG sheet (client req 2026-08-21,
+   *  Part 14) — the largest of the two axes' required scale, rounded up to
+   *  a common survey scale so the boundary comfortably fits the sheet's
+   *  drawable area. usableW/H_mm mirror SgDiagram.tsx's `fig`/`pad`
+   *  constants converted to printed mm (keep in sync if those change). A
+   *  LARGER scale number means a SMALLER drawing — dividing by it, not
+   *  multiplying, is what keeps that relationship correct here. */
+  function suggestScale(poly: WPolygon): number {
+    const es = poly.points.map((p) => p.east), ns = poly.points.map((p) => p.north);
+    const spanE = Math.max(...es) - Math.min(...es);
+    const spanN = Math.max(...ns) - Math.min(...ns);
+    const usableW_mm = 96, usableH_mm = 83;
+    const sByWidth = spanE > 0 ? (spanE * 1000) / usableW_mm : 0;
+    const sByHeight = spanN > 0 ? (spanN * 1000) / usableH_mm : 0;
+    const raw = Math.max(sByWidth, sByHeight, 1);
+    const NICE = [100, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000];
+    return NICE.find((n) => n >= raw) ?? Math.ceil(raw / 1000) * 1000;
+  }
   function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
     const [wx, wy] = toWorld(sx, sy);
     const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
     setDiagramPicking(false);
     if (!hit) { window.alert("Click inside one of the drawn plots (polygons) to generate its diagram."); return; }
-    setDiagramPrompt({ polygon: hit, screenX, screenY, value: "2000" });
+    setDiagramPrompt({ polygon: hit, screenX, screenY, value: String(suggestScale(hit)) });
   }
   function diagramConfirm() {
     if (!diagramPrompt) return;
@@ -1703,6 +1721,7 @@ export function CogoWorkspace({
                 type="number"
                 value={diagramPrompt.value}
                 onChange={(e) => setDiagramPrompt({ ...diagramPrompt, value: e.target.value })}
+                onFocus={(e) => e.target.select()}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") diagramConfirm();
                   if (e.key === "Escape") setDiagramPrompt(null);

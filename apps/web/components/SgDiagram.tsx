@@ -179,7 +179,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const minN = Math.min(...bN), maxN = Math.max(...bN);
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
-  const sc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
+  // Draw at the actual chosen scale (client req 2026-08-21, Part 14) — the
+  // printed "SCALE 1:N" label used to be purely cosmetic, with the figure
+  // always auto-fit to the box regardless of meta.scale. VB_W=1000 prints at
+  // 160mm, so 1mm = 1000/160 = 6.25 VB units; at 1:N, 1m of real distance is
+  // (1000/N)mm on paper = 6250/N VB units. A larger N (e.g. 5000 vs 2500)
+  // correctly makes the same boundary draw smaller. Falls back to fitting
+  // the box only if scale is unset/invalid (e.g. an older saved project).
+  const sc = meta.scale > 0 ? 6250 / meta.scale : Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
   const dw = spanE * sc, dh = spanN * sc;
   const offX = fig.x + (fig.w - dw) / 2;
   const offY = fig.y + (fig.h - dh) / 2;
