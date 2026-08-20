@@ -59,6 +59,10 @@ export interface WText {
   east: number;
   north: number;
   size: number;
+  /** "seglabel" = an auto-generated bearing/distance label on a drawn
+   *  segment (client req 2026-08-21, Part 15a) — these have their own
+   *  visibility toggle, separate from user-placed annotations (undefined). */
+  kind?: "seglabel";
 }
 
 export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select" | "bearing";
@@ -99,7 +103,7 @@ export interface ToolResult {
   lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
   arcs?: NewArc[];
   polygons?: { name?: string; points: { name: string; east: number; north: number }[] }[];
-  texts?: { text: string; east: number; north: number; size?: number }[];
+  texts?: { text: string; east: number; north: number; size?: number; kind?: "seglabel" }[];
   /** Existing line ids this result replaces (e.g. Fillet trims the two source
    *  lines back to their new tangent points) — removed before the new lines/
    *  arcs above are added. */

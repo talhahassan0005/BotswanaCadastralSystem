@@ -37,7 +37,14 @@ const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not 
 // "zoom-window" (client req 2026-08-20, Part 12a) drags the same rectangle
 // as "select-box" but zooms the view to exactly that area instead of
 // selecting what's inside it — the legacy "Zoom Window" tool.
-type DraftTool = "select" | "select-box" | "select-lasso" | "zoom-window" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
+// "query-point"/"query-line"/"query-parcel" and "delete-line"/"delete-parcel"
+// (client req 2026-08-21, Part 15b-e) are dedicated single-click info/erase
+// tools — click one feature to inspect (with inline rename for points) or
+// immediately delete it, without building up a multi-select first.
+type DraftTool =
+  | "select" | "select-box" | "select-lasso" | "zoom-window" | "addpoint" | "move"
+  | "line" | "polyline" | "curve" | "polygon" | "offset"
+  | "query-point" | "query-line" | "query-parcel" | "delete-line" | "delete-parcel";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
 // Edit Tools (Select/Add/Move/Delete/Undo/Redo/Zoom/Snap) stay permanently
@@ -96,6 +103,17 @@ export function CogoWorkspace({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [moving, setMoving] = useState<string | null>(null); // point picked up by the Move tool, awaiting drop
   const [snapEnabled, setSnapEnabled] = useState(false);
+  // ---- Visibility toggles (client req 2026-08-21, Part 15a) ----
+  const [showPointNames, setShowPointNames] = useState(true);
+  const [showSegLabels, setShowSegLabels] = useState(true);
+  const [showParcelNumbers, setShowParcelNumbers] = useState(true);
+  // ---- Query tools (Part 15b-d) — info panel for whatever was last clicked
+  // with the matching query tool active; pointQueryName is the editable
+  // draft for the point panel's inline rename. ----
+  const [pointQueryId, setPointQueryId] = useState<string | null>(null);
+  const [pointQueryName, setPointQueryName] = useState("");
+  const [lineQueryId, setLineQueryId] = useState<string | null>(null);
+  const [parcelQueryId, setParcelQueryId] = useState<string | null>(null);
   // ---- click-to-draw state (Line/Polyline/Curve/Polygon/Offset) ----
   const [draft, setDraft] = useState<DraftPt[]>([]); // vertices placed so far for the active draw tool
   const [rename, setRename] = useState<{ east: number; north: number; value: string; targetId: string } | null>(null); // inline name field for a freshly-placed single point
@@ -231,6 +249,32 @@ export function CogoWorkspace({
   function clearSelection() {
     setCanvasSelection(new Set());
     setSelected(null);
+  }
+  // ---- Point Query panel (Part 15b) ----
+  function pointQueryStep(delta: 1 | -1) {
+    if (!pointQueryId) return;
+    const ids = visible.map((p) => p.id);
+    const i = ids.indexOf(pointQueryId);
+    if (i === -1) return;
+    const nextId = ids[(i + delta + ids.length) % ids.length];
+    const p = visible.find((pp) => pp.id === nextId);
+    if (p) { setPointQueryId(nextId); setPointQueryName(p.name); }
+  }
+  function applyPointRename() {
+    if (!pointQueryId) return;
+    const name = pointQueryName.trim();
+    if (!name) return;
+    snapshot();
+    if (pointQueryId.startsWith("imp-")) {
+      const orig = basePoints.find((p) => p.id === pointQueryId);
+      if (!orig) return;
+      setHidden((h) => new Set(h).add(pointQueryId));
+      const newId = `renamed-${Date.now()}`;
+      setExtra((e) => [...e, { id: newId, name, east: orig.east, north: orig.north }]);
+      setPointQueryId(newId);
+    } else {
+      setExtra((e) => e.map((p) => (p.id === pointQueryId ? { ...p, name } : p)));
+    }
   }
   function zoomBy(f: number) {
     setView((v) => ({ ...v, zoom: Math.min(50, Math.max(0.01, v.zoom * f)) }));
@@ -384,6 +428,9 @@ export function CogoWorkspace({
     setRectSelect(null);
     setLassoPath(null);
     groupMoveOrigin.current = null;
+    setPointQueryId(null);
+    setLineQueryId(null);
+    setParcelQueryId(null);
     setDraftTool(tool);
   }
 
@@ -571,7 +618,7 @@ export function CogoWorkspace({
     const newPoint: WPoint = { id: pointId, name, east: travPreview.east, north: travPreview.north };
     setExtra((e) => [...e, newPoint]);
     setLines((ls) => [...ls, { id: lineId, aE: travFrom.east, aN: travFrom.north, bE: travPreview.east, bN: travPreview.north }]);
-    setTexts((ts) => [...ts, { id: labelId, text: `${travDir}  ${travDist}m`, east: midE, north: midN, size: 11 }]);
+    setTexts((ts) => [...ts, { id: labelId, text: `${travDir}  ${travDist}m`, east: midE, north: midN, size: 11, kind: "seglabel" }]);
     setTravLegs((legs) => [...legs, { point: newPoint, direction: travDir, distance: travDist, lineId, labelId, fromName: travFrom.name }]);
     setTravFrom(newPoint);
     setTravToName("");
@@ -768,7 +815,7 @@ export function CogoWorkspace({
       const [a, b] = pts;
       addToolResult({
         lines: [{ aE: a.east, aN: a.north, bE: b.east, bN: b.north }],
-        texts: [{ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 }],
+        texts: [{ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" }],
       });
     } else if (draftTool === "polyline" && pts.length >= 2) {
       const segs: NonNullable<ToolResult["lines"]> = [];
@@ -776,7 +823,7 @@ export function CogoWorkspace({
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1];
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
-        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" });
       }
       addToolResult({ lines: segs, texts });
     } else if (draftTool === "polygon" && pts.length >= 3) {
@@ -785,7 +832,7 @@ export function CogoWorkspace({
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
-        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" });
       }
       addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
     } else if (draftTool === "curve" && pts.length >= 3) {
@@ -799,7 +846,7 @@ export function CogoWorkspace({
         const [a, b] = pts;
         result.texts = [
           ...(result.texts ?? []),
-          { text: `${segLabel(a, b)} (chord)`, east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 },
+          { text: `${segLabel(a, b)} (chord)`, east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" },
         ];
         addToolResult(result);
       } catch (e: any) {
@@ -849,6 +896,7 @@ export function CogoWorkspace({
         east: (a.east + b.east) / 2,
         north: (a.north + b.north) / 2,
         size: 11,
+        kind: "seglabel",
       });
     });
     setLines((ls) => [...ls, ...newLines]);
@@ -1115,6 +1163,23 @@ export function CogoWorkspace({
         // A plain click (not a drag) in Zoom Window mode does nothing —
         // the tool only acts on a dragged rectangle (see the drag-end
         // branch below), same as Box Select.
+      } else if (draftTool === "query-point") {
+        const hit = nearestVisible(vbx, vby);
+        if (hit) { setPointQueryId(hit.id); setPointQueryName(hit.name); }
+      } else if (draftTool === "query-line") {
+        const hit = nearestLineHit(vbx, vby);
+        if (hit) setLineQueryId(hit.id);
+      } else if (draftTool === "query-parcel") {
+        const [wx, wy] = toWorld(vbx, vby);
+        const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
+        if (hit) setParcelQueryId(hit.id);
+      } else if (draftTool === "delete-line") {
+        const hit = nearestLineHit(vbx, vby);
+        if (hit) { snapshot(); setLines((ls) => ls.filter((l) => l.id !== hit.id)); }
+      } else if (draftTool === "delete-parcel") {
+        const [wx, wy] = toWorld(vbx, vby);
+        const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
+        if (hit) { snapshot(); setPolygons((ps) => ps.filter((p) => p.id !== hit.id)); }
       } else if (tablesOpen && tableTab === "lines") {
         // Two-way canvas<->table highlight sync (Part 9e) — Lines tab.
         const hit = nearestLineHit(vbx, vby);
@@ -1216,7 +1281,7 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -1226,6 +1291,9 @@ export function CogoWorkspace({
         else if (formTool) setFormTool(null);
         else if (coordEntry) setCoordEntry(null);
         else if (moveCoordInput) { setMoving(null); setSelected(null); setMoveCoordInput(null); }
+        else if (pointQueryId) setPointQueryId(null);
+        else if (lineQueryId) setLineQueryId(null);
+        else if (parcelQueryId) setParcelQueryId(null);
         else cancelDraft();
       } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
         e.preventDefault();
@@ -1238,7 +1306,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput]);
+  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1354,6 +1422,58 @@ export function CogoWorkspace({
             />
           </ToolGroup>
 
+          <ToolGroup label="Query &amp; Visibility">
+            <DraftButton
+              active={draftTool === "query-point"}
+              label="Point Query — click a point for its details, with rename"
+              onClick={() => activateDrawTool("query-point")}
+              icon={iconQueryPoint}
+            />
+            <DraftButton
+              active={draftTool === "query-line"}
+              label="Line Query — click a line for its direction/distance"
+              onClick={() => activateDrawTool("query-line")}
+              icon={iconQueryLine}
+            />
+            <DraftButton
+              active={draftTool === "query-parcel"}
+              label="Parcel Query — click a parcel for its details"
+              onClick={() => activateDrawTool("query-parcel")}
+              icon={iconQueryParcel}
+            />
+            <DraftButton
+              active={draftTool === "delete-line"}
+              label="Delete Line — click a line to remove just that segment"
+              onClick={() => activateDrawTool("delete-line")}
+              icon={iconDeleteLine}
+            />
+            <DraftButton
+              active={draftTool === "delete-parcel"}
+              label="Delete Parcel — click a parcel to remove that boundary"
+              onClick={() => activateDrawTool("delete-parcel")}
+              icon={iconDeleteParcel}
+            />
+            <div className="mx-1 h-5 w-px bg-slate-200" />
+            <DraftButton
+              active={showPointNames}
+              label="Show/hide point names"
+              onClick={() => setShowPointNames((s) => !s)}
+              icon={iconTogglePointNames}
+            />
+            <DraftButton
+              active={showSegLabels}
+              label="Show/hide distance-direction labels"
+              onClick={() => setShowSegLabels((s) => !s)}
+              icon={iconToggleSegLabels}
+            />
+            <DraftButton
+              active={showParcelNumbers}
+              label="Show/hide parcel/plot numbers"
+              onClick={() => setShowParcelNumbers((s) => !s)}
+              icon={iconToggleParcelNumbers}
+            />
+          </ToolGroup>
+
           {/* Tab bar — pick a category to see just its icons, instead of every
               category's row stacked on screen at once (client req 2026-08-16). */}
           <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-2 py-1">
@@ -1465,7 +1585,8 @@ export function CogoWorkspace({
             style={{
               cursor:
                 diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
-                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window"
+                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window" ||
+                draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-line" || draftTool === "delete-parcel"
                   ? "crosshair"
                   : pan.current
                   ? "grabbing"
@@ -1480,15 +1601,25 @@ export function CogoWorkspace({
           >
             {polygons.map((p) => {
               const isTableSel = (tablesOpen && tableTab === "polygons" && tableSelected.has(p.id)) || canvasSelection.has(p.id);
+              const label = polygonMeta[p.id]?.position || p.name;
+              const cE = p.points.reduce((s, v) => s + v.east, 0) / (p.points.length || 1);
+              const cN = p.points.reduce((s, v) => s + v.north, 0) / (p.points.length || 1);
+              const [ctx, cty] = toScreen(cE, cN);
               return (
-                <polygon
-                  key={p.id}
-                  points={p.points.map((v) => toScreen(v.east, v.north).join(",")).join(" ")}
-                  fill={isTableSel ? "#dc2626" : "#f59e0b"}
-                  fillOpacity={isTableSel ? 0.28 : 0.15}
-                  stroke={isTableSel ? "#dc2626" : "#d97706"}
-                  strokeWidth={isTableSel ? 2.4 : 1.4}
-                />
+                <g key={p.id}>
+                  <polygon
+                    points={p.points.map((v) => toScreen(v.east, v.north).join(",")).join(" ")}
+                    fill={isTableSel ? "#dc2626" : "#f59e0b"}
+                    fillOpacity={isTableSel ? 0.28 : 0.15}
+                    stroke={isTableSel ? "#dc2626" : "#d97706"}
+                    strokeWidth={isTableSel ? 2.4 : 1.4}
+                  />
+                  {showParcelNumbers && label && (
+                    <text x={ctx} y={cty} textAnchor="middle" fontSize={12} fontWeight="bold" className="fill-amber-800">
+                      {label}
+                    </text>
+                  )}
+                </g>
               );
             })}
             {lines.map((l) => {
@@ -1514,6 +1645,7 @@ export function CogoWorkspace({
               );
             })}
             {texts.map((t) => {
+              if (t.kind === "seglabel" && !showSegLabels) return null;
               const [x, y] = toScreen(t.east, t.north);
               return (
                 <text key={t.id} x={x} y={y} fontSize={t.size} className="fill-slate-800 font-medium">
@@ -1532,9 +1664,11 @@ export function CogoWorkspace({
                 return (
                   <g key={p.id}>
                     <circle cx={x} cy={y} r={isSel ? 6 : 4} fill={isSel ? "#dc2626" : "#059669"} />
-                    <text x={x + 7} y={y - 6} className="fill-slate-700 text-[11px] font-medium">
-                      {p.name}
-                    </text>
+                    {showPointNames && (
+                      <text x={x + 7} y={y - 6} className="fill-slate-700 text-[11px] font-medium">
+                        {p.name}
+                      </text>
+                    )}
                   </g>
                 );
               })
@@ -1755,6 +1889,84 @@ export function CogoWorkspace({
               <button type="button" onClick={applyMoveCoords} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
             </div>
           )}
+
+          {/* Point Query panel (Part 15b) — details + Prev/Next + inline rename. */}
+          {pointQueryId && (() => {
+            const p = visible.find((pp) => pp.id === pointQueryId);
+            if (!p) return null;
+            const m = pointMeta[p.id] ?? {};
+            return (
+              <div className="absolute right-2 top-2 z-10 w-56 rounded border border-brand bg-white p-2 text-xs shadow-md">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">Point Query</span>
+                  <button type="button" onClick={() => setPointQueryId(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+                </div>
+                <div className="mb-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
+                  <span className="text-slate-500">Point ID</span><span className="truncate font-mono">{p.id}</span>
+                  <span className="text-slate-500">Y</span><span className="font-mono">{p.east.toFixed(3)}</span>
+                  <span className="text-slate-500">X</span><span className="font-mono">{p.north.toFixed(3)}</span>
+                  <span className="text-slate-500">Height</span><span>{m.height || "—"}</span>
+                  <span className="text-slate-500">SR Number</span><span>{m.sdNumber || "—"}</span>
+                </div>
+                <label className="mb-1.5 block">
+                  <span className="mb-0.5 block text-slate-500">Name</span>
+                  <input
+                    value={pointQueryName}
+                    onChange={(e) => setPointQueryName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyPointRename(); }}
+                    className="w-full rounded border border-slate-200 px-1.5 py-1"
+                  />
+                </label>
+                <div className="grid grid-cols-3 gap-1">
+                  <button type="button" onClick={() => pointQueryStep(-1)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">◀ Prev</button>
+                  <button type="button" onClick={applyPointRename} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Rename</button>
+                  <button type="button" onClick={() => pointQueryStep(1)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">Next ▶</button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Line Query panel (Part 15c) — read-only Direction/Distance. */}
+          {lineQueryId && (() => {
+            const l = lines.find((ll) => ll.id === lineQueryId);
+            if (!l) return null;
+            const [brg, dist] = inverse({ east: l.aE, north: l.aN }, { east: l.bE, north: l.bN });
+            return (
+              <div className="absolute right-2 top-2 z-10 w-52 rounded border border-brand bg-white p-2 text-xs shadow-md">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">Line Query</span>
+                  <button type="button" onClick={() => setLineQueryId(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  <span className="text-slate-500">Direction</span><span className="font-mono">{formatDms(brg)}</span>
+                  <span className="text-slate-500">Distance</span><span className="font-mono">{dist.toFixed(3)}m</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Parcel Query panel (Part 15d) — Position/Erf/Area, matching the
+              Polygons table columns from Part 9d. */}
+          {parcelQueryId && (() => {
+            const poly = polygons.find((pp) => pp.id === parcelQueryId);
+            if (!poly) return null;
+            const m = polygonMeta[poly.id] ?? {};
+            const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
+            return (
+              <div className="absolute right-2 top-2 z-10 w-56 rounded border border-brand bg-white p-2 text-xs shadow-md">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">Parcel Query</span>
+                  <button type="button" onClick={() => setParcelQueryId(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  <span className="text-slate-500">Position</span><span>{m.position || poly.name || "—"}</span>
+                  <span className="text-slate-500">Erf</span><span>{m.erf || "—"}</span>
+                  <span className="text-slate-500">Area</span><span className="font-mono">{(areaM2 / 10000).toFixed(4)} ha</span>
+                  <span className="text-slate-500">Vertices</span><span>{poly.points.length}</span>
+                </div>
+              </div>
+            );
+          })()}
           </div>
 
           {/* Side-docked traverse leg-entry panel (Part 6b) — sits beside the
@@ -1827,6 +2039,16 @@ export function CogoWorkspace({
                 ? "Drag a freehand outline to select every point inside it"
                 : draftTool === "zoom-window"
                 ? "Drag a rectangle — the view zooms to fit exactly that area"
+                : draftTool === "query-point"
+                ? "Click a point for its details"
+                : draftTool === "query-line"
+                ? "Click a line for its direction/distance"
+                : draftTool === "query-parcel"
+                ? "Click a parcel for its details"
+                : draftTool === "delete-line"
+                ? "Click a line to delete it"
+                : draftTool === "delete-parcel"
+                ? "Click a parcel to delete it"
                 : draftTool === "addpoint"
                 ? `Click to place a point${snapEnabled ? " (snap on)" : ""}`
                 : draftTool === "move"
@@ -2067,6 +2289,73 @@ function iconClearSelection(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
       <path d="M8 8l8 8M16 8l-8 8" strokeWidth="2" />
+    </svg>
+  );
+}
+function iconQueryPoint(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="12" cy="12" r="2.4" fill={c} stroke="none" />
+      <circle cx="12" cy="12" r="8" strokeDasharray="2.5 2" />
+      <text x="18" y="8" fontSize="8" fill={c} stroke="none">?</text>
+    </svg>
+  );
+}
+function iconQueryLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 20L20 4" />
+      <text x="14" y="9" fontSize="8" fill={c} stroke="none">?</text>
+    </svg>
+  );
+}
+function iconQueryParcel(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
+      <text x="12" y="15" fontSize="8" fill={c} stroke="none" textAnchor="middle">?</text>
+    </svg>
+  );
+}
+function iconDeleteLine(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 20L20 4" />
+      <path d="M15 3l6 6" strokeWidth="2" stroke="#dc2626" />
+    </svg>
+  );
+}
+function iconDeleteParcel(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
+      <path d="M8 8l8 8M16 8l-8 8" strokeWidth="1.8" stroke="#dc2626" />
+    </svg>
+  );
+}
+function iconTogglePointNames(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="6" cy="18" r="1.8" fill={c} stroke="none" />
+      <rect x="10" y="5" width="11" height="7" rx="1.3" />
+      <path d="M12 8h7" strokeWidth="1.2" />
+    </svg>
+  );
+}
+function iconToggleSegLabels(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 19L21 5" />
+      <rect x="7" y="9" width="11" height="5" rx="1" fill="#fff" />
+      <path d="M9 11.5h7" strokeWidth="1.2" />
+    </svg>
+  );
+}
+function iconToggleParcelNumbers(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
+      <text x="12" y="15" fontSize="9" fontWeight="bold" fill={c} stroke="none" textAnchor="middle">1</text>
     </svg>
   );
 }
