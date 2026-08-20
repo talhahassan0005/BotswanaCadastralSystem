@@ -357,8 +357,24 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       )}
       {points.map((p, i) => {
         const bx = toX(p.east), by = toY(p.north);
-        const dx = bx - cx, dy = by - cy, len = Math.hypot(dx, dy) || 1;
-        const lx = bx + (dx / len) * 24, ly = by + (dy / len) * 24;
+        // Point the label along this vertex's own angle bisector (away from
+        // its two neighbors), verified with the same inside/outside test as
+        // the side-distance labels — more reliable than a flat centroid
+        // direction on a concave corner (client req 2026-08-21), where it
+        // could point toward the interior and collide with a nearby side
+        // label instead of clearing the figure.
+        const prev = points[(i - 1 + points.length) % points.length];
+        const next = points[(i + 1) % points.length];
+        const px = toX(prev.east), py = toY(prev.north);
+        const qx = toX(next.east), qy = toY(next.north);
+        const d1x = bx - px, d1y = by - py, l1 = Math.hypot(d1x, d1y) || 1;
+        const d2x = bx - qx, d2y = by - qy, l2 = Math.hypot(d2x, d2y) || 1;
+        let dx = d1x / l1 + d2x / l2, dy = d1y / l1 + d2y / l2;
+        const dl = Math.hypot(dx, dy) || 1;
+        dx /= dl; dy /= dl;
+        const probe = 6;
+        if (insidePoly(bx + dx * probe, by + dy * probe)) { dx = -dx; dy = -dy; }
+        const lx = bx + dx * 26, ly = by + dy * 26;
         return (
           <g key={`bcn${i}`}>
             <circle cx={bx} cy={by} r={4} fill="white" stroke="black" strokeWidth={1.2} />

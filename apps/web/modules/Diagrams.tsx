@@ -35,6 +35,29 @@ function rememberCad(location: string, parent: string) {
   } catch { /* ignore */ }
 }
 
+/** Best-fit scale for the SG sheet's drawable area (client req 2026-08-21) —
+ *  mirrors CogoWorkspace's suggestScale (Part 14). The Diagrams tab's own
+ *  default scale was a flat hardcoded 5000 regardless of the boundary's
+ *  actual size — for anything much larger than a small suburban lot at
+ *  that scale, the figure overflows its box and collides with the table/
+ *  signature line above it (confirmed by rendering the exact reported
+ *  scenario locally: an 850m-tall boundary at 1:5000 pushes ~350 VB units
+ *  past the top of its allotted area). usableW/H_mm mirror SgDiagram.tsx's
+ *  fig/pad constants converted to printed mm — keep in sync if those change.
+ */
+function suggestDiagramScale(pts: { east: number; north: number }[]): number {
+  if (pts.length < 2) return 5000;
+  const es = pts.map((p) => p.east), ns = pts.map((p) => p.north);
+  const spanE = Math.max(...es) - Math.min(...es);
+  const spanN = Math.max(...ns) - Math.min(...ns);
+  const usableW_mm = 96, usableH_mm = 83;
+  const sByWidth = spanE > 0 ? (spanE * 1000) / usableW_mm : 0;
+  const sByHeight = spanN > 0 ? (spanN * 1000) / usableH_mm : 0;
+  const raw = Math.max(sByWidth, sByHeight, 1);
+  const NICE = [100, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000];
+  return NICE.find((n) => n >= raw) ?? Math.ceil(raw / 1000) * 1000;
+}
+
 export function Diagrams() {
   const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -96,7 +119,7 @@ export function Diagrams() {
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "G. G. SESINYI",
     surveyedDate: "FEBRUARY 2026",
     coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
-    scale: 5000,
+    scale: suggestDiagramScale(fig?.points ?? []),
     dsmNo: "",
     srNo: "",
     gpNo: "",
@@ -154,10 +177,14 @@ export function Diagrams() {
   const setLease = (k: keyof typeof leaseMeta) => (v: string) =>
     setLeaseMeta((m) => ({ ...m, [k]: k === "localityScale" || k === "boundaryScale" ? Number(v) || 0 : v }));
 
-  // When a lot is picked, pre-fill the diagram's lot name from the parcel number.
+  // When a lot is picked, pre-fill the diagram's lot name and a best-fit
+  // scale for its actual size from the parcel number/extent (client req
+  // 2026-08-21) — a flat default scale can badly overflow a larger lot's
+  // figure into the table/signature area above it.
   useEffect(() => {
     const p = parcels.find((x) => x.id === selParcelId);
-    if (p?.number) setMeta((m) => ({ ...m, lotName: p.number.toUpperCase() }));
+    const suggested = suggestDiagramScale(fig?.points ?? []);
+    setMeta((m) => ({ ...m, ...(p?.number ? { lotName: p.number.toUpperCase() } : {}), scale: suggested }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selParcelId]);
 
