@@ -1422,7 +1422,7 @@ export function CogoWorkspace({
             />
           </ToolGroup>
 
-          <ToolGroup label="Query &amp; Visibility">
+          <ToolGroup label="Query & Visibility">
             <DraftButton
               active={draftTool === "query-point"}
               label="Point Query — click a point for its details, with rename"
