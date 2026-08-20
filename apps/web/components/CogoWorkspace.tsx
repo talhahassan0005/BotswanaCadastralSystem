@@ -159,6 +159,12 @@ export function CogoWorkspace({
   interface TravLeg { point: WPoint; direction: string; distance: string; lineId: string; labelId: string; fromName: string }
   const [travLegs, setTravLegs] = useState<TravLeg[]>([]);
   const travIdRef = useRef(1);
+  // ---- Polygon completion dialog (client req 2026-08-21, Part 16c) — shown
+  // when Calculate finishes a traverse: computed Area + an editable Erf/Plot
+  // Number pre-filled with the next number after whichever was last
+  // confirmed in this sheet. ----
+  const [travCompleteDialog, setTravCompleteDialog] = useState<{ areaHa: string; plotNumber: string } | null>(null);
+  const [lastPlotNumber, setLastPlotNumber] = useState<string | null>(null);
   // ---- per-plot diagram generation (Part 7d): click a specific plot on the
   // canvas, confirm a scale, generate the Diagrams-tab sheet for just that plot. ----
   const [diagramPicking, setDiagramPicking] = useState(false);
@@ -692,20 +698,44 @@ export function CogoWorkspace({
   function travRecall() {
     if (travMemory) { setTravDir(travMemory.dir); setTravDist(travMemory.dist); }
   }
+  function bumpPlotNumber(s: string): string {
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? String(n + 1) : s;
+  }
   function travCalculate() {
-    if (!travLegs.length) { window.alert("No legs entered yet."); return; }
-    const totalDist = travLegs.reduce((s, l) => s + (Number(l.distance) || 0), 0);
-    const last = travLegs[travLegs.length - 1].point;
-    const closeMsg = travStartPoint
-      ? `  ·  Distance back to start: ${inverse({ east: travStartPoint.east, north: travStartPoint.north }, { east: last.east, north: last.north })[1].toFixed(3)}m`
-      : "";
-    window.alert(`Legs: ${travLegs.length}  ·  Total distance: ${totalDist.toFixed(3)}m${closeMsg}`);
+    if (!travLegs.length || !travStartPoint) { window.alert("No legs entered yet."); return; }
+    const boundary = [travStartPoint, ...travLegs.map((l) => l.point)];
+    const areaHa = Math.abs(polygonArea(boundary.map((p) => ({ east: p.east, north: p.north })))) / 10000;
+    setTravCompleteDialog({
+      areaHa: areaHa.toFixed(4),
+      plotNumber: lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "",
+    });
+  }
+  /** Confirms the completion dialog (Part 16c) — builds the actual closed
+   *  WPolygon for this traverse (previously Calculate never created one at
+   *  all, just showed a summary), named with the Erf/Plot Number so it
+   *  immediately shows up in the Polygons table (Part 9d) and is clickable
+   *  by the Diagram tool (Part 7d). Remembers the number so the next plot
+   *  in this sheet (Part 7c) suggests the following one. */
+  function travCompleteConfirm() {
+    if (!travCompleteDialog || !travStartPoint) return;
+    const boundary = [travStartPoint, ...travLegs.map((l) => l.point)];
+    const plotNumber = travCompleteDialog.plotNumber.trim();
+    snapshot();
+    const polyId = `travpoly-${Date.now()}`;
+    setPolygons((ps) => [...ps, { id: polyId, name: plotNumber || undefined, points: boundary.map((p) => ({ name: p.name, east: p.east, north: p.north })) }]);
+    if (plotNumber) {
+      setPolygonMeta((m) => ({ ...m, [polyId]: { ...m[polyId], position: plotNumber } }));
+      setLastPlotNumber(plotNumber);
+    }
+    setTravCompleteDialog(null);
   }
   function travClose() {
     setTravOpen(false);
     setTravPickingStart(false);
     setTravChoosingTo(false);
     setTravEditIndex(null);
+    setTravCompleteDialog(null);
   }
 
   // ---- per-plot diagram generation (Part 7d) ----
@@ -2133,6 +2163,37 @@ export function CogoWorkspace({
                 <div className="flex justify-end gap-2">
                   <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
                   <button type="button" onClick={savePolygonAttrs} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Traverse/polygon completion dialog (client req 2026-08-21, Part
+              16c) — shown when Calculate finishes a boundary: computed Area
+              (read-only) + an editable Erf/Plot Number pre-filled with the
+              next number after whichever was last confirmed in this sheet. */}
+          {travCompleteDialog && (
+            <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setTravCompleteDialog(null)}>
+              <div className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">Traverse Complete</h3>
+                <label className="mb-2 block">
+                  <span className="mb-0.5 block text-slate-500">Area</span>
+                  <input value={`${travCompleteDialog.areaHa} ha`} readOnly className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-500" />
+                </label>
+                <label className="mb-3 block">
+                  <span className="mb-0.5 block text-slate-500">Erf / Plot Number</span>
+                  <input
+                    autoFocus
+                    value={travCompleteDialog.plotNumber}
+                    onChange={(e) => setTravCompleteDialog({ ...travCompleteDialog, plotNumber: e.target.value })}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => { if (e.key === "Enter") travCompleteConfirm(); }}
+                    className="w-full rounded border border-slate-200 px-2 py-1.5"
+                  />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setTravCompleteDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+                  <button type="button" onClick={travCompleteConfirm} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
                 </div>
               </div>
             </div>

@@ -103,6 +103,13 @@ export function CogoTraversePanel({
         )}
       </div>
 
+      {/* Live from -> to indicator (client req 2026-08-21, Part 16a) — always
+          shows which two points the current leg connects, in the client's
+          exact "Name: d -> To Name: e" format, updating with every leg. */}
+      <div className="mx-2.5 mt-2 rounded bg-brand-light/30 px-2 py-1.5 text-center font-mono font-semibold text-brand-dark">
+        Name: {fromName ?? "—"} &rarr; To Name: {toName.trim() || "—"}
+      </div>
+
       {/* From / To */}
       <div className="grid grid-cols-2 gap-2 px-2.5 pt-2">
         <Field label="Name (from)">
