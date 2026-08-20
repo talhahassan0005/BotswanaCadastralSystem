@@ -199,6 +199,21 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const toY = (north: number) => offY + (maxN - north) * sc;
   const cx = toX(avg(es)), cy = toY(avg(nsv));
   const polyPoints = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
+  // Screen-space vertices + point-in-polygon test, used to pick which side of
+  // a boundary segment is actually "outside" the shape (client req
+  // 2026-08-21 — the earlier centroid-direction heuristic put distance
+  // labels on the wrong side for concave/irregular boundaries, overlapping
+  // the figure). Correct for any polygon shape, convex or not.
+  const screenPts = points.map((p) => ({ x: toX(p.east), y: toY(p.north) }));
+  function insidePoly(px: number, py: number): boolean {
+    let inside = false;
+    for (let i = 0, j = screenPts.length - 1; i < screenPts.length; j = i++) {
+      const a = screenPts[i], b = screenPts[j];
+      const hit = a.y > py !== b.y > py && px < ((b.x - a.x) * (py - a.y)) / (b.y - a.y) + a.x;
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
   const figureLetters =
     points.map((p) => p.name ?? "?").join(" ") + (meta.closed ? ` ${points[0]?.name ?? ""}` : "");
   // On a beacon-heavy parcel this line is too long for the sheet width — wrap
@@ -345,9 +360,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         );
       })}
       {/* Each side's distance, placed next to that side of the boundary
-          (client req 2026-08-21, Part 19 reference template) — offset
-          outward from the figure centroid so it never sits on top of the
-          line itself. */}
+          (client req 2026-08-21, Part 19 reference template) — offset to
+          whichever side of the line is actually outside the polygon
+          (tested directly, not guessed from the centroid — a centroid
+          direction is wrong for concave/irregular boundaries and was
+          putting labels on top of the figure). */}
       {sides.map((s, i) => {
         const a = points[i], b = points[(i + 1) % points.length];
         if (!a || !b) return null;
@@ -356,7 +373,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const mx = (ax + bx) / 2, my = (ay + by) / 2;
         const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
         let nx = -dy / len, ny = dx / len;
-        if ((mx + nx - cx) * (mx - cx) + (my + ny - cy) * (my - cy) < 0) { nx = -nx; ny = -ny; }
+        const probe = 6; // small offset — enough to clear the line without crossing a nearby vertex
+        if (insidePoly(mx + nx * probe, my + ny * probe)) { nx = -nx; ny = -ny; }
         return (
           <text key={`sd${i}`} x={mx + nx * 16} y={my + ny * 16 + 4} textAnchor="middle" fontSize={12}>
             {s.distance.toFixed(2)}
