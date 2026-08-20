@@ -10,7 +10,7 @@ import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
  * style, drawn from the computed figure (COGO result or a parcel sent to it).
  */
 export function WorkingPlanView() {
-  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput, importResult } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const fig = diagramFigure ?? cogoResult;
 
@@ -21,6 +21,16 @@ export function WorkingPlanView() {
   const sides = useMemo(
     () => (fig?.legs ?? []).map((l) => ({ from: l.from, to: l.to, bearing_dms: l.bearing_dms, distance: l.distance })),
     [fig]
+  );
+  // Reference marks (client req 2026-08-20, Part 12b) — excluded from the
+  // Cadastral work station, but shown here since Working Plan is where
+  // reference marks are actually used.
+  const refMarks = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null && r.pointType === "ref")
+        .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
+    [importResult]
   );
 
   // Restore saved title-block from the project, else derive defaults from config.
@@ -134,7 +144,7 @@ export function WorkingPlanView() {
 
       <Card title="Working Plan">
         <div className="mx-auto max-w-3xl">
-          <WorkingPlan ref={svgRef} meta={effectiveMeta} points={points} sides={sides} />
+          <WorkingPlan ref={svgRef} meta={effectiveMeta} points={points} sides={sides} refMarks={refMarks} />
         </div>
       </Card>
     </div>

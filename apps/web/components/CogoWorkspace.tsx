@@ -35,7 +35,10 @@ const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not 
 // point (and, for the box, every fully-enclosed line/polygon) to the
 // current canvasSelection, instead of the plain "select" tool's one-at-a-
 // time click-to-add.
-type DraftTool = "select" | "select-box" | "select-lasso" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
+// "zoom-window" (client req 2026-08-20, Part 12a) drags the same rectangle
+// as "select-box" but zooms the view to exactly that area instead of
+// selecting what's inside it — the legacy "Zoom Window" tool.
+type DraftTool = "select" | "select-box" | "select-lasso" | "zoom-window" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
 const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element }[] = [
@@ -257,6 +260,20 @@ export function CogoWorkspace({
       return;
     }
     frameOn(all);
+  }
+  /** Zoom Window (Part 12a) — fits the view to exactly a dragged
+   *  rectangle's world-space area, unlike frameOn's "everything with
+   *  padding" fit. Uses per-axis zoom (not just the smaller dimension) so
+   *  the whole dragged box — not just a square subset of it — fills the
+   *  canvas, matching the legacy tool exactly. */
+  function zoomToRect(sx1: number, sy1: number, sx2: number, sy2: number) {
+    const [wx1, wy1] = toWorld(sx1, sy1);
+    const [wx2, wy2] = toWorld(sx2, sy2);
+    const cx = (wx1 + wx2) / 2, cy = (wy1 + wy2) / 2;
+    const spanX = Math.max(Math.abs(wx2 - wx1), 0.01);
+    const spanY = Math.max(Math.abs(wy2 - wy1), 0.01);
+    const zoom = Math.min(50, Math.max(0.01, Math.min(W / spanX, H / spanY) * 0.95));
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom)) setView({ cx, cy, zoom });
   }
 
   function frameOn(pts: WPoint[]) {
@@ -888,7 +905,7 @@ export function CogoWorkspace({
     setCursor({ e, n });
     if (pan.current) {
       pan.current.moved += Math.abs(vbx - pan.current.vbx) + Math.abs(vby - pan.current.vby);
-      if (draftTool === "select-box") {
+      if (draftTool === "select-box" || draftTool === "zoom-window") {
         setRectSelect((r) => (r ? { ...r, x2: vbx, y2: vby } : r));
       } else if (draftTool === "select-lasso") {
         setLassoPath((p) => (p ? [...p, { x: vbx, y: vby }] : p));
@@ -903,7 +920,7 @@ export function CogoWorkspace({
     svgRef.current?.setPointerCapture(ev.pointerId);
     const [vbx, vby] = eventToVb(ev);
     pan.current = { vbx, vby, cx: view.cx, cy: view.cy, moved: 0 };
-    if (draftTool === "select-box") setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
+    if (draftTool === "select-box" || draftTool === "zoom-window") setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
     else if (draftTool === "select-lasso") setLassoPath([{ x: vbx, y: vby }]);
   }
   const DRAW_TOOLS: DraftTool[] = ["line", "polyline", "curve", "polygon", "offset"];
@@ -1037,6 +1054,10 @@ export function CogoWorkspace({
             setOffsetInput({ screenX: vbx, screenY: vby, side: cross > 0 ? 1 : -1, value: "" });
           }
         }
+      } else if (draftTool === "zoom-window") {
+        // A plain click (not a drag) in Zoom Window mode does nothing —
+        // the tool only acts on a dragged rectangle (see the drag-end
+        // branch below), same as Box Select.
       } else if (tablesOpen && tableTab === "lines") {
         // Two-way canvas<->table highlight sync (Part 9e) — Lines tab.
         const hit = nearestLineHit(vbx, vby);
@@ -1100,6 +1121,11 @@ export function CogoWorkspace({
         if (allIn) hitIds.add(pg.id);
       });
       if (hitIds.size) setCanvasSelection((s) => new Set([...s, ...hitIds]));
+      setRectSelect(null);
+    } else if (draftTool === "zoom-window" && rectSelect) {
+      // Zoom Window (Part 12a) — fit the view to exactly the dragged
+      // rectangle's area, not a generic zoom step.
+      zoomToRect(rectSelect.x1, rectSelect.y1, rectSelect.x2, rectSelect.y2);
       setRectSelect(null);
     } else if (draftTool === "select-lasso" && lassoPath) {
       // Freehand lasso multi-select (Part 10a) — points only, per spec.
@@ -1244,6 +1270,12 @@ export function CogoWorkspace({
             <DraftButton label="Zoom in" onClick={() => zoomBy(1.25)} icon={iconZoomIn} />
             <DraftButton label="Zoom out" onClick={() => zoomBy(1 / 1.25)} icon={iconZoomOut} />
             <DraftButton label="Zoom to extents (fit all)" onClick={zoomExtents} icon={iconZoomExtents} />
+            <DraftButton
+              active={draftTool === "zoom-window"}
+              label="Zoom Window — drag a rectangle to zoom to exactly that area"
+              onClick={() => activateDrawTool("zoom-window")}
+              icon={iconZoomWindow}
+            />
             <DraftButton
               active={snapEnabled}
               label="Snap to point / line / grid"
@@ -1392,7 +1424,7 @@ export function CogoWorkspace({
             style={{
               cursor:
                 diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
-                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso"
+                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window"
                   ? "crosshair"
                   : pan.current
                   ? "grabbing"
@@ -1751,6 +1783,8 @@ export function CogoWorkspace({
                 ? "Drag a rectangle to select every point/line/polygon inside it"
                 : draftTool === "select-lasso"
                 ? "Drag a freehand outline to select every point inside it"
+                : draftTool === "zoom-window"
+                ? "Drag a rectangle — the view zooms to fit exactly that area"
                 : draftTool === "addpoint"
                 ? `Click to place a point${snapEnabled ? " (snap on)" : ""}`
                 : draftTool === "move"
@@ -1988,6 +2022,15 @@ function iconZoomExtents(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx="12" cy="12" r="1.6" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconZoomWindow(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="12" height="12" rx="1" strokeDasharray="2.5 2" />
+      <circle cx="16" cy="16" r="5" />
+      <path d="M20 20l3 3" strokeLinecap="round" />
     </svg>
   );
 }

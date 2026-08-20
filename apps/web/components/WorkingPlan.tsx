@@ -36,6 +36,10 @@ interface Props {
   meta: WorkingPlanMeta;
   points: WorkingPlanPoint[];
   sides: WorkingPlanSide[];
+  /** Reference-mark points (client req 2026-08-20, Part 12b) — excluded from
+   *  the Cadastral work station, but shown here in the locality inset since
+   *  this is where reference marks are actually used/referenced. */
+  refMarks?: WorkingPlanPoint[];
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +80,7 @@ const REF_RED = "#dc2626";
 // Component — Botswana Working Plan as a scalable portrait SVG.
 // ---------------------------------------------------------------------------
 export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan(
-  { meta, points },
+  { meta, points, refMarks },
   ref
 ) {
   const VB_W = 600;
@@ -144,11 +148,15 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const iX = (e: number) => iOffX + (e - minE) * iFit;
   const iY = (n: number) => iOffY + (maxN - n) * iFit;
   const insetPoly = points.map((p) => `${iX(p.east)},${iY(p.north)}`).join(" ");
-  // a couple of decorative reference-mark dots near the parcel
-  const refDots = [
-    { x: inset.x + 14, y: inset.y + 18, label: "RM1" },
-    { x: inset.x + inset.w - 16, y: inset.y + inset.h - 16, label: "RM2" },
-  ];
+  // Real reference-mark points (client req 2026-08-20, Part 12b) — clamped to
+  // stay inside the inset box since it's an explicitly "not to scale" locality
+  // diagram and a ref mark's true coordinates are usually outside the tight
+  // parcel bounding box the inset is fitted to.
+  const refDots = (refMarks ?? []).map((r) => ({
+    x: Math.min(inset.x + inset.w - 8, Math.max(inset.x + 8, iX(r.east))),
+    y: Math.min(inset.y + inset.h - 8, Math.max(inset.y + 8, iY(r.north))),
+    label: r.name || "RM",
+  }));
 
   // ---- Bottom description blocks ----
   const descTop = VB_H - 200;
