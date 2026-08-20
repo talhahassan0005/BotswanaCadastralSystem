@@ -87,6 +87,16 @@ export function CogoEngine() {
   // error or a wrong polygon built from every point.
   const coordinateOnly = legs.length < 2 && coordPoints.length >= 3;
 
+  // The computed boundary, handed to the work station canvas so "Run COGO
+  // Computation" actually draws it there — not just in the results tables
+  // below (client req 2026-08-21, Part 13a). Memoized so CogoWorkspace's
+  // injection effect only fires when the result itself changes, not on
+  // every unrelated re-render.
+  const resultBoundary = useMemo(
+    () => (cogoResult ? { points: cogoResult.points, legs: cogoResult.legs, closed: cogoResult.type !== "open" } : null),
+    [cogoResult]
+  );
+
   async function run() {
     setError(null);
     setRunning(true);
@@ -140,6 +150,10 @@ export function CogoEngine() {
 
   const c = cogoResult?.closure;
   const limit = config.dsmLimit;
+  // Closure tolerance as an absolute distance instead of a 1:N ratio (client
+  // req 2026-08-21, Part 13c) — e.g. "0.03" meaning 0.03 m allowable misclosure.
+  const absoluteMode = config.dsmLimitMode === "absolute";
+  const absoluteTolerance = config.dsmLimitAbsolute ?? 0.03;
   const isOpen = cogoResult?.type === "open";
   const precision = c?.relative_precision ?? null;
   const linear = c?.linear_misclosure ?? 0;
@@ -150,22 +164,33 @@ export function CogoEngine() {
   const adjustmentNegligible = !isOpen && cogoResult?.adjustment !== "none" && maxResidual < 0.005;
 
   // Closure status:
-  //  - open traverse has no closure concept            -> "na"
-  //  - null precision with ~zero misclosure = perfect  -> "exact" (best case)
-  //  - precision >= DSM limit                           -> "pass"
-  //  - otherwise                                        -> "fail"
+  //  - open traverse has no closure concept              -> "na"
+  //  - ~zero misclosure                                   -> "exact" (best case, either mode)
+  //  - absolute mode: linear misclosure <= tolerance       -> "pass"
+  //  - ratio mode: precision >= DSM limit                  -> "pass"
+  //  - otherwise                                           -> "fail"
   const closureStatus: "na" | "exact" | "pass" | "fail" = isOpen
     ? "na"
-    : precision == null
-    ? linear < 1e-6
-      ? "exact"
+    : linear < 1e-6
+    ? "exact"
+    : absoluteMode
+    ? linear <= absoluteTolerance
+      ? "pass"
       : "fail"
+    : precision == null
+    ? "fail"
     : precision >= limit
     ? "pass"
     : "fail";
   const closureGood = closureStatus === "pass" || closureStatus === "exact";
   const pct =
-    closureStatus === "na" ? 0 : closureStatus === "fail" && precision ? Math.min(100, Math.round((precision / limit) * 100)) : 100;
+    closureStatus === "na"
+      ? 0
+      : closureStatus === "fail" && absoluteMode
+      ? Math.min(100, Math.round((absoluteTolerance / Math.max(linear, 1e-9)) * 100))
+      : closureStatus === "fail" && precision
+      ? Math.min(100, Math.round((precision / limit) * 100))
+      : 100;
   const closureMessage =
     closureStatus === "na"
       ? "Not applicable — open traverse"
@@ -187,13 +212,37 @@ export function CogoEngine() {
             <Field label="Land surveyor">
               <Input value={config.surveyor} onChange={(v) => setConfig({ surveyor: v })} placeholder="e.g. G. G. Sesinyi" />
             </Field>
-            <Field label="DSM closure limit (1:N)">
-              <Input
-                type="number"
-                value={config.dsmLimit}
-                onChange={(v) => setConfig({ dsmLimit: Number(v) || 0 })}
-                placeholder="3000"
-              />
+            <Field label="Closure tolerance">
+              <div className="mb-1.5 flex gap-3 text-xs text-slate-600">
+                <label className="flex items-center gap-1">
+                  <input type="radio" name="dsm-mode" checked={!absoluteMode} onChange={() => setConfig({ dsmLimitMode: "ratio" })} />
+                  Ratio (1:N)
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="radio" name="dsm-mode" checked={absoluteMode} onChange={() => setConfig({ dsmLimitMode: "absolute" })} />
+                  Absolute (m)
+                </label>
+              </div>
+              {absoluteMode ? (
+                <Input
+                  type="number"
+                  value={config.dsmLimitAbsolute ?? 0.03}
+                  onChange={(v) => setConfig({ dsmLimitAbsolute: Number(v) || 0 })}
+                  placeholder="0.03"
+                />
+              ) : (
+                <Input
+                  type="number"
+                  value={config.dsmLimit}
+                  onChange={(v) => setConfig({ dsmLimit: Number(v) || 0 })}
+                  placeholder="3000"
+                />
+              )}
+              <p className="mt-1 text-xs text-slate-400">
+                {absoluteMode
+                  ? "Allowable linear misclosure, in metres — e.g. 0.03."
+                  : "Allowable closure denominator — e.g. 3000 means 1:3000."}
+              </p>
             </Field>
           </div>
         </Card>
@@ -267,21 +316,32 @@ export function CogoEngine() {
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </Card>
 
-        <Card title="Other Tools">
+        <Card title="Quick Calculators">
+          {/* Clarifying the "Other Tools" section (client req 2026-08-21,
+              Part 13d) — each opens a stand-alone popup calculator for a
+              one-off computation, separate from the Cadastral work
+              station's own COGO Calculators tab (which plots its results
+              directly onto the canvas below instead). */}
+          <p className="mb-2 text-xs text-slate-400">
+            Stand-alone one-off calculators — results shown here, not plotted on the canvas.
+            To compute and draw directly on the work station, use its own COGO Calculators tab instead.
+          </p>
           <div className="space-y-1.5 text-sm">
             {([
-              ["inverse", "Forward / Inverse calc"],
-              ["intersection", "Intersection methods"],
-              ["curve", "Curve computations"],
-              ["area", "Area calculations"],
-              ["transform", "Coordinate transform"],
-            ] as [ToolId, string][]).map(([id, label]) => (
+              ["inverse", "Forward / Inverse calc", "Bearing+distance from two points, or a new point from a bearing+distance"],
+              ["intersection", "Intersection methods", "Where two rays/circles from known points cross"],
+              ["curve", "Curve computations", "Circular curve arc, chord, tangent from radius + angle"],
+              ["area", "Area calculations", "Area of a polygon, or a strip (length × width)"],
+              ["transform", "Coordinate transform", "Convert coordinates between Lo/Arc1950/WGS84/UTM"],
+            ] as [ToolId, string, string][]).map(([id, label, desc]) => (
               <button
                 key={id}
                 onClick={() => setTool(id)}
+                title={desc}
                 className="block w-full rounded-md px-2 py-1.5 text-left text-slate-600 hover:bg-brand-light/40 hover:text-brand-dark"
               >
-                {label}
+                <span className="block font-medium">{label}</span>
+                <span className="block text-xs text-slate-400">{desc}</span>
               </button>
             ))}
           </div>
@@ -292,7 +352,7 @@ export function CogoEngine() {
 
       {/* Right results */}
       <div className="space-y-5">
-        <CogoWorkspace points={[...workspacePoints, ...toolPoints]} onTool={setTool} />
+        <CogoWorkspace points={[...workspacePoints, ...toolPoints]} onTool={setTool} resultBoundary={resultBoundary} />
 
         {!cogoResult ? (
           <Card>
@@ -306,6 +366,17 @@ export function CogoEngine() {
           </Card>
         ) : (
           <>
+            {/* Clear/Delete auto result (client req 2026-08-21, Part 13b) — the
+                automatic point-ordering can be wrong (e.g. producing a
+                self-intersecting boundary); this discards both the result
+                tables and whatever it drew on the canvas, so the user can
+                rebuild the boundary manually with the Polygon tool or the
+                Parcels tab's boundary-order tool instead. */}
+            <div className="flex justify-end">
+              <Button variant="ghost" onClick={() => setCogoResult(null)}>
+                Clear Result
+              </Button>
+            </div>
             <div className="grid gap-5 md:grid-cols-2">
               <Card title="Closure Results">
                 <dl className="space-y-2 text-sm">
@@ -316,7 +387,7 @@ export function CogoEngine() {
                     value={isOpen ? "N/A (open)" : c!.relative_precision_text}
                     tone={closureStatus === "na" ? undefined : closureGood ? "good" : "bad"}
                   />
-                  <Row label="DSM limit" value={`1:${limit.toLocaleString()}`} />
+                  <Row label="Closure tolerance" value={absoluteMode ? `${absoluteTolerance.toFixed(3)} m` : `1:${limit.toLocaleString()}`} />
                 </dl>
                 <div className="mt-3">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">

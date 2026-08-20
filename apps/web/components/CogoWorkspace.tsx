@@ -67,9 +67,19 @@ type ToolGroupId = (typeof TOOL_GROUPS)[number]["id"];
 export function CogoWorkspace({
   points,
   onTool,
+  resultBoundary,
 }: {
   points: { name?: string | null; east: number; north: number }[];
   onTool: (id: ToolId) => void;
+  /** A computed traverse/coordinates result (client req 2026-08-21, Part
+   *  13a) — when set, its boundary is drawn on the canvas (lines + bearing/
+   *  distance labels + closed polygon), the same as a manually click-drawn
+   *  one; when cleared (e.g. via "Clear Result"), that drawing is removed. */
+  resultBoundary?: {
+    points: { name: string | null; east: number; north: number }[];
+    legs: { from: string | null; to: string | null; bearing_dms: string; distance: number }[];
+    closed: boolean;
+  } | null;
 }) {
   const { config, setDiagramFigure, setDiagramInput, setActiveTab } = useStore();
   const [active, setActive] = useState(false);
@@ -805,6 +815,47 @@ export function CogoWorkspace({
     frameOn(basePoints);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points]);
+
+  // Draw a computed traverse/coordinates result on the canvas (Part 13a) —
+  // lines + bearing/distance labels (same style as a manually click-drawn
+  // shape, Part 11) plus a closed polygon. Runs once per distinct result
+  // object (resultBoundary is memoized by the caller), so it doesn't
+  // re-inject on every unrelated re-render. "cogores-" ids let this cleanly
+  // remove only ITS OWN geometry — never anything the user drew by hand —
+  // both when a new result replaces the old one and when it's cleared to null.
+  useEffect(() => {
+    setLines((ls) => ls.filter((l) => !l.id.startsWith("cogores-")));
+    setPolygons((ps) => ps.filter((p) => !p.id.startsWith("cogores-")));
+    setTexts((ts) => ts.filter((t) => !t.id.startsWith("cogores-")));
+    if (!resultBoundary || !resultBoundary.points.length) return;
+    const byName = new Map(resultBoundary.points.map((p) => [p.name, p]));
+    const now = Date.now();
+    const newLines: WLine[] = [];
+    const newTexts: WText[] = [];
+    resultBoundary.legs.forEach((lg, i) => {
+      const a = lg.from ? byName.get(lg.from) : null;
+      const b = lg.to ? byName.get(lg.to) : null;
+      if (!a || !b) return;
+      newLines.push({ id: `cogores-line-${now}-${i}`, aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+      newTexts.push({
+        id: `cogores-text-${now}-${i}`,
+        text: `${lg.bearing_dms}  ${lg.distance.toFixed(2)}m`,
+        east: (a.east + b.east) / 2,
+        north: (a.north + b.north) / 2,
+        size: 11,
+      });
+    });
+    setLines((ls) => [...ls, ...newLines]);
+    setTexts((ts) => [...ts, ...newTexts]);
+    if (resultBoundary.closed && resultBoundary.points.length >= 3) {
+      setPolygons((ps) => [
+        ...ps,
+        { id: `cogores-poly-${now}`, points: resultBoundary.points.map((p) => ({ name: p.name ?? "", east: p.east, north: p.north })) },
+      ]);
+    }
+    frameOn(resultBoundary.points.map((p, i) => ({ id: `cogores-frame-${i}`, name: p.name ?? "", east: p.east, north: p.north })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultBoundary]);
 
   const toScreen = (e: number, n: number): [number, number] => [
     (e - view.cx) * view.zoom + W / 2,

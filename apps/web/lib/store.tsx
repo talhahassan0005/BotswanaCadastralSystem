@@ -21,6 +21,12 @@ export interface ProjectConfig {
   adjustment: "bowditch" | "transit" | "lsq" | "none";
   startBeacon: string;
   dsmLimit: number; // allowable closure denominator (1:N)
+  /** Closure tolerance mode (client req 2026-08-21, Part 13c) — "ratio" checks
+   *  against dsmLimit (1:N) as before; "absolute" checks the linear misclosure
+   *  directly against dsmLimitAbsolute (metres). Optional/undefined = "ratio",
+   *  so existing saved projects need no migration. */
+  dsmLimitMode?: "ratio" | "absolute";
+  dsmLimitAbsolute?: number; // allowable linear misclosure (m), used when dsmLimitMode === "absolute"
 }
 
 interface Store {
