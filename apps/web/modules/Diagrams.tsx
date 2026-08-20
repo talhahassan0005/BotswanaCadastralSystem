@@ -187,29 +187,31 @@ export function Diagrams() {
       alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
       return;
     }
-    // Client screenshot of their actual print dialog confirmed the real cause
-    // (2026-08-21): "Margins: Default" was selected — Chrome's own default
-    // print margin is added on top of this page's CSS margins regardless of
-    // `@page{margin:0}`, which pushed the sheet past A4 (clipped on the
-    // right, and the bottom "deductions" block spilled onto its own
-    // near-blank page). The sheet's own size — 160x270mm, with a 35mm left /
-    // 15mm right / 14mm top / 13mm bottom margin (client-specified: those
-    // four numbers sum to exactly 210x297mm, A4) — is correct and must NOT
-    // shrink; that measurement stays exactly as given. The fix is entirely
-    // about the print dialog: tell the user, on screen only (not in the
-    // print output), to switch Margins to "None" so nothing is added on top.
+    // Re-confirmed still broken after the margin-dialog fix (client
+    // screenshots, 2026-08-21, Parts 17/18) — "3 sheets of paper" persisted
+    // even with that guidance. Root cause: 160x270mm sheet + 35/15/14/13mm
+    // margins summed to EXACTLY 210x297mm (A4) with zero tolerance — mm-to-
+    // device-pixel conversion is never perfectly exact at every stage of a
+    // print pipeline, so any sub-millimetre rounding pushes the total just
+    // past the page boundary and forces a page break, independent of the
+    // Margins dropdown. Fix: the 160x270mm SHEET ITSELF is unchanged (that
+    // measurement is correct per the client) — only the surrounding margins
+    // (originally sized purely to pad the sheet out to exactly A4, not a
+    // measurement the client specified) are trimmed slightly, leaving real
+    // slack: 32+160+13=205mm (5mm under A4's 210mm width), 12+270+11=293mm
+    // (4mm under A4's 297mm height).
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>` +
         `@page{size:A4 portrait;margin:0}` +
         `body{margin:0}` +
-        `svg{width:160mm;height:270mm;display:block;margin:14mm 15mm 13mm 35mm}` +
+        `svg{width:160mm;height:270mm;display:block;margin:12mm 13mm 11mm 32mm}` +
         `.print-note{position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#78350f;font:14px/1.4 system-ui,sans-serif;padding:10px 16px;z-index:10}` +
         `.print-note button{margin-left:12px;padding:4px 12px;font-weight:600;background:#0f766e;color:#fff;border:none;border-radius:4px;cursor:pointer}` +
         `@media print{.print-note{display:none}}` +
         `</style></head>` +
         `<body>` +
-        `<div class="print-note">In the print dialog: set <strong>Margins</strong> to <strong>None</strong> (it may default to "Default", which pushes this off the page) — then click Print.` +
+        `<div class="print-note">Tip: if a print/PDF still shows more than one page, set <strong>Margins</strong> to <strong>None</strong> in the print dialog.` +
         `<button onclick="window.print()">Print</button></div>` +
         svg +
         `</body></html>`
