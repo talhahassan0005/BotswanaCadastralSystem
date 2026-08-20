@@ -320,7 +320,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       <line x1={xDsm + 16} y1={tableBottom + 76} x2={tableRight - 16} y2={tableBottom + 76} stroke="black" strokeWidth={0.6} />
 
       {/* ===================== North arrow + scale (right) ===================== */}
-      <g transform={`translate(${850}, ${fig.y - 8})`}>
+      {/* Positioned clear of the actual drawn figure (client req 2026-08-21)
+          — since Part 14 draws the boundary at the chosen scale instead of
+          always auto-fitting the fig box, a large/tall shape can now extend
+          further right than the old fixed x=850 anticipated, overlapping the
+          arrow and any nearby side-distance labels. Push the arrow right of
+          the figure's actual right edge (capped so it stays inside the sheet
+          border), instead of always sitting at a fixed position. */}
+      <g transform={`translate(${Math.min(950, Math.max(850, offX + dw + 50))}, ${fig.y - 8})`}>
         <line x1={0} y1={46} x2={0} y2={-34} stroke="black" strokeWidth={1.3} />
         <polygon points="0,-46 -8,-22 0,-32 8,-22" fill="black" />
         <line x1={-14} y1={2} x2={14} y2={2} stroke="black" strokeWidth={0.8} />
@@ -376,7 +383,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const probe = 6; // small offset — enough to clear the line without crossing a nearby vertex
         if (insidePoly(mx + nx * probe, my + ny * probe)) { nx = -nx; ny = -ny; }
         return (
-          <text key={`sd${i}`} x={mx + nx * 16} y={my + ny * 16 + 4} textAnchor="middle" fontSize={12}>
+          <text key={`sd${i}`} x={mx + nx * 22} y={my + ny * 22 + 4} textAnchor="middle" fontSize={12}>
             {s.distance.toFixed(2)}
           </text>
         );
