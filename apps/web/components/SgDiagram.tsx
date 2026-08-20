@@ -297,6 +297,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ===================== Director of Surveys block (right, under D.S.M) ===================== */}
       <text x={xDsm + 16} y={tableBottom + 32} fontSize={13}>Director of Surveys</text>
       <text x={xDsm + 16} y={tableBottom + 48} fontSize={13}>and Mapping</text>
+      <line x1={xDsm + 16} y1={tableBottom + 76} x2={tableRight - 16} y2={tableBottom + 76} stroke="black" strokeWidth={0.6} />
 
       {/* ===================== North arrow + scale (right) ===================== */}
       <g transform={`translate(${850}, ${fig.y - 8})`}>
@@ -336,6 +337,25 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <circle cx={bx} cy={by} r={4} fill="white" stroke="black" strokeWidth={1.2} />
             <text x={lx} y={ly + 4} textAnchor="middle" fontSize={15} fontWeight="bold">{p.name}</text>
           </g>
+        );
+      })}
+      {/* Each side's distance, placed next to that side of the boundary
+          (client req 2026-08-21, Part 19 reference template) — offset
+          outward from the figure centroid so it never sits on top of the
+          line itself. */}
+      {sides.map((s, i) => {
+        const a = points[i], b = points[(i + 1) % points.length];
+        if (!a || !b) return null;
+        const ax = toX(a.east), ay = toY(a.north);
+        const bx = toX(b.east), by = toY(b.north);
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+        let nx = -dy / len, ny = dx / len;
+        if ((mx + nx - cx) * (mx - cx) + (my + ny - cy) * (my - cy) < 0) { nx = -nx; ny = -ny; }
+        return (
+          <text key={`sd${i}`} x={mx + nx * 16} y={my + ny * 16 + 4} textAnchor="middle" fontSize={12}>
+            {s.distance.toFixed(2)}
+          </text>
         );
       })}
       {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse
