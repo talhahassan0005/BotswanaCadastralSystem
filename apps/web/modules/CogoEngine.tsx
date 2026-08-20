@@ -63,16 +63,16 @@ export function CogoEngine() {
         .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
     [importResult]
   );
-  // All imported points with coordinates EXCEPT reference marks (client req
-  // 2026-08-20, Part 12b): beacons are the boundary being surveyed, working
-  // points are instrument/station setups needed for the calculations, so
-  // both plot on the Cadastral work station. Reference marks are control
-  // data used by the Working Plan module, not the cadastral drawing — they
-  // stay in importResult (nothing is deleted), just excluded from this view.
+  // Only plot beacons on the Cadastral work station (client req 2026-08-21,
+  // revising Part 12b): working points and reference marks are both control
+  // data, not the boundary being surveyed, and clutter the drawing — neither
+  // should appear here. They stay in importResult (nothing is deleted), just
+  // excluded from this view; working points still anchor the legs/startPoint
+  // computation below, which is unaffected by this display-only filter.
   const workspacePoints = useMemo(
     () =>
       (importResult?.rows ?? [])
-        .filter((r) => r.east != null && r.north != null && r.pointType !== "ref")
+        .filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === "beacon")
         .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
     [importResult]
   );
