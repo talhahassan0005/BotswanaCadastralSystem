@@ -724,18 +724,29 @@ export function CogoWorkspace({
     // first click just placed — drop that back-to-back duplicate.
     const pts = rawPts.filter((p, i) => i === 0 || Math.hypot(p.east - rawPts[i - 1].east, p.north - rawPts[i - 1].north) > 1e-6);
     if (draftTool === "line" && pts.length >= 2) {
-      addToolResult({ lines: [{ aE: pts[0].east, aN: pts[0].north, bE: pts[1].east, bN: pts[1].north }] });
+      const [a, b] = pts;
+      addToolResult({
+        lines: [{ aE: a.east, aN: a.north, bE: b.east, bN: b.north }],
+        texts: [{ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 }],
+      });
     } else if (draftTool === "polyline" && pts.length >= 2) {
       const segs: NonNullable<ToolResult["lines"]> = [];
-      for (let i = 0; i < pts.length - 1; i++) segs.push({ aE: pts[i].east, aN: pts[i].north, bE: pts[i + 1].east, bN: pts[i + 1].north });
-      addToolResult({ lines: segs });
+      const texts: NonNullable<ToolResult["texts"]> = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 });
+      }
+      addToolResult({ lines: segs, texts });
     } else if (draftTool === "polygon" && pts.length >= 3) {
       const segs: NonNullable<ToolResult["lines"]> = [];
+      const texts: NonNullable<ToolResult["texts"]> = [];
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 });
       }
-      addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }] });
+      addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
     } else if (draftTool === "curve" && pts.length >= 3) {
       // Click order: start, end, a point on the arc between them.
       try {
@@ -744,6 +755,11 @@ export function CogoWorkspace({
           pointB: { id: "m", name: "M", east: pts[2].east, north: pts[2].north },
           pointC: { id: "b", name: "B", east: pts[1].east, north: pts[1].north },
         });
+        const [a, b] = pts;
+        result.texts = [
+          ...(result.texts ?? []),
+          { text: `${segLabel(a, b)} (chord)`, east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11 },
+        ];
         addToolResult(result);
       } catch (e: any) {
         window.alert(e.message ?? String(e));
@@ -776,6 +792,12 @@ export function CogoWorkspace({
   function eventToVb(ev: RPointerEvent | RWheelEvent): [number, number] {
     const r = svgRef.current!.getBoundingClientRect();
     return [((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H];
+  }
+  /** Bearing + distance text for a segment, matching the traverse panel's
+   *  on-line label convention (client req 2026-08-20, Part 11). */
+  function segLabel(a: { east: number; north: number }, b: { east: number; north: number }): string {
+    const [brg, dist] = inverse(a, b);
+    return `${formatDms(brg)}  ${dist.toFixed(2)}m`;
   }
   function nearestVisible(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
@@ -1436,14 +1458,31 @@ export function CogoWorkspace({
                 );
               })
             )}
+            {/* Already-placed segments of a multi-vertex shape (Polyline/Polygon)
+                being drawn — each gets its own live bearing/distance label,
+                same as a finished shape (client req 2026-08-20, Part 11). */}
+            {(draftTool === "polyline" || draftTool === "polygon") && draft.length > 1 && draft.slice(1).map((v, i) => {
+              const a = draft[i], b = v;
+              const [x1, y1] = toScreen(a.east, a.north);
+              const [x2, y2] = toScreen(b.east, b.north);
+              const [mx, my] = toScreen((a.east + b.east) / 2, (a.north + b.north) / 2);
+              return (
+                <g key={`draftseg-${i}`}>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#059669" strokeWidth={1.6} />
+                  <text x={mx} y={my - 5} textAnchor="middle" fontSize={10} className="fill-emerald-700 font-medium">{segLabel(a, b)}</text>
+                </g>
+              );
+            })}
             {/* Rubber-band preview: dashed guide from the last placed vertex to the cursor. */}
             {DRAW_TOOLS.includes(draftTool) && draftTool !== "offset" && draft.length > 0 && cursor && (() => {
               const last = draft[draft.length - 1];
               const [x1, y1] = toScreen(last.east, last.north);
               const [x2, y2] = toScreen(cursor.e, cursor.n);
+              const [mx, my] = toScreen((last.east + cursor.e) / 2, (last.north + cursor.n) / 2);
               return (
                 <>
                   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#059669" strokeWidth={1.4} strokeDasharray="5 4" />
+                  <text x={mx} y={my - 5} textAnchor="middle" fontSize={10} className="fill-emerald-700 font-medium">{segLabel(last, { east: cursor.e, north: cursor.n })}</text>
                   {draftTool === "polygon" && draft.length >= 2 && (() => {
                     const [x0, y0] = toScreen(draft[0].east, draft[0].north);
                     return <line x1={x2} y1={y2} x2={x0} y2={y0} stroke="#059669" strokeWidth={1} strokeDasharray="2 4" opacity={0.5} />;
