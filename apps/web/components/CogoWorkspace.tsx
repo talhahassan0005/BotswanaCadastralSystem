@@ -248,7 +248,15 @@ export function CogoWorkspace({
     ]);
     const polyPts: WPoint[] = polygons.flatMap((p) => p.points.map((v, i) => ({ id: `${p.id}-${i}`, name: "", east: v.east, north: v.north })));
     const textPts: WPoint[] = texts.map((t) => ({ id: t.id, name: "", east: t.east, north: t.north }));
-    frameOn([...visible, ...linePts, ...arcPts, ...polyPts, ...textPts]);
+    const all = [...visible, ...linePts, ...arcPts, ...polyPts, ...textPts];
+    if (!all.length) {
+      // Previously a silent no-op — nothing visibly happened, which reads as
+      // "the button is broken" (client report 2026-08-20). There's simply
+      // nothing on the canvas to fit yet; say so instead of doing nothing.
+      window.alert("Nothing to fit yet — import points or add one first, then Zoom to Extents.");
+      return;
+    }
+    frameOn(all);
   }
 
   function frameOn(pts: WPoint[]) {
