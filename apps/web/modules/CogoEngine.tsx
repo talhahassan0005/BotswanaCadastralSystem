@@ -5,7 +5,6 @@ import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { CogoResult } from "@/lib/types";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
-import { CogoTools, type ToolId } from "@/components/CogoTools";
 import { CogoWorkspace } from "@/components/CogoWorkspace";
 import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
 
@@ -13,10 +12,6 @@ export function CogoEngine() {
   const { config, setConfig, importResult, cogoResult, setCogoResult, setActiveTab } = useStore();
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [tool, setTool] = useState<ToolId | null>(null);
-  // Points a COGO tool (Forward / Intersection) computed and the user chose to
-  // plot — shown on the work station canvas alongside the imported points.
-  const [toolPoints, setToolPoints] = useState<{ name: string; east: number; north: number }[]>([]);
   const [endE, setEndE] = useState(""); // known end-station coords (link traverse)
   const [endN, setEndN] = useState("");
 
@@ -315,44 +310,11 @@ export function CogoEngine() {
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </Card>
-
-        <Card title="Quick Calculators">
-          {/* Clarifying the "Other Tools" section (client req 2026-08-21,
-              Part 13d) — each opens a stand-alone popup calculator for a
-              one-off computation, separate from the Cadastral work
-              station's own COGO Calculators tab (which plots its results
-              directly onto the canvas below instead). */}
-          <p className="mb-2 text-xs text-slate-400">
-            Stand-alone one-off calculators — results shown here, not plotted on the canvas.
-            To compute and draw directly on the work station, use its own COGO Calculators tab instead.
-          </p>
-          <div className="space-y-1.5 text-sm">
-            {([
-              ["inverse", "Forward / Inverse calc", "Bearing+distance from two points, or a new point from a bearing+distance"],
-              ["intersection", "Intersection methods", "Where two rays/circles from known points cross"],
-              ["curve", "Curve computations", "Circular curve arc, chord, tangent from radius + angle"],
-              ["area", "Area calculations", "Area of a polygon, or a strip (length × width)"],
-              ["transform", "Coordinate transform", "Convert coordinates between Lo/Arc1950/WGS84/UTM"],
-            ] as [ToolId, string, string][]).map(([id, label, desc]) => (
-              <button
-                key={id}
-                onClick={() => setTool(id)}
-                title={desc}
-                className="block w-full rounded-md px-2 py-1.5 text-left text-slate-600 hover:bg-brand-light/40 hover:text-brand-dark"
-              >
-                <span className="block font-medium">{label}</span>
-                <span className="block text-xs text-slate-400">{desc}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
       </div>
-
-      <CogoTools tool={tool} onClose={() => setTool(null)} onAddPoint={(p) => setToolPoints((arr) => [...arr, p])} />
 
       {/* Right results */}
       <div className="space-y-5">
-        <CogoWorkspace points={[...workspacePoints, ...toolPoints]} onTool={setTool} resultBoundary={resultBoundary} />
+        <CogoWorkspace points={workspacePoints} resultBoundary={resultBoundary} />
 
         {!cogoResult ? (
           <Card>

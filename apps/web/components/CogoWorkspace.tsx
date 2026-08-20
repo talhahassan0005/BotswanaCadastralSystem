@@ -9,7 +9,6 @@
 // undo/redo, zoom-extents) so the canvas isn't view-only.
 
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
-import type { ToolId } from "@/components/CogoTools";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
 import { forward, inverse, polygonArea } from "@/lib/server/geometry";
@@ -41,19 +40,10 @@ const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not 
 type DraftTool = "select" | "select-box" | "select-lasso" | "zoom-window" | "addpoint" | "move" | "line" | "polyline" | "curve" | "polygon" | "offset";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
-const COGO_TOOLS: { id: ToolId; label: string; icon: (c: string) => JSX.Element }[] = [
-  { id: "inverse", label: "Forward / Inverse", icon: iconInverse },
-  { id: "intersection", label: "Intersection", icon: iconIntersection },
-  { id: "curve", label: "Curve", icon: iconCurve },
-  { id: "area", label: "Area", icon: iconArea },
-  { id: "transform", label: "Transform", icon: iconTransform },
-];
-
 // Edit Tools (Select/Add/Move/Delete/Undo/Redo/Zoom/Snap) stay permanently
 // visible — they're used constantly regardless of which drawing category is
 // open. Everything else is tabbed so the toolbar doesn't read as a wall of icons.
 const TOOL_GROUPS = [
-  { id: "cogo", label: "COGO Calculators" },
   { id: "point", label: "Point Tools" },
   { id: "line", label: "Line Tools" },
   { id: "curve", label: "Curve Tools" },
@@ -66,11 +56,9 @@ type ToolGroupId = (typeof TOOL_GROUPS)[number]["id"];
 
 export function CogoWorkspace({
   points,
-  onTool,
   resultBoundary,
 }: {
   points: { name?: string | null; east: number; north: number }[];
-  onTool: (id: ToolId) => void;
   /** A computed traverse/coordinates result (client req 2026-08-21, Part
    *  13a) — when set, its boundary is drawn on the canvas (lines + bearing/
    *  distance labels + closed polygon), the same as a manually click-drawn
@@ -1384,22 +1372,6 @@ export function CogoWorkspace({
           </div>
 
           {/* Only the selected tab's tools render below. */}
-          {activeGroup === "cogo" && (
-            <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
-              {COGO_TOOLS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => onTool(t.id)}
-                  title={t.label}
-                  aria-label={t.label}
-                  className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
-                >
-                  {t.icon("currentColor")}
-                </button>
-              ))}
-            </div>
-          )}
           {/* "Add Point" is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
           {activeGroup === "point" && (
             <CogoDrawingToolbar
@@ -1990,47 +1962,6 @@ function DraftButton({
   );
 }
 
-function iconInverse(c: string) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <circle cx="5" cy="19" r="1.8" />
-      <circle cx="19" cy="5" r="1.8" />
-      <path d="M6.3 17.7L17.7 6.3" strokeDasharray="2.5 2.5" />
-    </svg>
-  );
-}
-function iconIntersection(c: string) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M4 4l16 16M20 4L4 20" />
-      <circle cx="12" cy="12" r="2.2" fill={c} stroke="none" />
-    </svg>
-  );
-}
-function iconCurve(c: string) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M4 18C4 9 9 4 18 4" />
-      <circle cx="4" cy="18" r="1.6" fill={c} stroke="none" />
-      <circle cx="18" cy="4" r="1.6" fill={c} stroke="none" />
-    </svg>
-  );
-}
-function iconArea(c: string) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
-    </svg>
-  );
-}
-function iconTransform(c: string) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M4 8h11M15 8l-3-3M15 8l-3 3" />
-      <path d="M20 16H9M9 16l3-3M9 16l3 3" />
-    </svg>
-  );
-}
 function iconSelect(c: string) {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
