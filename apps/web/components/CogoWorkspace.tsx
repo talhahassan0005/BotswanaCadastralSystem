@@ -116,6 +116,17 @@ export function CogoWorkspace({
   const [parcelQueryId, setParcelQueryId] = useState<string | null>(null);
   // ---- click-to-draw state (Line/Polyline/Curve/Polygon/Offset) ----
   const [draft, setDraft] = useState<DraftPt[]>([]); // vertices placed so far for the active draw tool
+  // Line/Polyline/Polygon must only ever join *existing* points — a click
+  // that isn't near one is rejected rather than silently inventing a new
+  // point (client req 2026-08-21, Part 22a). This flashes a brief on-screen
+  // hint when that happens, instead of failing silently.
+  const [snapMiss, setSnapMiss] = useState(false);
+  const snapMissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashSnapMiss() {
+    setSnapMiss(true);
+    if (snapMissTimer.current) clearTimeout(snapMissTimer.current);
+    snapMissTimer.current = setTimeout(() => setSnapMiss(false), 1600);
+  }
   const [rename, setRename] = useState<{ east: number; north: number; value: string; targetId: string } | null>(null); // inline name field for a freshly-placed single point
   const [offsetLineId, setOffsetLineId] = useState<string | null>(null); // source line picked for the Offset tool
   const [offsetInput, setOffsetInput] = useState<{ screenX: number; screenY: number; side: 1 | -1; value: string } | null>(null);
@@ -971,12 +982,17 @@ export function CogoWorkspace({
   }
 
   const SNAP_PX = 16; // generous/forgiving on purpose (client req 2026-08-17, 7a) — "close enough" should snap
+  // Point-to-point snap is even more generous than line/grid snap: since
+  // Line/Polyline/Polygon now refuse to invent a new point on a miss
+  // (Part 22a), an accidental near-miss must still reliably land on the
+  // intended point rather than falling through and doing nothing.
+  const POINT_SNAP_PX = 22;
   /** Nearest existing point within snap radius (screen space), if any. Point
    *  snapping is always on while drawing — needed to close traverses/
    *  polygons cleanly onto an existing vertex. */
   function snapPoint(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
-    let bestD = SNAP_PX * SNAP_PX;
+    let bestD = POINT_SNAP_PX * POINT_SNAP_PX;
     for (const p of visible) {
       const [x, y] = toScreen(p.east, p.north);
       const d = (x - sx) ** 2 + (y - sy) ** 2;
@@ -1167,15 +1183,29 @@ export function CogoWorkspace({
           setMoveCoordInput(null);
           groupMoveOrigin.current = null;
         }
-      } else if (draftTool === "line" || draftTool === "curve") {
+      } else if (draftTool === "line") {
+        // Line joins two *existing* points only — never invents one on a
+        // miss (client req 2026-08-21, Part 22a). Curve is unaffected: it
+        // still plots free points, per the original Part 1 spec.
+        const v = resolveVertex(vbx, vby);
+        if (!v.existingId) { flashSnapMiss(); }
+        else {
+          const nextDraft = [...draft, addVertexPoint(v)];
+          if (nextDraft.length >= 2) finishDraftWith(nextDraft);
+          else setDraft(nextDraft);
+        }
+      } else if (draftTool === "curve") {
         const vertex = addVertexPoint(resolveVertex(vbx, vby));
         const nextDraft = [...draft, vertex];
-        const limit = draftTool === "line" ? 2 : 3;
-        if (nextDraft.length >= limit) finishDraftWith(nextDraft);
+        if (nextDraft.length >= 3) finishDraftWith(nextDraft);
         else setDraft(nextDraft);
       } else if (draftTool === "polyline" || draftTool === "polygon") {
-        const vertex = addVertexPoint(resolveVertex(vbx, vby));
-        setDraft((d) => [...d, vertex]);
+        // Same existing-point-only rule as Line (Part 22a) — a click that
+        // isn't near a real point does nothing rather than creating a
+        // stray vertex like the reported "T5" point.
+        const v = resolveVertex(vbx, vby);
+        if (!v.existingId) flashSnapMiss();
+        else setDraft((d) => [...d, addVertexPoint(v)]);
       } else if (draftTool === "offset") {
         if (!offsetLineId) {
           const hit = nearestLineHit(vbx, vby);
@@ -1419,8 +1449,13 @@ export function CogoWorkspace({
               icon={iconDelete}
             />
             <div className="mx-1 h-5 w-px bg-slate-200" />
-            <DraftButton label="Undo" onClick={undo} disabled={!past.current.length} icon={iconUndo} />
-            <DraftButton label="Redo" onClick={redo} disabled={!future.current.length} icon={iconRedo} />
+            <DraftButton
+              label={draft.length > 0 ? "Undo (removes last placed vertex)" : "Undo"}
+              onClick={draft.length > 0 ? removeLastDraftVertex : undo}
+              disabled={draft.length > 0 ? false : !past.current.length}
+              icon={iconUndo}
+            />
+            <DraftButton label="Redo" onClick={redo} disabled={!future.current.length || draft.length > 0} icon={iconRedo} />
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton label="Zoom in" onClick={() => zoomBy(1.25)} icon={iconZoomIn} />
             <DraftButton label="Zoom out" onClick={() => zoomBy(1 / 1.25)} icon={iconZoomOut} />
@@ -1584,10 +1619,17 @@ export function CogoWorkspace({
           {(draftTool === "polyline" || draftTool === "polygon") && (
             <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
               <span>
-                {draft.length} vertex(es) placed — double-click, press Enter, or Finish to complete
-                {draftTool === "polygon" ? " (closes back to the first point)" : ""}. Ctrl+Z removes the last vertex, Escape cancels.
+                {snapMiss
+                  ? "No point there — click nearer an existing point. To create a brand-new one, use Add Point instead."
+                  : <>
+                      {draft.length} vertex(es) placed — click an existing point to add the next vertex, then double-click, press Enter, or Finish to complete
+                      {draftTool === "polygon" ? " (closes back to the first point)" : ""}. Undo removes the last vertex, Escape cancels.
+                    </>}
               </span>
-              <button type="button" onClick={finishDraft} disabled={draft.length < (draftTool === "polygon" ? 3 : 2)} className="ml-auto rounded-md bg-brand px-2 py-1 font-semibold text-white disabled:opacity-40">
+              <button type="button" onClick={removeLastDraftVertex} disabled={!draft.length} title="Undo — removes only the last placed vertex (Ctrl+Z)" className="ml-auto rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800 disabled:opacity-40">
+                Undo
+              </button>
+              <button type="button" onClick={finishDraft} disabled={draft.length < (draftTool === "polygon" ? 3 : 2)} className="rounded-md bg-brand px-2 py-1 font-semibold text-white disabled:opacity-40">
                 Finish
               </button>
               <button type="button" onClick={cancelDraft} className="rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800">
@@ -2056,8 +2098,10 @@ export function CogoWorkspace({
 
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
-            <span>
-              {diagramPicking
+            <span className={snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon") ? "font-semibold text-red-600" : undefined}>
+              {snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon")
+                ? "No point there — click nearer an existing point (use Add Point to create a new one)"
+                : diagramPicking
                 ? "Click inside a plot (polygon) to generate its diagram"
                 : travPickingStart
                 ? "Click a point on the canvas to start the traverse from"
