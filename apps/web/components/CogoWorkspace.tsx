@@ -76,7 +76,7 @@ export function CogoWorkspace({
     closed: boolean;
   } | null;
 }) {
-  const { config, setDiagramFigure, setDiagramInput, setActiveTab } = useStore();
+  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots } = useStore();
   const [active, setActive] = useState(false);
   // Which toolbar group's icon row is showing — a tab bar instead of 9
   // permanently-stacked rows, so the toolbar reads as one screenful instead
@@ -345,7 +345,7 @@ export function CogoWorkspace({
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
   }
 
-  function addToolResult(result: ToolResult): { pointIds: string[]; lineIds: string[] } {
+  function addToolResult(result: ToolResult): { pointIds: string[]; lineIds: string[]; polygonIds: string[] } {
     snapshot();
     if (result.replaceLineIds?.length) {
       const drop = new Set(result.replaceLineIds);
@@ -372,8 +372,10 @@ export function CogoWorkspace({
       setArcs((as) => [...as, ...result.arcs!.map((a, i) => ({ id: `arc-${now}-${arcIdRef.current + i}`, ...a }))]);
       arcIdRef.current += result.arcs.length;
     }
+    let polygonIds: string[] = [];
     if (result.polygons?.length) {
-      setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: `poly-${now}-${polyIdRef.current + i}`, ...p }))]);
+      polygonIds = result.polygons.map((_, i) => `poly-${now}-${polyIdRef.current + i}`);
+      setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: polygonIds[i], ...p }))]);
       polyIdRef.current += result.polygons.length;
     }
     if (result.texts?.length) {
@@ -383,7 +385,7 @@ export function CogoWorkspace({
       ]);
       textIdRef.current += result.texts.length;
     }
-    return { pointIds, lineIds };
+    return { pointIds, lineIds, polygonIds };
   }
 
   // ---- click-to-draw: each click either snaps onto an existing point or
@@ -532,17 +534,32 @@ export function CogoWorkspace({
     setTableAnchor(null);
     setSelected(null);
   }
-  function openPolygonAttrs(id: string) {
-    const poly = polygons.find((p) => p.id === id);
+  function openPolygonAttrs(id: string, knownPoints?: { east: number; north: number }[]) {
+    // `knownPoints`, when given, lets a caller open this dialog for a
+    // polygon it JUST created in the same synchronous handler — `polygons`
+    // state hasn't re-rendered yet at that point, so looking the id up in
+    // it here would still see the old array and silently no-op.
+    const poly = knownPoints ? { points: knownPoints } : polygons.find((p) => p.id === id);
     if (!poly) return;
     const m = polygonMeta[id] ?? {};
     const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
-    setPolygonAttrDialog({ id, position: m.position ?? "", erf: m.erf ?? "", area: `${(areaM2 / 10000).toFixed(4)} ha` });
+    // Pre-fill Position with the auto-incremented next plot number (same
+    // suggestion the Traverse panel's Calculate dialog uses, Part 16c) when
+    // this polygon doesn't already have one — so a freshly-drawn/closed
+    // polygon always opens with a sensible number ready to accept or edit,
+    // instead of a blank field.
+    const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
+    setPolygonAttrDialog({ id, position: m.position ?? suggested, erf: m.erf ?? "", area: `${(areaM2 / 10000).toFixed(4)} ha` });
   }
   function savePolygonAttrs() {
     if (!polygonAttrDialog) return;
     const { id, position, erf } = polygonAttrDialog;
     setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, erf } }));
+    if (position.trim()) {
+      setLastPlotNumber(position.trim());
+      const poly = polygons.find((p) => p.id === id);
+      if (poly) savePlotNumber(position, poly.points);
+    }
     setPolygonAttrDialog(null);
   }
   /** Open the command bar for a numeric-input tool, discarding any
@@ -734,10 +751,12 @@ export function CogoWorkspace({
     const plotNumber = travCompleteDialog.plotNumber.trim();
     snapshot();
     const polyId = `travpoly-${Date.now()}`;
-    setPolygons((ps) => [...ps, { id: polyId, name: plotNumber || undefined, points: boundary.map((p) => ({ name: p.name, east: p.east, north: p.north })) }]);
+    const boundaryPts = boundary.map((p) => ({ name: p.name, east: p.east, north: p.north }));
+    setPolygons((ps) => [...ps, { id: polyId, name: plotNumber || undefined, points: boundaryPts }]);
     if (plotNumber) {
       setPolygonMeta((m) => ({ ...m, [polyId]: { ...m[polyId], position: plotNumber } }));
       setLastPlotNumber(plotNumber);
+      savePlotNumber(plotNumber, boundaryPts);
     }
     setTravCompleteDialog(null);
   }
@@ -790,6 +809,40 @@ export function CogoWorkspace({
     const NICE = [100, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000];
     return NICE.find((n) => n >= raw) ?? Math.ceil(raw / 1000) * 1000;
   }
+  /** Builds the same closed-traverse shape the Diagrams tab draws from, out
+   *  of any closed ring of points — shared by the canvas "Diagram" pick tool
+   *  and by savePlotNumber below (client req 2026-08-21) so a plot numbered
+   *  anywhere in the work station can be loaded by that number later. */
+  function buildFigureFromPoints(pts: { name: string | null; east: number; north: number }[]): CogoResult {
+    const legsOut: CogoLeg[] = pts.map((p, i) => {
+      const next = pts[(i + 1) % pts.length];
+      const [brg, dist] = inverse({ east: p.east, north: p.north }, { east: next.east, north: next.north });
+      return { index: i + 1, from: p.name, to: next.name, bearing: brg, bearing_dms: formatDms(brg), distance: dist, d_east_adj: next.east - p.east, d_north_adj: next.north - p.north };
+    });
+    const areaM2 = Math.abs(polygonArea(pts));
+    const perim = legsOut.reduce((s, l) => s + l.distance, 0);
+    return {
+      type: "closed",
+      adjustment: "none",
+      closure: { misclose_east: 0, misclose_north: 0, linear_misclosure: 0, total_distance: perim, relative_precision: null, relative_precision_text: "exact (plot boundary)" },
+      area_m2: areaM2,
+      area_ha: areaM2 / 10000,
+      sigma0: 0,
+      points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })),
+      legs: legsOut,
+      residuals: [],
+    };
+  }
+  /** Saves/updates a numbered plot in the project-wide store (client req
+   *  2026-08-21) — called wherever a polygon gets a Lot/Erf number, so the
+   *  Diagrams tab can pull it up later just by typing that number instead
+   *  of re-navigating here and clicking it on the canvas. Upserts by number. */
+  function savePlotNumber(number: string, pts: { name: string | null; east: number; north: number }[]) {
+    const n = number.trim();
+    if (!n || pts.length < 3) return;
+    const fig = buildFigureFromPoints(pts);
+    setCogoPlots([...cogoPlots.filter((p) => p.number !== n), { number: n, fig }]);
+  }
   function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
     const [wx, wy] = toWorld(sx, sy);
     const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
@@ -801,25 +854,8 @@ export function CogoWorkspace({
     if (!diagramPrompt) return;
     const scale = Number(diagramPrompt.value) || 2000;
     const poly = diagramPrompt.polygon;
-    const pts = poly.points;
-    const legsOut: CogoLeg[] = pts.map((p, i) => {
-      const next = pts[(i + 1) % pts.length];
-      const [brg, dist] = inverse({ east: p.east, north: p.north }, { east: next.east, north: next.north });
-      return { index: i + 1, from: p.name, to: next.name, bearing: brg, bearing_dms: formatDms(brg), distance: dist, d_east_adj: next.east - p.east, d_north_adj: next.north - p.north };
-    });
-    const areaM2 = Math.abs(polygonArea(pts));
-    const perim = legsOut.reduce((s, l) => s + l.distance, 0);
-    const fig: CogoResult = {
-      type: "closed",
-      adjustment: "none",
-      closure: { misclose_east: 0, misclose_north: 0, linear_misclosure: 0, total_distance: perim, relative_precision: null, relative_precision_text: "exact (plot boundary)" },
-      area_m2: areaM2,
-      area_ha: areaM2 / 10000,
-      sigma0: 0,
-      points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })),
-      legs: legsOut,
-      residuals: [],
-    };
+    const areaM2 = Math.abs(polygonArea(poly.points));
+    const fig = buildFigureFromPoints(poly.points);
     setDiagramFigure(fig);
     setDiagramInput({
       kind: "surveyed",
@@ -875,7 +911,13 @@ export function CogoWorkspace({
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
         texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" });
       }
-      addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
+      const { polygonIds } = addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
+      // Client req 2026-08-21: finishing a click-to-draw Polygon should ask
+      // for the Lot/Erf number the same way the Traverse panel's Calculate
+      // does (Part 16c) — reusing the existing Polygon Attributes dialog
+      // (Part 9f) instead of a separate one, pre-filled with the
+      // auto-incremented suggestion.
+      if (polygonIds[0]) openPolygonAttrs(polygonIds[0], pts);
     } else if (draftTool === "curve" && pts.length >= 3) {
       // Click order: start, end, a point on the arc between them.
       try {

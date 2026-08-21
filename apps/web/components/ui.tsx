@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 export function Card({
   title,
@@ -128,12 +128,14 @@ export function Input({
   placeholder,
   type = "text",
   onFocus,
+  onKeyDown,
 }: {
   value: string | number;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
   onFocus?: () => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
 }) {
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
@@ -145,6 +147,7 @@ export function Input({
         value={value}
         placeholder={placeholder}
         onFocus={onFocus}
+        onKeyDown={onKeyDown}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${
           isPassword ? "pr-10" : ""

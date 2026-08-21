@@ -59,13 +59,20 @@ function suggestDiagramScale(pts: { east: number; north: number }[]): number {
 }
 
 export function Diagrams() {
-  const { cogoResult, diagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc } = useStore();
+  const { cogoResult, diagramFigure, setDiagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc, cogoPlots } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
 
   // The surveyor picks which lot (parcel) to draw the diagram for, right here.
   const pdoc = parcelDoc as ParcelDoc | null;
   const parcels = useMemo(() => pdoc?.parcels ?? [], [pdoc]);
   const [selParcelId, setSelParcelId] = useState<string | null>(null);
+  // Load a lot by the number typed in COGO (client req 2026-08-21) — an
+  // alternative to picking a Parcels-tab lot or clicking a plot on the
+  // Cadastral canvas: every polygon that's been given a Lot/Erf number
+  // there (Part 16c's completion dialog, the Polygon Attributes dialog, or
+  // the Traverse panel's Calculate) is saved to the project by that number.
+  const [plotNumberInput, setPlotNumberInput] = useState("");
+  const [plotNumberError, setPlotNumberError] = useState<string | null>(null);
   const parcelFigure = useMemo<CogoResult | null>(() => {
     if (!pdoc || !selParcelId) return null;
     const p = pdoc.parcels.find((x) => x.id === selParcelId);
@@ -292,11 +299,41 @@ export function Diagrams() {
       return { ...m, parent: v };
     });
 
+  function loadPlotByNumber() {
+    const n = plotNumberInput.trim();
+    if (!n) return;
+    const plot = cogoPlots.find((p) => p.number.toLowerCase() === n.toLowerCase());
+    if (!plot) {
+      setPlotNumberError(`No plot numbered "${n}" found. Number it first in ${cogoTabLabel(config.discipline)} — the Lot Number prompt after finishing a polygon, or Tables → Polygons → Position.`);
+      return;
+    }
+    setPlotNumberError(null);
+    setSelParcelId(null); // a typed-in plot always wins over a Parcels-tab pick
+    setDiagramFigure(plot.fig);
+    const suggested = suggestDiagramScale(plot.fig.points);
+    setMeta((m) => ({ ...m, lotName: plot.number.toUpperCase(), scale: suggested }));
+  }
+
   if (!fig || points.length < 3) {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
           <p className="text-lg font-medium text-slate-700">Choose a lot to draw its diagram</p>
+
+          <p className="mt-1 text-sm">Type the Lot Number you used in {cogoTabLabel(config.discipline)}:</p>
+          <div className="mx-auto mt-3 flex max-w-xs items-center gap-2">
+            <Input
+              value={plotNumberInput}
+              onChange={(v) => { setPlotNumberInput(v); setPlotNumberError(null); }}
+              placeholder="e.g. 102"
+              onKeyDown={(e) => { if (e.key === "Enter") loadPlotByNumber(); }}
+            />
+            <Button onClick={loadPlotByNumber} disabled={!plotNumberInput.trim()}>Load</Button>
+          </div>
+          {plotNumberError && <p className="mx-auto mt-2 max-w-xs text-xs text-red-600">{plotNumberError}</p>}
+
+          <p className="my-4 text-xs uppercase tracking-wide text-slate-300">or</p>
+
           {parcels.length > 0 ? (
             <>
               <p className="mt-1 text-sm">Pick the lot (parcel) you want a diagram for:</p>

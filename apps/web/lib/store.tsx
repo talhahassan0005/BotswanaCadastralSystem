@@ -5,6 +5,15 @@ import type { CogoResult, ImportResult, TopoResult, ValidationResult, VolumeResu
 
 export type Discipline = "Cadastral" | "Engineering" | "Mining" | "GIS";
 
+/** A numbered plot saved from the Cadastral work station (client req
+ *  2026-08-21) — `fig` is the same closed-traverse shape the Diagrams tab
+ *  already knows how to draw (points + legs + area), so loading one by
+ *  number is a straight drop-in for `diagramFigure`. */
+export interface CogoPlot {
+  number: string;
+  fig: CogoResult;
+}
+
 // The "cogo" tab is relabelled "Cadastral" for the Cadastral discipline (client
 // req 2026-08-12); other disciplines still call it "COGO Engine". Use this
 // wherever UI text refers users to that tab so both stay in sync.
@@ -67,6 +76,13 @@ interface Store {
   /** Parcel→diagram figure: kept SEPARATE so a parcel never clobbers the real COGO traverse. */
   diagramFigure: CogoResult | null;
   setDiagramFigure: (r: CogoResult | null) => void;
+  /** Plots numbered in the Cadastral work station (client req 2026-08-21) —
+   *  every time a polygon there gets a Lot/Erf number (Position field), it's
+   *  saved here by that number so the Diagrams tab can pull it up just by
+   *  typing the number, without re-navigating to Cadastral and clicking it
+   *  on the canvas. Upserted by number; saved with the project. */
+  cogoPlots: CogoPlot[];
+  setCogoPlots: (p: CogoPlot[]) => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
   /** Browser-like "back" to the previously-visited tab. */
@@ -104,6 +120,7 @@ export interface ProjectState {
   workingPlanInput?: unknown;
   generalPlanInput?: unknown;
   recordInput?: unknown;
+  cogoPlots?: CogoPlot[];
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
@@ -148,6 +165,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const recordInputRef = useRef<unknown>(null);
   const setRecordInput = (d: unknown) => { recordInputRef.current = d; };
   const [diagramFigure, setDiagramFigure] = useState<CogoResult | null>(null);
+  const [cogoPlots, setCogoPlots] = useState<CogoPlot[]>([]);
   const [activeTab, setActiveTabState] = useState("import");
   const [tabHistory, setTabHistory] = useState<string[]>([]);
   // Tab navigation with a simple back-history (so a "← Back" button can return
@@ -184,6 +202,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     workingPlanInput: workingPlanInputRef.current,
     generalPlanInput: generalPlanInputRef.current,
     recordInput: recordInputRef.current,
+    cogoPlots,
   });
 
   const hydrate = (s: ProjectState) => {
@@ -202,6 +221,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     workingPlanInputRef.current = s.workingPlanInput ?? null;
     generalPlanInputRef.current = s.generalPlanInput ?? null;
     recordInputRef.current = s.recordInput ?? null;
+    setCogoPlots(s.cogoPlots ?? []);
     setDiagramFigure(null); // derived from a parcel; not persisted
     setActiveTabState("import"); // land on a tab present in every discipline
     setTabHistory([]); // fresh project → no back-history
@@ -225,6 +245,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     workingPlanInputRef.current = null;
     generalPlanInputRef.current = null;
     recordInputRef.current = null;
+    setCogoPlots([]);
     setDiagramFigure(null);
     if (typeof window !== "undefined") {
       try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
@@ -271,6 +292,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setRecordInput,
         diagramFigure,
         setDiagramFigure,
+        cogoPlots,
+        setCogoPlots,
         activeTab,
         setActiveTab,
         goBack,
