@@ -2073,7 +2073,7 @@ export function CogoWorkspace({
                   <button type="button" onClick={() => setParcelQueryId(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
                 </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                  <span className="text-slate-500">Position</span><span>{m.position || poly.name || "—"}</span>
+                  <span className="text-slate-500">Lot Number</span><span>{m.position || poly.name || "—"}</span>
                   <span className="text-slate-500">Erf</span><span>{m.erf || "—"}</span>
                   <span className="text-slate-500">Area</span><span className="font-mono">{(areaM2 / 10000).toFixed(4)} ha</span>
                   <span className="text-slate-500">Vertices</span><span>{poly.points.length}</span>
@@ -2227,7 +2227,7 @@ export function CogoWorkspace({
               <div className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl" onClick={(e) => e.stopPropagation()}>
                 <h3 className="mb-3 text-sm font-semibold text-slate-700">Polygon Attributes</h3>
                 <label className="mb-2 block">
-                  <span className="mb-0.5 block text-slate-500">Position</span>
+                  <span className="mb-0.5 block text-slate-500">Lot Number (Position)</span>
                   <input
                     value={polygonAttrDialog.position}
                     onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, position: e.target.value })}

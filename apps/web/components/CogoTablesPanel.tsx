@@ -184,7 +184,7 @@ export function CogoTablesPanel({
           <table className="w-full border-collapse">
             <thead className="sticky top-0 bg-slate-50 text-left text-[10px] uppercase text-slate-500">
               <tr>
-                {["", "Position", "Erf", "Farm", "Township", "Extension", "Type", "Area", "SD Number", "Min Number", "Parent", "Width", "Symbol"].map((h) => (
+                {["", "Lot No. (Position)", "Erf", "Farm", "Township", "Extension", "Type", "Area", "SD Number", "Min Number", "Parent", "Width", "Symbol"].map((h) => (
                   <th key={h} className="whitespace-nowrap border-b border-slate-200 px-2 py-1">{h}</th>
                 ))}
               </tr>
