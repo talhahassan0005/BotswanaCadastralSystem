@@ -146,6 +146,14 @@ function tCoord(n: number): string {
 function tDist(n: number): string {
   return n.toFixed(2);
 }
+/** Side row-label: "AB" for single-letter beacons (the official SG
+ *  convention), but bare concatenation of longer point names is
+ *  unreadable ("25A225A1" — is that 25A2→25A1, or something else?), so
+ *  those get a separator instead (client req 2026-08-22). */
+function sideLabel(from: string | null, to: string | null): string {
+  const f = from ?? "", t = to ?? "";
+  return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f}-${t}`;
+}
 /** Area line: small plots in SQUARE METRES, larger in HECTARES (SG convention). */
 function areaText(areaHa: number): string {
   return areaHa < 1
@@ -229,7 +237,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
   // column x boundaries — cumulative from the frame's own left edge,
   // widths per Part 23 (7.9 / 25.6 / 27.9 / 6.6 / 25.5 / 27.0 / 39.9mm).
-  const xSideVal = tx + 7.9 * MM;          // between the AB/BC row-label and its distance value
+  // The 7.9mm row-label width matches the reference's single-letter names
+  // (AB, BC, ...) exactly — real projects can have longer point names
+  // (client req 2026-08-22: "25A2-25A1" etc.), so this column grows to fit
+  // the widest actual label instead of clipping/overlapping it, borrowing
+  // spare room from the D.S.M No. box (which only ever holds one short
+  // number) rather than moving the frame or any other fixed measurement.
+  const maxSideLabelChars = Math.max(2, ...sides.map((s) => sideLabel(s.from, s.to).length));
+  const sideValExtra = Math.min(200, Math.max(0, maxSideLabelChars * dataFS * 0.62 + 16 - 7.9 * MM));
+  const xSideVal = tx + 7.9 * MM + sideValExtra; // between the row-label and its distance value
   const xMetR = xSideVal + 25.6 * MM; // right of SIDES/METRES group
   const xDir = xMetR;                       // DIRECTIONS column
   const xDirR = xDir + 27.9 * MM;           // right of DIRECTIONS
@@ -246,8 +262,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // way the old 3-row header split its 66-unit band, scaled to the new
   // fixed 14.0mm headH).
   const hRow1 = ty + headH * 0.26, hRow2 = ty + headH * 0.56, hRow3 = ty + headH * 0.9;
+  // Both start at the same height (client req 2026-08-22) — they only
+  // become two separate columns below the shared "System LO. N°" label,
+  // so the X divider must not start higher up than the Y divider.
   const xYDividerTop = ty + headH * 0.667;
-  const xXDividerTop = ty + headH * 0.333;
+  const xXDividerTop = ty + headH * 0.667;
 
   // ---- bottom registration table (Part 23) — fixed 34.0mm band starting
   // 251.1mm from the page top, dividers at 53.4mm/111.4mm from the
@@ -413,7 +432,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <g key={`row${i}`} fontSize={dataFS}>
               {s && (
                 <>
-                  <text x={tx + 10} y={y}>{`${s.from ?? ""}${s.to ?? ""}`}</text>
+                  <text x={tx + 10} y={y}>{sideLabel(s.from, s.to)}</text>
                   <text x={xMetR - 8} y={y} textAnchor="end">{tDist(s.distance)}</text>
                   <text x={xDir + 12} y={y}>{toDotted(s.bearing_dms)}</text>
                 </>
