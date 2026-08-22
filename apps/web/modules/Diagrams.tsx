@@ -8,6 +8,7 @@ import type { CogoResult, ParcelDoc } from "@/lib/types";
 import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation } from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
+import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
@@ -298,6 +299,32 @@ export function Diagrams() {
     URL.revokeObjectURL(url);
   }
 
+  /** Export the surveyed geometry (not the print layout) as DXF, reusing the
+   *  app's existing DXF writer (client req 2026-08-22) — each boundary point
+   *  as a labelled POINT, the boundary itself as a closed LWPOLYLINE, and
+   *  any off-boundary reference beacons as their own layer. */
+  function downloadDxf() {
+    const drawing: ImportedDrawing = {
+      points: [
+        ...points.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "BEACONS" })),
+        ...extraPoints.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "REFERENCE" })),
+      ],
+      polylines:
+        points.length >= 2
+          ? [{ pts: points.map((p) => ({ x: p.east, y: p.north })), closed: fig?.type === "closed", layer: "BOUNDARY" }]
+          : [],
+      texts: [],
+    };
+    const dxf = writeDxf(drawing);
+    const blob = new Blob([dxf], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${kind}-diagram-${(meta.lotName || "diagram").replace(/\s+/g, "_")}.dxf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function printDiagram() {
     const svg = serializeSvgForPrint();
     if (!svg) return;
@@ -550,7 +577,19 @@ export function Diagrams() {
             <div className="flex flex-col gap-2">
               <Button onClick={downloadSvg}>⬇ Download SVG</Button>
               <Button variant="ghost" onClick={printDiagram}>Print / Save PDF</Button>
+              {!isLease && (
+                <Button variant="ghost" onClick={downloadDxf}>⬇ Download DXF</Button>
+              )}
             </div>
+            {!isLease && (
+              <p className="mt-2 text-xs text-slate-400">
+                DXF exports the surveyed geometry (beacons + boundary), not the printed sheet layout — opens
+                directly in AutoCAD and most CAD/GIS software. DGN (MicroStation) isn't available: it's a
+                proprietary binary format with no reliable open writer, so a from-scratch export would risk
+                producing a file that doesn't actually open correctly. If you need DGN, the common path is
+                importing this DXF into MicroStation (or a converter) and saving as DGN there.
+              </p>
+            )}
           </Card>
         </div>
 
