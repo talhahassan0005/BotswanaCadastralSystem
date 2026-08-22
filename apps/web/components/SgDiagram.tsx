@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, type MouseEvent } from "react";
 import { wrapSvgWords } from "@/lib/wrapSvgText";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,22 @@ export function certificationLine(meta: DiagramMeta): string {
   }
 }
 
+/** A hand-drawn dashed extension line + free-text label on the diagram
+ *  (client req 2026-08-22, Part 24) — the client clarified these lines are
+ *  added manually by the surveyor (there's no reliable survey data to
+ *  compute them from), so they're plain SVG-space coordinates the user
+ *  clicked on the rendered diagram itself, not derived from a boundary
+ *  side. Persisted with the diagram so they round-trip and appear in the
+ *  exported SVG/PDF. */
+export interface ManualAnnotation {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  label: string;
+}
+
 interface Props {
   meta: DiagramMeta;
   points: DiagramPoint[];
@@ -78,11 +94,24 @@ interface Props {
    *  the traverse — no boundary side, no coordinate-table row (e.g. a nearby
    *  reference/witness point the surveyor wants visible). */
   extraPoints?: DiagramPoint[];
-  /** Optional adjoining-parcel identifier per boundary side, e.g. "REMAINDER
-   *  OF CADASTRE 477" (client req 2026-08-21, Part 20a) — same index as
-   *  `sides`/the point pair (points[i] -> points[i+1]). A blank/missing
-   *  entry means that side gets no extension line, matching the reference. */
-  neighborLabels?: string[];
+  /** Adjoining-parcel extension lines the user has manually drawn directly
+   *  on this diagram (client req 2026-08-22, Part 24 — supersedes the
+   *  earlier per-side auto-computed approach for the diagram's own
+   *  rendering). */
+  manualAnnotations?: ManualAnnotation[];
+  /** The first click of an in-progress manual annotation, awaiting the
+   *  second click — shown as a small marker so the user can see where
+   *  they started. */
+  pendingAnnotationPoint?: { x: number; y: number } | null;
+  /** Currently-selected annotation (for a Delete action) — rendered
+   *  bolder, never in colour, so a screenshot/print taken mid-edit still
+   *  reads as a normal black-and-white diagram. */
+  selectedAnnotationId?: string | null;
+  /** True while the manual-annotation draw tool is active — switches the
+   *  cursor to a crosshair so the user knows clicks are being captured. */
+  drawMode?: boolean;
+  onCanvasClick?: (e: MouseEvent<SVGSVGElement>) => void;
+  onAnnotationClick?: (id: string, e: MouseEvent) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -145,7 +174,7 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points, sides, parcels, extraPoints, neighborLabels },
+  { meta, points, sides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint, selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick },
   ref
 ) {
   // ---------------------------------------------------------------------
@@ -318,7 +347,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
-      style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "Calibri, Candara, 'Segoe UI', Optima, Arial, sans-serif" }}
+      onClick={onCanvasClick}
+      style={{
+        width: "100%",
+        height: "auto",
+        background: "white",
+        color: "#000",
+        fontFamily: "Calibri, Candara, 'Segoe UI', Optima, Arial, sans-serif",
+        cursor: drawMode ? "crosshair" : undefined,
+      }}
     >
       {/* outer border — 160.4 x 272.9mm, positioned per Part 23's exact
           margins (24.8mm left/right, 12.2mm top, ~11.9mm bottom) */}
@@ -410,20 +447,20 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           top/left/right edges are already the frame's + table's own
           borders; only the box's closing bottom edge is new here. */}
       {(() => {
-        const dsmApprovedY = tableBottom + 50;
-        const dosY1 = tableBottom + 130;
-        const dosY2 = dosY1 + FS_DOS * 1.4;
-        const dosLineY = dosY2 + FS_DOS * 1.3;
+        const dsmApprovedY = tableBottom + 40;
+        const dosY1 = tableBottom + 100;
+        const dosY2 = dosY1 + FS_DOS * 1.3;
+        const dosLineY = dosY2 + FS_DOS * 1.1;
         return (
           <>
             {/* Open at the bottom, like the top table (client req
                 2026-08-22) — no closing border, just the left divider
                 running down to the signature line below "and Mapping". */}
-            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={0.7} />
+            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1} />
             <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
             <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
             <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
-            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={0.6} />
+            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1} />
           </>
         );
       })()}
@@ -526,30 +563,25 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </text>
         );
       })}
-      {/* Adjoining-parcel extension lines (client req 2026-08-21, Part 20a) —
-          a dashed line continuing past this side's end point, labeled with
-          the neighboring parcel's identifier. Only drawn where the user
-          actually entered a label; sides with none get no extension at all. */}
-      {sides.map((s, i) => {
-        const label = neighborLabels?.[i];
-        if (!label || !label.trim()) return null;
-        const a = points[i], b = points[(i + 1) % points.length];
-        if (!a || !b) return null;
-        const ax = toX(a.east), ay = toY(a.north);
-        const bx = toX(b.east), by = toY(b.north);
-        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        const extLen = 144;
-        const ex = bx + ux * extLen, ey = by + uy * extLen;
-        const midx = (bx + ex) / 2, midy = (by + ey) / 2;
-        const nx = -uy, ny = ux;
+      {/* Manually-drawn adjoining-parcel extension lines (client req
+          2026-08-22, Part 24) — the surveyor draws these directly on the
+          rendered diagram (there's no survey data to compute them from),
+          so they're plain SVG-space lines + free-text labels, not derived
+          from a boundary side. Never coloured, even when selected, so a
+          print/export taken mid-edit still reads as plain black-and-white. */}
+      {(manualAnnotations ?? []).map((a) => {
+        const isSel = selectedAnnotationId === a.id;
+        const midx = (a.x1 + a.x2) / 2, midy = (a.y1 + a.y2) / 2;
         return (
-          <g key={`nb${i}`}>
-            <line x1={bx} y1={by} x2={ex} y2={ey} stroke="black" strokeWidth={1} strokeDasharray="6 4" />
-            <text x={midx + nx * 22} y={midy + ny * 22} fontSize={FS_BEACON_HEAD} textAnchor="middle">{label}</text>
+          <g key={a.id} onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }} style={onAnnotationClick ? { cursor: "pointer" } : undefined}>
+            <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="black" strokeWidth={isSel ? 2.2 : 1} strokeDasharray="6 4" />
+            <text x={midx} y={midy - 8} fontSize={FS_BEACON_HEAD} fontWeight={isSel ? "bold" : undefined} textAnchor="middle">{a.label}</text>
           </g>
         );
       })}
+      {pendingAnnotationPoint && (
+        <circle cx={pendingAnnotationPoint.x} cy={pendingAnnotationPoint.y} r={5} fill="black" />
+      )}
       {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse
           (no boundary side, no coordinate-table row). */}
       {(extraPoints ?? []).map((p, i) => (
@@ -604,15 +636,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
       {/* ===================== deeds/annexure table ===================== */}
       <g fontSize={FS_BEACON_HEAD}>
-        <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={0.8} />
-        <line x1={annC1} y1={annTop} x2={annC1} y2={annBottom} stroke="black" strokeWidth={0.6} />
-        <line x1={annC2} y1={annTop} x2={annC2} y2={annBottom} stroke="black" strokeWidth={0.6} />
+        <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={1.2} />
+        <line x1={annC1} y1={annTop} x2={annC1} y2={annBottom} stroke="black" strokeWidth={1} />
+        <line x1={annC2} y1={annTop} x2={annC2} y2={annBottom} stroke="black" strokeWidth={1} />
 
         {/* left — Deeds Registry annexure */}
         <text x={tx + 10} y={annTop + 40}>This diagram is annexed to</text>
         <text x={tx + 10} y={annTop + 90}>No. {dash(meta.annexedToNo)}</text>
         <text x={tx + 10} y={annTop + 140}>Dated {dash(meta.annexedDate)}</text>
-        <text x={annC1 - 100} y={annTop + 140}>in favour</text>
+        <text x={annC1 - 140} y={annTop + 140}>in favour</text>
         <text x={tx + 10} y={annTop + 190}>of {dash(meta.annexedInFavourOf)}</text>
         {meta.annexName && meta.annexName.trim() && (
           <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={FS_BEACON_HEAD}>

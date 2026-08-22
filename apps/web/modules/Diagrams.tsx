@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import type { CogoResult, ParcelDoc } from "@/lib/types";
-import { SgDiagram, type DiagramKind, type DiagramMeta } from "@/components/SgDiagram";
+import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation } from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 
@@ -122,7 +122,7 @@ export function Diagrams() {
     kind?: DiagramKind;
     meta?: Omit<DiagramMeta, "closed" | "kind">;
     leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
-    neighborLabels?: string[];
+    annotations?: ManualAnnotation[];
   };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
@@ -163,12 +163,53 @@ export function Diagrams() {
       })),
     [fig]
   );
-  // Adjoining-parcel label per side (client req 2026-08-21, Part 20a) — e.g.
-  // "REMAINDER OF CADASTRE 477", drawn as a dashed extension line on the
-  // generated diagram. Blank/absent entries simply get no extension line.
-  const [neighborLabels, setNeighborLabels] = useState<string[]>(di.neighborLabels ?? []);
-  const setNeighborLabel = (i: number, v: string) =>
-    setNeighborLabels((arr) => { const next = [...arr]; next[i] = v; return next; });
+  // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
+  // Part 24) — the client clarified these are added by hand by the
+  // surveyor (no survey data to compute them from), superseding the
+  // earlier per-side auto-computed approach. Click two points directly on
+  // the rendered diagram, type a label, done; click an existing line to
+  // select it, then Delete to remove it.
+  const [annotations, setAnnotations] = useState<ManualAnnotation[]>(di.annotations ?? []);
+  const [drawingAnnotation, setDrawingAnnotation] = useState(false);
+  const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+
+  function toSvgPoint(e: ReactMouseEvent<SVGSVGElement>): { x: number; y: number } {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+  function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
+    if (!drawingAnnotation) {
+      setSelectedAnnotationId(null); // clicking empty canvas outside draw mode clears selection
+      return;
+    }
+    const p = toSvgPoint(e);
+    if (!pendingPoint) {
+      setPendingPoint(p);
+      return;
+    }
+    const label = window.prompt("Label for this line (e.g. REMAINDER OF CADASTRE 477):", "") ?? "";
+    if (label.trim()) {
+      setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, x1: pendingPoint.x, y1: pendingPoint.y, x2: p.x, y2: p.y, label: label.trim() }]);
+    }
+    setPendingPoint(null);
+    setDrawingAnnotation(false);
+  }
+  function handleAnnotationClick(id: string) {
+    if (drawingAnnotation) return;
+    setSelectedAnnotationId((cur) => (cur === id ? null : id));
+  }
+  function deleteSelectedAnnotation() {
+    if (!selectedAnnotationId) return;
+    setAnnotations((arr) => arr.filter((a) => a.id !== selectedAnnotationId));
+    setSelectedAnnotationId(null);
+  }
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -211,8 +252,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta, leaseMeta, neighborLabels });
-  }, [kind, meta, leaseMeta, neighborLabels, setDiagramInput]);
+    setDiagramInput({ kind, meta, leaseMeta, annotations });
+  }, [kind, meta, leaseMeta, annotations, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: meta.coordinateSystem,
@@ -462,18 +503,24 @@ export function Diagrams() {
                   )}
                 </div>
               </Card>
-              {!isBorehole && sides.length > 0 && (
+              {!isBorehole && (
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
-                    Optional — e.g. "REMAINDER OF CADASTRE 477". Leave blank for sides with no known neighbor;
-                    only sides with a label get a dashed extension line on the diagram.
+                    These dashed extension lines are added by hand, the same way a surveyor marks them up on
+                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
+                    click two points directly on the preview to draw one and type its label (e.g. "REMAINDER OF
+                    CADASTRE 477"). Click an existing line to select it, then Delete to remove it.
                   </p>
-                  <div className="space-y-2">
-                    {sides.map((s, i) => (
-                      <Field key={i} label={`${s.from ?? "?"} → ${s.to ?? "?"}`}>
-                        <Input value={neighborLabels[i] ?? ""} onChange={(v) => setNeighborLabel(i, v)} placeholder="e.g. REMAINDER OF CADASTRE 477" />
-                      </Field>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={drawingAnnotation ? "primary" : "ghost"}
+                      onClick={() => { setDrawingAnnotation((v) => !v); setPendingPoint(null); }}
+                    >
+                      {drawingAnnotation ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Draw Extension Line"}
+                    </Button>
+                    {selectedAnnotationId && (
+                      <Button variant="ghost" onClick={deleteSelectedAnnotation}>Delete Selected Line</Button>
+                    )}
                   </div>
                 </Card>
               )}
@@ -514,7 +561,19 @@ export function Diagrams() {
             ) : isBorehole ? (
               <BoreholeDiagram ref={svgRef} meta={fullMeta} points={points} />
             ) : (
-              <SgDiagram ref={svgRef} meta={fullMeta} points={points} sides={sides} extraPoints={extraPoints} neighborLabels={neighborLabels} />
+              <SgDiagram
+                ref={svgRef}
+                meta={fullMeta}
+                points={points}
+                sides={sides}
+                extraPoints={extraPoints}
+                manualAnnotations={annotations}
+                pendingAnnotationPoint={pendingPoint}
+                selectedAnnotationId={selectedAnnotationId}
+                drawMode={drawingAnnotation}
+                onCanvasClick={handleCanvasClick}
+                onAnnotationClick={handleAnnotationClick}
+              />
             )}
           </div>
           <p className="mt-3 text-xs text-slate-400">
