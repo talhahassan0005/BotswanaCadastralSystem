@@ -174,12 +174,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
   // Font sizes — increased across the board per the client's explicit
   // "increase font" feedback comparing the app's output to the reference.
-  const FS_TABLE_HEAD = 26, FS_TABLE_SUB = 22, FS_CONSTANTS = 19;
-  const FS_BEACON_HEAD = 28, FS_BEACON = 25, FS_LOCALITY = 32;
-  const FS_DOS = 23, FS_ARROW = 22, FS_SCALE = 22;
-  const FS_VERTEX = 30, FS_SIDE_LONG = 24, FS_SIDE_SHORT = 19, FS_NEIGHBOR = 19;
-  const FS_LEGAL = 27, FS_LANDCALLED = 31, FS_PARENT = 25, FS_CERT = 25;
-  const FS_SURVEYOR = 27, FS_SURVEYOR_TITLE = 21, FS_FOOTER = 17, FS_ANNEX = 20;
+  const FS_TABLE_HEAD = 29, FS_TABLE_SUB = 25, FS_CONSTANTS = 21;
+  const FS_BEACON_HEAD = 31, FS_BEACON = 28, FS_LOCALITY = 35;
+  const FS_DOS = 26, FS_ARROW = 24, FS_SCALE = 24;
+  const FS_VERTEX = 33, FS_SIDE_LONG = 27, FS_SIDE_SHORT = 21, FS_NEIGHBOR = 21;
+  const FS_LEGAL = 34, FS_LANDCALLED = 34, FS_PARENT = 28, FS_CERT = 28;
+  const FS_SURVEYOR = 23, FS_SURVEYOR_TITLE = 23, FS_FOOTER = 19, FS_ANNEX = 22;
 
   // ---- top data table: fixed 51.0mm band, 14.0mm header (client req,
   // Part 23) — the table no longer grows the page as points are added;
@@ -196,11 +196,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const dataH = topBandH - headH;
   const n = Math.max(points.length, sides.length, 1);
   const rowH = dataH / n;
-  const dataFS = Math.max(13, Math.min(FS_TABLE_SUB, rowH * 0.55));
+  const dataFS = Math.max(15, Math.min(FS_TABLE_SUB, rowH * 0.55));
 
   // column x boundaries — cumulative from the frame's own left edge,
   // widths per Part 23 (7.9 / 25.6 / 27.9 / 6.6 / 25.5 / 27.0 / 39.9mm).
-  const xMetR = tx + 7.9 * MM + 25.6 * MM; // right of SIDES/METRES group
+  const xSideVal = tx + 7.9 * MM;          // between the AB/BC row-label and its distance value
+  const xMetR = xSideVal + 25.6 * MM; // right of SIDES/METRES group
   const xDir = xMetR;                       // DIRECTIONS column
   const xDirR = xDir + 27.9 * MM;           // right of DIRECTIONS
   const xPt = xDirR;                        // point-letter column
@@ -263,7 +264,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
   const figTop = localityY + 44;
   const figBottom = Math.max(figTop + 400, legalY0 - 40);
-  const fig = { x: tx + 60, y: figTop, w: tw - 60 - 300, h: figBottom - figTop };
+  // Reserve the extra margin on the LEFT of the figure box, not the right
+  // (client req 2026-08-22) — the north arrow moved to the left side of the
+  // sheet, so that's where the box now needs the spare 300 units of room.
+  const fig = { x: tx + 300, y: figTop, w: tw - 300 - 60, h: figBottom - figTop };
   const pad = 60;
   // Figure bounds include any extra (non-traverse) marks so they stay visible.
   const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
@@ -314,16 +318,29 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
-      style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "Arial, Helvetica, sans-serif" }}
+      style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "Calibri, Candara, 'Segoe UI', Optima, Arial, sans-serif" }}
     >
       {/* outer border — 160.4 x 272.9mm, positioned per Part 23's exact
           margins (24.8mm left/right, 12.2mm top, ~11.9mm bottom) */}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_W} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />
 
       {/* ===================== TOP DATA TABLE ===================== */}
+      {/* Open-at-the-bottom, per the reference PDF's actual line geometry
+          (client req 2026-08-22, Part 27) — the reference has only two
+          horizontal lines in this band (the frame's own top edge, and the
+          header/data divider); there is no line between individual data
+          rows and no closing bottom border. No table-outline <rect> here:
+          the top/left/right edges are already the frame's own border
+          (tx/tableRight = FRAME_X/FRAME_RIGHT, ty = FRAME_Y), so drawing a
+          separate table rect would just duplicate them AND add the bottom
+          border the reference doesn't have. */}
       <g>
-        <rect x={tx} y={ty} width={tw} height={tableBottom - ty} fill="none" stroke="black" strokeWidth={1} />
         {/* vertical dividers */}
+        {/* Row-label / distance-value split within SIDES METRES (client req
+            2026-08-22) — matches the point-letter/Y divider's style: a
+            light line starting below the header, not cutting through the
+            merged "SIDES METRES" heading above it. */}
+        <line x1={xSideVal} y1={dataTop} x2={xSideVal} y2={tableBottom} stroke="black" strokeWidth={0.5} />
         <line x1={xMetR} y1={ty} x2={xMetR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
         <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
         <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={0.5} />
@@ -334,18 +351,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={xDsm} y1={xYDividerTop} x2={tableRight} y2={xYDividerTop} stroke="black" strokeWidth={0.5} />
 
         {/* header row 1 */}
-        <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="bold" fontSize={FS_TABLE_HEAD}>SIDES</text>
-        <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="bold" fontSize={FS_TABLE_HEAD}>DIRECTIONS</text>
-        <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="bold" fontSize={FS_TABLE_HEAD}>CO-ORDINATES</text>
-        <text x={(xDsm + tableRight) / 2} y={hRow1} textAnchor="middle" fontWeight="bold" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
+        <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>SIDES</text>
+        <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>DIRECTIONS</text>
+        <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>CO-ORDINATES</text>
+        <text x={(xDsm + tableRight) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
         {/* header row 2 */}
-        <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="bold" fontSize={FS_TABLE_SUB}>METRES</text>
-        <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="bold">Y</text>
+        <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>METRES</text>
+        <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">Y</text>
         <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB}>System {fmtSystem(meta.coordinateSystem)}</text>
-        <text x={xX + (xXR - xX) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="bold">X</text>
+        <text x={xX + (xXR - xX) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
         <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_HEAD}>{meta.dsmNo || ""}</text>
         {/* header row 3 — constants */}
-        <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="bold" fontSize={FS_CONSTANTS}>CONSTANTS</text>
+        <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="medium" fontSize={FS_CONSTANTS}>CONSTANTS</text>
         <text x={xY + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
         <text x={xX + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
 
@@ -366,7 +383,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               )}
               {p && (
                 <>
-                  <text x={xPt + 8} y={y} fontWeight="bold">{p.name}</text>
+                  <text x={xPt + 8} y={y} fontWeight="medium">{p.name}</text>
                   <text x={xY + 8} y={y}>{tCoord(p.east)}</text>
                   <text x={xX + 8} y={y}>{tCoord(p.north)}</text>
                 </>
@@ -377,37 +394,65 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       </g>
 
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
-      <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="bold" textDecoration="underline">
+      <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
         BEACON DESCRIPTION
       </text>
       {beaconLines.map((ln, i) => (
-        <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON}>{ln}</text>
+        <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
       ))}
-      <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_LOCALITY} letterSpacing="1">{meta.location}</text>
+      <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">{meta.location}</text>
 
-      {/* ===================== Director of Surveys block (right, under D.S.M) ===================== */}
-      <text x={xDsm + 16} y={bdHeadingY} fontSize={FS_DOS}>Director of Surveys</text>
-      <text x={xDsm + 16} y={bdHeadingY + FS_DOS * 1.4} fontSize={FS_DOS}>and Mapping</text>
-      <line x1={xDsm + 16} y1={bdHeadingY + FS_DOS * 2.7} x2={tableRight - 16} y2={bdHeadingY + FS_DOS * 2.7} stroke="black" strokeWidth={0.6} />
+      {/* ===================== Right-side D.S.M / Approved / Director of
+          Surveys column (client req 2026-08-22) — reference shows this as
+          ONE continuous box (D.S.M No. at top, "Approved" and "Director of
+          Surveys and Mapping" further down) with NO internal dividing
+          lines between the three — only the box's own outer border. The
+          top/left/right edges are already the frame's + table's own
+          borders; only the box's closing bottom edge is new here. */}
+      {(() => {
+        const dsmApprovedY = tableBottom + 50;
+        const dosY1 = tableBottom + 130;
+        const dosY2 = dosY1 + FS_DOS * 1.4;
+        const dosLineY = dosY2 + FS_DOS * 1.3;
+        return (
+          <>
+            {/* Open at the bottom, like the top table (client req
+                2026-08-22) — no closing border, just the left divider
+                running down to the signature line below "and Mapping". */}
+            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={0.7} />
+            <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
+            <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
+            <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
+            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={0.6} />
+          </>
+        );
+      })()}
 
-      {/* ===================== North arrow + scale (right of the figure) ===================== */}
-      {/* Positioned clear of the actual drawn figure (client req 2026-08-21)
-          — since Part 14 draws the boundary at the chosen scale instead of
-          always auto-fitting the fig box, a large/tall shape can extend
-          further right than the figure box's own default position
-          anticipated. Push the arrow right of the figure's actual right
-          edge (capped so it stays inside the frame), instead of always
-          sitting at a fixed position. */}
-      <g transform={`translate(${Math.min(tableRight - 90, Math.max(fig.x + fig.w + 90, offX + dw + 90))}, ${fig.y + 40})`}>
-        <line x1={0} y1={46} x2={0} y2={-34} stroke="black" strokeWidth={1.3} />
-        <polygon points="0,-46 -8,-22 0,-32 8,-22" fill="black" />
-        <line x1={-14} y1={2} x2={14} y2={2} stroke="black" strokeWidth={0.8} />
-        <text x={9} y={-2} fontSize={FS_ARROW} fontWeight="bold">N</text>
-        <text x={-18} y={-2} fontSize={FS_ARROW}>T</text>
-        {meta.scale > 0 && (
-          <text x={0} y={78} textAnchor="middle" fontSize={FS_SCALE} fontWeight="bold">SCALE 1:{meta.scale.toLocaleString()}</text>
-        )}
+      {/* ===================== North arrow + scale (left of the figure) ===================== */}
+      {/* Moved to the LEFT side of the sheet (client req 2026-08-22) —
+          mirrors the old right-side clamping logic: stay clear of whichever
+          extends further left, the figure box's own left edge or the
+          actual drawn boundary's left extent, without going past the
+          frame's own left margin. */}
+      {/* Thin outlined compass needle with a full-height "T-N" reference
+          line, redrawn as a simple lopsided outline (client req
+          2026-08-22) — a plain unfilled arrow silhouette threaded by a
+          single vertical line down through the "T | N" label beneath it,
+          not a bold solid-filled or symmetric shape. */}
+      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200})`}>
+        <line x1={0} y1={-170} x2={0} y2={54} stroke="black" strokeWidth={1} />
+        <polygon points="0,-170 -14,-55 4,-30" fill="none" stroke="black" strokeWidth={1.2} strokeLinejoin="round" />
+        <text x={-6} y={24} textAnchor="end" fontSize={FS_BEACON_HEAD}>T</text>
+        <text x={6} y={24} textAnchor="start" fontSize={FS_BEACON_HEAD}>N</text>
       </g>
+
+      {/* Scale tag moved here, right above the legal-description block
+          (client req 2026-08-22) — no longer under the north arrow. */}
+      {meta.scale > 0 && (
+        <text x={VB_W / 2} y={legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
+          SCALE 1:{meta.scale.toLocaleString()}
+        </text>
+      )}
 
       {/* ===================== FIGURE ===================== */}
       {parcels && parcels.length > 0 ? (
@@ -419,7 +464,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           return (
             <g key={`pc${i}`}>
               <polygon points={ring} fill={col} fillOpacity={0.12} stroke={col} strokeWidth={1.6} strokeLinejoin="round" />
-              <text x={lcx} y={lcy} textAnchor="middle" fontSize={12} fontWeight="bold" fill={col}>{pc.number}</text>
+              <text x={lcx} y={lcy} textAnchor="middle" fontSize={12} fontWeight="medium" fill={col}>{pc.number}</text>
             </g>
           );
         })
@@ -449,7 +494,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         return (
           <g key={`bcn${i}`}>
             <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
-            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={FS_VERTEX} fontWeight="bold">{p.name}</text>
+            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
           </g>
         );
       })}
@@ -476,7 +521,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const off = short ? 26 : 35;
         const fs = short ? FS_SIDE_SHORT : FS_SIDE_LONG;
         return (
-          <text key={`sd${i}`} x={mx + nx * off} y={my + ny * off + 4} textAnchor="middle" fontSize={fs}>
+          <text key={`sd${i}`} x={mx + nx * off} y={my + ny * off + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
             {s.distance.toFixed(2)}
           </text>
         );
@@ -501,7 +546,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         return (
           <g key={`nb${i}`}>
             <line x1={bx} y1={by} x2={ex} y2={ey} stroke="black" strokeWidth={1} strokeDasharray="6 4" />
-            <text x={midx + nx * 22} y={midy + ny * 22} fontSize={FS_NEIGHBOR} textAnchor="middle">{label}</text>
+            <text x={midx + nx * 22} y={midy + ny * 22} fontSize={FS_BEACON_HEAD} textAnchor="middle">{label}</text>
           </g>
         );
       })}
@@ -510,49 +555,55 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {(extraPoints ?? []).map((p, i) => (
         <g key={`xp${i}`}>
           <circle cx={toX(p.east)} cy={toY(p.north)} r={5} fill="black" />
-          <text x={toX(p.east) + 12} y={toY(p.north) + 4} fontSize={FS_NEIGHBOR}>{p.name}</text>
+          <text x={toX(p.east) + 12} y={toY(p.north) + 4} fontSize={FS_BEACON_HEAD} textAnchor="middle">
+            {p.name}
+          </text>
         </g>
       ))}
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       {(() => {
         const landCalledY = legalY0 + figureLines.length * LEGAL_LH;
-        const parentY = landCalledY + LEGAL_LH;
-        const situateY = parentY + LEGAL_LH;
-        const certY1 = situateY + LEGAL_LH * 1.3;
-        const certY2 = certY1 + LEGAL_LH;
-        const surveyorTitleY = certY2 + LEGAL_LH * 0.65;
+        // "(A PORTION OF ...)" line removed (client req 2026-08-22) — SITUATE
+        // AT now follows directly after the underlined lot name.
+        const situateY = landCalledY + LEGAL_LH;
+        // Certification + deductions note sit on two tight, back-to-back
+        // lines with no gap between them (client req 2026-08-22) — was
+        // previously split across "Surveyed"/"IN ... BY ME," on separate
+        // lines, duplicating (and drifting from) the already-exported
+        // certificationLine() helper; now uses it directly for one line.
+        // Anchored just above the registration table's own top border
+        // (client req 2026-08-22: "sit right above that line"), not
+        // floating wherever the legal-description flow happens to end.
+        const deductionsY = annTop - 20;
+        const certY1 = deductionsY - FS_CERT * 1.15;
         return (
           <>
             <g textAnchor="middle">
               {figureLines.map((line, i) => (
-                <text key={i} x={VB_W / 2} y={legalY0 + i * LEGAL_LH} fontSize={FS_LEGAL} fontWeight="bold">
+                <text key={i} x={VB_W / 2} y={legalY0 + i * LEGAL_LH} fontSize={FS_LEGAL} fontWeight="medium">
                   {line}
                 </text>
               ))}
-              <text x={VB_W / 2} y={landCalledY} fontSize={FS_LANDCALLED} fontWeight="bold" textDecoration="underline">{landCalled}</text>
-              <text x={VB_W / 2} y={parentY} fontSize={FS_PARENT}>({meta.parent})</text>
-              <text x={VB_W / 2} y={situateY} fontSize={FS_PARENT}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
+              <text x={VB_W / 2} y={landCalledY} fontSize={FS_LANDCALLED} fontWeight="medium" textDecoration="underline">{landCalled}</text>
+              <text x={VB_W / 2} y={situateY} fontSize={FS_BEACON_HEAD}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
             </g>
 
-            {/* ===================== certification + surveyor ===================== */}
-            <text x={tx + 20} y={certY1} fontSize={FS_CERT}>
-              {meta.kind === "compiled"
-                ? `Compiled from ${dash(meta.sourceRef) || "—"}`
-                : meta.kind === "framed"
-                ? `Framed from ${dash(meta.sourceRef) || "—"}`
-                : "Surveyed"}
-            </text>
-            <text x={tx + 40} y={certY2} fontSize={FS_CERT}>IN {meta.surveyedDate} BY ME,</text>
-            <text x={VB_W - 480} y={certY2} fontSize={FS_SURVEYOR} fontWeight="bold">{meta.surveyor}</text>
-            <text x={VB_W - 480} y={surveyorTitleY} fontSize={FS_SURVEYOR_TITLE}>LAND SURVEYOR</text>
+            {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
+            <text x={tx + 4} y={certY1} fontSize={FS_BEACON_HEAD}>{certificationLine(meta)}</text>
+            <text x={tx + 4} y={deductionsY} fontSize={FS_BEACON_HEAD}>DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
+            {/* Plain/simple styling (client req 2026-08-22) — no bold, no
+                forced caps, no signature line above; prints exactly
+                whatever the surveyor field and the fixed "Land Surveyor"
+                title read. */}
+            <text x={VB_W - 700} y={certY1} fontSize={FS_BEACON_HEAD}>{meta.surveyor}</text>
+            <text x={VB_W - 700} y={deductionsY} fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
           </>
         );
       })()}
 
-      {/* ===================== DEDUCTIONS + deeds/annexure table ===================== */}
-      <text x={tx + 4} y={annTop - 10} fontSize={FS_FOOTER}>DEDUCTIONS FROM THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
-      <g fontSize={FS_ANNEX}>
+      {/* ===================== deeds/annexure table ===================== */}
+      <g fontSize={FS_BEACON_HEAD}>
         <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={0.8} />
         <line x1={annC1} y1={annTop} x2={annC1} y2={annBottom} stroke="black" strokeWidth={0.6} />
         <line x1={annC2} y1={annTop} x2={annC2} y2={annBottom} stroke="black" strokeWidth={0.6} />
@@ -564,10 +615,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={annC1 - 100} y={annTop + 140}>in favour</text>
         <text x={tx + 10} y={annTop + 190}>of {dash(meta.annexedInFavourOf)}</text>
         {meta.annexName && meta.annexName.trim() && (
-          <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={FS_ANNEX}>{meta.annexName}</text>
+          <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
+            {meta.annexName}
+          </text>
         )}
-        <line x1={tx + 40} y1={annBottom - 34} x2={annC1 - 30} y2={annBottom - 34} stroke="black" strokeWidth={0.4} />
-        <text x={(tx + annC1) / 2} y={annBottom - 14} textAnchor="middle">Registrar of Deeds</text>
+        <text x={(tx + annC1) / 2} y={annBottom - 14} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
+          Registrar of Deeds
+        </text>
 
         {/* middle — immediate parent diagram */}
         <text x={annC1 + 10} y={annTop + 40}>The immediate parent diagram is</text>

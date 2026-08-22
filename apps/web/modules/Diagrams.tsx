@@ -58,6 +58,15 @@ function suggestDiagramScale(pts: { east: number; north: number }[]): number {
   return NICE.find((n) => n >= raw) ?? Math.ceil(raw / 1000) * 1000;
 }
 
+/** Default "Beacon Description" text — lists the actual boundary point
+ *  names (client req 2026-08-22: "ALL" isn't what the reference shows,
+ *  it lists the real letters, e.g. "A,B,C,D : 12mm iron peg"), falling
+ *  back to "ALL" only when no points are loaded yet to describe. */
+function defaultBeaconDescription(pts: { name: string | null }[]): string {
+  const names = pts.map((p) => p.name).filter(Boolean);
+  return `${names.length ? names.join(",") : "ALL"} : 12mm Iron peg`;
+}
+
 export function Diagrams() {
   const { cogoResult, diagramFigure, setDiagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc, cogoPlots } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -132,7 +141,7 @@ export function Diagrams() {
     gpNo: "",
     degreeSquare: "",
     parentDiagram: "",
-    beaconDescription: "ALL: 12mm iron peg",
+    beaconDescription: defaultBeaconDescription(fig?.points ?? []),
     areaHa: fig?.area_ha ?? 0,
     sourceRef: "",
     boreholeNo: "",
@@ -191,7 +200,12 @@ export function Diagrams() {
   useEffect(() => {
     const p = parcels.find((x) => x.id === selParcelId);
     const suggested = suggestDiagramScale(fig?.points ?? []);
-    setMeta((m) => ({ ...m, ...(p?.number ? { lotName: p.number.toUpperCase() } : {}), scale: suggested }));
+    setMeta((m) => ({
+      ...m,
+      ...(p?.number ? { lotName: p.number.toUpperCase() } : {}),
+      scale: suggested,
+      beaconDescription: defaultBeaconDescription(fig?.points ?? []),
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selParcelId]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { CogoResult, ImportResult, TopoResult, ValidationResult, VolumeResult } from "./types";
 
 export type Discipline = "Cadastral" | "Engineering" | "Mining" | "GIS";
@@ -121,6 +121,18 @@ export interface ProjectState {
   generalPlanInput?: unknown;
   recordInput?: unknown;
   cogoPlots?: CogoPlot[];
+}
+
+// Local-session autosave (client req 2026-08-22): a plain page refresh was
+// throwing away whatever the user was doing, anywhere in the app — this is
+// separate from the explicit cloud "Save Project" (Supabase) feature, which
+// the user has to remember to trigger. This is unconditional crash/refresh
+// insurance for whatever's currently open, restored silently on next load.
+const AUTOSAVE_KEY = "bcs-session-autosave-v1";
+interface AutosavedSession extends ProjectState {
+  activeTab?: string;
+  started?: boolean;
+  currentProject?: { id: string; name: string } | null;
 }
 
 const DEFAULT_CONFIG: ProjectConfig = {
@@ -248,7 +260,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCogoPlots([]);
     setDiagramFigure(null);
     if (typeof window !== "undefined") {
-      try { window.localStorage.removeItem("bcs-editor-v2"); } catch { /* ignore */ }
+      try {
+        window.localStorage.removeItem("bcs-editor-v2");
+        window.localStorage.removeItem(AUTOSAVE_KEY);
+      } catch { /* ignore */ }
     }
     setCurrentProject(null);
     setActiveTabState("import");
@@ -256,6 +271,67 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStarted(false); // return to the project-setup gate
     setLoadVersion((v) => v + 1);
   };
+
+  // Restore, once on mount, whatever was last autosaved — unlike hydrate()
+  // (used for explicitly opening a named cloud project, which deliberately
+  // lands on "import"), this puts the user back exactly where a refresh
+  // caught them: same tab, same "started" stage-gate state, everything.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || restoredRef.current) return;
+    restoredRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const saved: AutosavedSession = JSON.parse(raw);
+      setConfigState({ ...DEFAULT_CONFIG, ...(saved.config ?? {}) });
+      setImportResult(saved.importResult ?? null);
+      setCogoResult(saved.cogoResult ?? null);
+      setValidation(saved.validation ?? null);
+      setTopoResult(saved.topoResult ?? null);
+      setVolumeResult(saved.volumeResult ?? null);
+      editorDocRef.current = saved.editorDoc ?? null;
+      parcelDocRef.current = saved.parcelDoc ?? null;
+      sectionalDocRef.current = saved.sectionalDoc ?? null;
+      diagramInputRef.current = saved.diagramInput ?? null;
+      topoInputRef.current = saved.topoInput ?? null;
+      volumeInputRef.current = saved.volumeInput ?? null;
+      workingPlanInputRef.current = saved.workingPlanInput ?? null;
+      generalPlanInputRef.current = saved.generalPlanInput ?? null;
+      recordInputRef.current = saved.recordInput ?? null;
+      setCogoPlots(saved.cogoPlots ?? []);
+      if (saved.currentProject) setCurrentProject(saved.currentProject);
+      if (typeof saved.started === "boolean") setStarted(saved.started);
+      if (saved.activeTab) setActiveTabState(saved.activeTab);
+      setLoadVersion((v) => v + 1); // remount modules so they re-read the restored state
+    } catch {
+      // Corrupt/blocked storage — start fresh rather than fail to load the app.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Snapshot everything (including the ref-held drawing blobs — snapshot()
+  // reads their live .current value each call, so this catches those too,
+  // not just the React-state fields in the dependency list below) on an
+  // interval and right before the tab closes/refreshes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const save = () => {
+      try {
+        const payload: AutosavedSession = { ...snapshot(), activeTab, started, currentProject };
+        window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+      } catch {
+        // Storage full/blocked (e.g. private browsing) — skip this cycle, non-fatal.
+      }
+    };
+    const interval = setInterval(save, 4000);
+    window.addEventListener("beforeunload", save);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", save);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, importResult, cogoResult, validation, topoResult, volumeResult, cogoPlots, activeTab, started, currentProject]);
 
   return (
     <StoreContext.Provider
