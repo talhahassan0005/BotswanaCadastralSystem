@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
@@ -9,6 +9,7 @@ import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation } 
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
+import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
@@ -174,15 +175,34 @@ export function Diagrams() {
   const [drawingAnnotation, setDrawingAnnotation] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-  // In-progress drag of a selected line's move-handle (translate the whole
-  // line) or either end-handle (rotate/resize around the other end) —
-  // client req 2026-08-23: "select, move, rotate/tilt the extension lines."
+  // In-progress grip drag of a selected extension line (client req
+  // 2026-08-23 "select, move, rotate/tilt", extended 2026-08-24, Part 28 to
+  // match the client's AutoCAD grip-edit demo exactly): dragging the "move"
+  // handle translates the whole line; dragging an end handle STRETCHes just
+  // that end (free length + angle, other end fixed); holding Shift while
+  // dragging an end handle ROTATEs the whole line around the other, fixed
+  // end instead (length held constant, only angle changes) — same
+  // Stretch-vs-Rotate distinction as the COGO work station's own line
+  // grips. `orig` is the pre-drag geometry so Escape can revert exactly.
   const [draggingAnnotation, setDraggingAnnotation] = useState<{
     id: string;
     handle: "start" | "end" | "move";
+    rotate: boolean;
     startSvg: { x: number; y: number };
     orig: { x1: number; y1: number; x2: number; y2: number };
+    lengthText: string;
+    angleText: string;
   } | null>(null);
+  // Diagram-sheet mm/unit ratio (matches SgDiagram.tsx's own MM=10 constant)
+  // — these annotation lines live in SVG/print-sheet space, not real ground
+  // coordinates, so their live readout is printed millimetres, not metres.
+  const ANN_MM = 10;
+  function annLengthAngle(x1: number, y1: number, x2: number, y2: number): { lengthMm: number; angleDeg: number } {
+    const dx = x2 - x1, dy = y2 - y1;
+    const lengthMm = Math.hypot(dx, dy) / ANN_MM;
+    const angleDeg = normalizeDeg((Math.atan2(dx, -dy) * 180) / Math.PI);
+    return { lengthMm, angleDeg };
+  }
   // Set once a handle-drag actually moves the pointer, so the native click
   // event that follows mouseup (browsers fire it whenever mousedown/mouseup
   // share a target, regardless of movement in between) doesn't get treated
@@ -228,31 +248,103 @@ export function Diagrams() {
     setAnnotations((arr) => arr.filter((a) => a.id !== selectedAnnotationId));
     setSelectedAnnotationId(null);
   }
-  function handleAnnotationHandleDown(id: string, handle: "start" | "end" | "move", e: ReactMouseEvent<SVGElement>) {
+  function handleAnnotationHandleDown(id: string, handle: "start" | "end" | "move", e: ReactPointerEvent<SVGElement>) {
     const a = annotations.find((x) => x.id === id);
     if (!a) return;
+    // Pointer capture (client req 2026-08-24, Part 28) — without it a fast
+    // drag that slips the cursor off the small grip hit-target, or off the
+    // diagram entirely, stops delivering move events partway through.
+    e.currentTarget.setPointerCapture(e.pointerId);
     dragMovedRef.current = false;
-    setDraggingAnnotation({ id, handle, startSvg: toSvgPoint(e), orig: { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 } });
+    const { lengthMm, angleDeg } = annLengthAngle(a.x1, a.y1, a.x2, a.y2);
+    setDraggingAnnotation({
+      id,
+      handle,
+      rotate: handle !== "move" && e.shiftKey,
+      startSvg: toSvgPoint(e),
+      orig: { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 },
+      lengthText: lengthMm.toFixed(1),
+      angleText: formatDms(angleDeg),
+    });
   }
-  function handleCanvasMouseMove(e: ReactMouseEvent<SVGSVGElement>) {
+  function handleCanvasMouseMove(e: ReactPointerEvent<SVGSVGElement>) {
     if (!draggingAnnotation) return;
     const p = toSvgPoint(e);
     const dx = p.x - draggingAnnotation.startSvg.x;
     const dy = p.y - draggingAnnotation.startSvg.y;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
-    const { orig, handle, id } = draggingAnnotation;
-    setAnnotations((arr) =>
-      arr.map((a) => {
-        if (a.id !== id) return a;
-        if (handle === "move") return { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy };
-        if (handle === "start") return { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy };
-        return { ...a, x2: orig.x2 + dx, y2: orig.y2 + dy };
-      })
-    );
+    const { orig, handle, id, rotate } = draggingAnnotation;
+    if (handle === "move") {
+      setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy } : a)));
+      return;
+    }
+    const isStart = handle === "start";
+    const pivot = isStart ? { x: orig.x2, y: orig.y2 } : { x: orig.x1, y: orig.y1 };
+    let nx: number, ny: number, lengthMm: number, angleDeg: number;
+    if (rotate) {
+      // ROTATE: length fixed at its pre-drag value, only the angle around
+      // the OTHER (fixed) end follows the mouse — same Stretch-vs-Rotate
+      // split as the COGO work station's line grips (client req 2026-08-24).
+      const origPt = isStart ? { x: orig.x1, y: orig.y1 } : { x: orig.x2, y: orig.y2 };
+      const { lengthMm: fixedLen } = annLengthAngle(pivot.x, pivot.y, origPt.x, origPt.y);
+      const angRad = Math.atan2(p.x - pivot.x, -(p.y - pivot.y));
+      nx = pivot.x + fixedLen * ANN_MM * Math.sin(angRad);
+      ny = pivot.y - fixedLen * ANN_MM * Math.cos(angRad);
+      lengthMm = fixedLen;
+      angleDeg = normalizeDeg((angRad * 180) / Math.PI);
+    } else {
+      // STRETCH: the dragged end moves freely to the cursor.
+      nx = orig[isStart ? "x1" : "x2"] + dx;
+      ny = orig[isStart ? "y1" : "y2"] + dy;
+      ({ lengthMm, angleDeg } = annLengthAngle(pivot.x, pivot.y, nx, ny));
+    }
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, x1: nx, y1: ny } : { ...a, x2: nx, y2: ny }) : a)));
+    setDraggingAnnotation((g) => (g ? { ...g, lengthText: lengthMm.toFixed(1), angleText: formatDms(angleDeg) } : g));
   }
   function handleCanvasMouseUp() {
+    // Already committed live on every mousemove above — release just ends
+    // the drag session (client req 2026-08-24: "confirm on release").
     setDraggingAnnotation(null);
   }
+  /** Commits the typed Length(mm)/Angle readout, matching AutoCAD's dynamic
+   *  input Enter behavior — ends the drag at exactly the typed values
+   *  rather than wherever the mouse happens to be (client req 2026-08-24). */
+  function applyAnnotationReadout() {
+    if (!draggingAnnotation || draggingAnnotation.handle === "move") return;
+    const lengthMm = Number(draggingAnnotation.lengthText);
+    if (!Number.isFinite(lengthMm) || lengthMm <= 0) return;
+    let angleDeg: number;
+    try {
+      angleDeg = parseBearing(draggingAnnotation.angleText);
+    } catch {
+      return;
+    }
+    const { orig, handle, id } = draggingAnnotation;
+    const isStart = handle === "start";
+    const pivot = isStart ? { x: orig.x2, y: orig.y2 } : { x: orig.x1, y: orig.y1 };
+    const rad = (angleDeg * Math.PI) / 180;
+    const nx = pivot.x + lengthMm * ANN_MM * Math.sin(rad);
+    const ny = pivot.y - lengthMm * ANN_MM * Math.cos(rad);
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, x1: nx, y1: ny } : { ...a, x2: nx, y2: ny }) : a)));
+    setDraggingAnnotation(null);
+  }
+  function cancelAnnotationDrag() {
+    if (!draggingAnnotation) return;
+    const { orig, id } = draggingAnnotation;
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, ...orig } : a)));
+    setDraggingAnnotation(null);
+  }
+  // Escape reverts an in-progress grip drag to its pre-drag geometry
+  // (client req 2026-08-24: "Escape cancels and reverts to the pre-drag state").
+  useEffect(() => {
+    if (!draggingAnnotation) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { e.preventDefault(); cancelAnnotationDrag(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingAnnotation]);
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -587,7 +679,9 @@ export function Diagrams() {
                     paper — there's no survey data to compute them from. They just mark that a side borders a
                     neighbouring plot, with no label. Click "Draw Extension Line" below, then click two points
                     directly on the preview to draw one. Click an existing line to select it — drag the line
-                    itself to move it, or drag either end-handle to rotate/resize it — then Delete to remove it.
+                    itself to move it, drag an end-handle to stretch that end (hold Shift to rotate the whole
+                    line around the other end instead), type an exact length/angle while dragging, or press
+                    Delete to remove it. Esc cancels a drag in progress.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -664,6 +758,58 @@ export function Diagrams() {
               />
             )}
           </div>
+          {/* Live dynamic-input readout while stretching/rotating an
+              extension-line grip (client req 2026-08-24, Part 28 —
+              "matching the AutoCAD demo's dynamic input fields, so the user
+              can type an exact value instead of dragging by eye"). Length
+              is in the printed sheet's millimetres, not ground metres —
+              these lines are freehand annotations, not measured survey
+              data. Positioned via the SVG's own screen CTM so it tracks the
+              grip correctly regardless of the preview's zoom/scroll. */}
+          {draggingAnnotation && draggingAnnotation.handle !== "move" && (() => {
+            const a = annotations.find((x) => x.id === draggingAnnotation.id);
+            const svg = svgRef.current;
+            if (!a || !svg) return null;
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return null;
+            const pt = svg.createSVGPoint();
+            pt.x = draggingAnnotation.handle === "start" ? a.x1 : a.x2;
+            pt.y = draggingAnnotation.handle === "start" ? a.y1 : a.y2;
+            const p = pt.matrixTransform(ctm);
+            const isRotate = draggingAnnotation.rotate;
+            return (
+              <div
+                className="fixed z-20 w-40 rounded border border-brand bg-white p-2 text-xs shadow-md"
+                style={{ left: p.x + 12, top: p.y + 12 }}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">{isRotate ? "Rotate" : "Stretch"}</span>
+                  <button type="button" onClick={cancelAnnotationDrag} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                </div>
+                <label className="mb-1 block">
+                  <span className="mb-0.5 block text-slate-500">Length (mm)</span>
+                  <input
+                    type="number"
+                    value={draggingAnnotation.lengthText}
+                    readOnly={isRotate}
+                    onChange={(e) => setDraggingAnnotation((g) => (g ? { ...g, lengthText: e.target.value } : g))}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyAnnotationReadout(); if (e.key === "Escape") cancelAnnotationDrag(); }}
+                    className={`w-full rounded border border-slate-200 px-1.5 py-1 ${isRotate ? "bg-slate-50 text-slate-500" : ""}`}
+                  />
+                </label>
+                <label className="mb-1.5 block">
+                  <span className="mb-0.5 block text-slate-500">Angle (bearing)</span>
+                  <input
+                    value={draggingAnnotation.angleText}
+                    onChange={(e) => setDraggingAnnotation((g) => (g ? { ...g, angleText: e.target.value } : g))}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyAnnotationReadout(); if (e.key === "Escape") cancelAnnotationDrag(); }}
+                    className="w-full rounded border border-slate-200 px-1.5 py-1"
+                  />
+                </label>
+                <button type="button" onClick={applyAnnotationReadout} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
+              </div>
+            );
+          })()}
           <p className="mt-3 text-xs text-slate-400">
             {isLease ? (
               <>Boundary sketch &amp; coordinate schedule are drawn from the COGO figure. The locality sketch

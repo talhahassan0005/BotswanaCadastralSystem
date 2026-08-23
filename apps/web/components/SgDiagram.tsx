@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type MouseEvent } from "react";
+import { forwardRef, type MouseEvent, type PointerEvent } from "react";
 import { wrapSvgWords, fitSvgText } from "@/lib/wrapSvgText";
 
 // ---------------------------------------------------------------------------
@@ -113,12 +113,17 @@ interface Props {
   drawMode?: boolean;
   onCanvasClick?: (e: MouseEvent<SVGSVGElement>) => void;
   onAnnotationClick?: (id: string, e: MouseEvent) => void;
-  /** Mousedown on a selected annotation's move-handle (drag the whole
-   *  line) or either end-handle (drag just that endpoint — rotates/
-   *  resizes the line around the other end), client req 2026-08-23. */
-  onAnnotationHandleDown?: (id: string, handle: "start" | "end" | "move", e: MouseEvent<SVGElement>) => void;
-  onCanvasMouseMove?: (e: MouseEvent<SVGSVGElement>) => void;
-  onCanvasMouseUp?: (e: MouseEvent<SVGSVGElement>) => void;
+  /** Pointerdown on a selected annotation's move-handle (drag the whole
+   *  line) or either end-handle (drag just that endpoint — stretches it
+   *  freely, or rotates the whole line around the other, fixed end if the
+   *  drag started with Shift held), client req 2026-08-23, extended
+   *  2026-08-24 (Part 28). Pointer events (not mouse events) so the caller
+   *  can take pointer capture on the grip itself — without it, a fast real
+   *  drag that slips the cursor off the small grip hit-target, or off the
+   *  diagram entirely, stops delivering move events partway through. */
+  onAnnotationHandleDown?: (id: string, handle: "start" | "end" | "move", e: PointerEvent<SVGElement>) => void;
+  onCanvasMouseMove?: (e: PointerEvent<SVGSVGElement>) => void;
+  onCanvasMouseUp?: (e: PointerEvent<SVGSVGElement>) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -459,8 +464,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
       onClick={onCanvasClick}
-      onMouseMove={onCanvasMouseMove}
-      onMouseUp={onCanvasMouseUp}
+      onPointerMove={onCanvasMouseMove}
+      onPointerUp={onCanvasMouseUp}
       style={{
         width: "100%",
         height: "auto",
@@ -686,7 +691,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               stroke="transparent"
               strokeWidth={16}
               onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
-              onMouseDown={(e) => { if (isSel) { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "move", e); } }}
+              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "move", e); } }}
               style={{ cursor: isSel ? "move" : "pointer" }}
             />
             <line
@@ -700,12 +705,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               <>
                 <circle
                   cx={a.x1} cy={a.y1} r={9} fill="white" stroke="black" strokeWidth={1.4}
-                  onMouseDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "start", e); }}
+                  onPointerDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "start", e); }}
+                  onClick={(e) => e.stopPropagation()}
                   style={{ cursor: "grab" }}
                 />
                 <circle
                   cx={a.x2} cy={a.y2} r={9} fill="white" stroke="black" strokeWidth={1.4}
-                  onMouseDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "end", e); }}
+                  onPointerDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "end", e); }}
+                  onClick={(e) => e.stopPropagation()}
                   style={{ cursor: "grab" }}
                 />
               </>

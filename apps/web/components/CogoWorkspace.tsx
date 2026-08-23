@@ -208,6 +208,24 @@ export function CogoWorkspace({
   const [rectSelect, setRectSelect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
   const groupMoveOrigin = useRef<Record<string, { east: number; north: number }> | null>(null);
+  // ---- Grip-based edit for a selected line (client req 2026-08-24, Part
+  // 28 — matches the client's AutoCAD demo): once the Select tool has
+  // exactly one line selected, draggable grips appear at its two endpoints
+  // and midpoint. Dragging the midpoint grip MOVEs the whole line; dragging
+  // an endpoint grip STRETCHes just that end (free length + angle, other
+  // end fixed); holding Shift while dragging an endpoint grip ROTATEs the
+  // whole line around the *other*, fixed end instead (length held constant
+  // at its pre-drag value — only the angle changes), same distinction
+  // AutoCAD draws between its Stretch and Rotate grip modes. `orig` is the
+  // line's exact pre-drag geometry so Escape can revert to it outright.
+  const [gripDrag, setGripDrag] = useState<{
+    lineId: string;
+    mode: "move" | "stretch-a" | "stretch-b" | "rotate-a" | "rotate-b";
+    orig: WLine;
+    startWorld: { e: number; n: number };
+    lengthText: string;
+    angleText: string;
+  } | null>(null);
   const idRef = useRef(1);
   const lineIdRef = useRef(1);
   const arcIdRef = useRef(1);
@@ -1159,10 +1177,84 @@ export function CogoWorkspace({
     return best;
   }
 
+  /** Picks up a grip on `line` — stopPropagation keeps the root <svg>'s own
+   *  onPointerDown from also firing (which would otherwise start a view-pan,
+   *  since dragging the canvas pans by default outside a draw tool). Pointer
+   *  capture is taken on the grip element itself so drag events keep
+   *  reaching it (and, via bubbling, the onPointerMove/onPointerUp handlers
+   *  below) even once the cursor moves off the small grip hit-target. */
+  function startGripDrag(line: WLine, mode: "move" | "stretch-a" | "stretch-b" | "rotate-a" | "rotate-b", ev: RPointerEvent) {
+    ev.stopPropagation();
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    snapshot();
+    const [vbx, vby] = eventToVb(ev);
+    const [wx, wy] = toWorld(vbx, vby);
+    const [brg, dist] = inverse({ east: line.aE, north: line.aN }, { east: line.bE, north: line.bN });
+    setGripDrag({
+      lineId: line.id,
+      mode,
+      orig: { ...line },
+      startWorld: { e: wx, n: wy },
+      lengthText: dist.toFixed(3),
+      angleText: formatDms(brg),
+    });
+  }
+  /** Commits the grip drag's typed Length/Angle readout (client req
+   *  2026-08-24: "type an exact value instead of dragging by eye"),
+   *  matching AutoCAD's dynamic-input Enter behavior — ends the drag at
+   *  exactly the typed values rather than wherever the mouse happens to be. */
+  function applyGripReadout() {
+    if (!gripDrag || gripDrag.mode === "move") return;
+    const dist = Number(gripDrag.lengthText);
+    if (!Number.isFinite(dist) || dist <= 0) return;
+    let brg: number;
+    try {
+      brg = parseBearing(gripDrag.angleText);
+    } catch {
+      return;
+    }
+    const { orig, mode, lineId } = gripDrag;
+    const isA = mode === "stretch-a" || mode === "rotate-a";
+    const pivot = isA ? { east: orig.bE, north: orig.bN } : { east: orig.aE, north: orig.aN };
+    const np = forward(pivot, brg, dist);
+    setLines((ls) => ls.map((l) => (l.id === lineId ? (isA ? { ...l, aE: np.east, aN: np.north } : { ...l, bE: np.east, bN: np.north }) : l)));
+    setGripDrag(null);
+  }
+  function cancelGripDrag() {
+    if (!gripDrag) return;
+    setLines((ls) => ls.map((l) => (l.id === gripDrag.lineId ? gripDrag.orig : l)));
+    setGripDrag(null);
+  }
+
   function onPointerMove(ev: RPointerEvent<SVGSVGElement>) {
     const [vbx, vby] = eventToVb(ev);
     const [e, n] = toWorld(vbx, vby);
     setCursor({ e, n });
+    if (gripDrag) {
+      const [wx, wy] = toWorld(vbx, vby);
+      const { orig, mode, lineId } = gripDrag;
+      if (mode === "move") {
+        const dE = wx - gripDrag.startWorld.e, dN = wy - gripDrag.startWorld.n;
+        setLines((ls) => ls.map((l) => (l.id === lineId ? { ...l, aE: orig.aE + dE, aN: orig.aN + dN, bE: orig.bE + dE, bN: orig.bN + dN } : l)));
+      } else if (mode === "stretch-a" || mode === "stretch-b") {
+        const isA = mode === "stretch-a";
+        const pivot = isA ? { east: orig.bE, north: orig.bN } : { east: orig.aE, north: orig.aN };
+        const [brg, dist] = inverse(pivot, { east: wx, north: wy });
+        setLines((ls) => ls.map((l) => (l.id === lineId ? (isA ? { ...l, aE: wx, aN: wy } : { ...l, bE: wx, bN: wy }) : l)));
+        setGripDrag((g) => (g ? { ...g, lengthText: dist.toFixed(3), angleText: formatDms(brg) } : g));
+      } else {
+        // rotate-a / rotate-b: length stays fixed at the pre-drag value —
+        // only the angle around the OTHER (fixed) endpoint follows the mouse.
+        const isA = mode === "rotate-a";
+        const pivot = isA ? { east: orig.bE, north: orig.bN } : { east: orig.aE, north: orig.aN };
+        const [, origDist] = inverse(pivot, isA ? { east: orig.aE, north: orig.aN } : { east: orig.bE, north: orig.bN });
+        const [brgToMouse] = inverse(pivot, { east: wx, north: wy });
+        const np = forward(pivot, brgToMouse, origDist);
+        setLines((ls) => ls.map((l) => (l.id === lineId ? (isA ? { ...l, aE: np.east, aN: np.north } : { ...l, bE: np.east, bN: np.north }) : l)));
+        setGripDrag((g) => (g ? { ...g, lengthText: origDist.toFixed(3), angleText: formatDms(brgToMouse) } : g));
+      }
+      return;
+    }
     if (pan.current) {
       pan.current.moved += Math.abs(vbx - pan.current.vbx) + Math.abs(vby - pan.current.vby);
       if (draftTool === "select-box" || draftTool === "zoom-window") {
@@ -1201,6 +1293,13 @@ export function CogoWorkspace({
   }
 
   function onPointerUp(ev: RPointerEvent<SVGSVGElement>) {
+    if (gripDrag) {
+      // The dragged line was already committed live on every pointermove
+      // above — releasing just ends the drag session at wherever it landed
+      // (client req 2026-08-24: "Confirm the edit on release").
+      setGripDrag(null);
+      return;
+    }
     const wasClick = !!pan.current && pan.current.moved < CLICK_SLOP_PX;
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
@@ -1450,11 +1549,12 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (diagramPrompt) setDiagramPrompt(null);
+        if (gripDrag) cancelGripDrag();
+        else if (diagramPrompt) setDiagramPrompt(null);
         else if (diagramPicking) setDiagramPicking(false);
         else if (travOpen) travClose();
         else if (formTool) setFormTool(null);
@@ -1475,7 +1575,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId]);
+  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1963,7 +2063,98 @@ export function CogoWorkspace({
               const [x, y] = toScreen(travFrom.east, travFrom.north);
               return <circle cx={x} cy={y} r={7} fill="none" stroke="#0891b2" strokeWidth={2} />;
             })()}
+            {/* Grip-based edit (client req 2026-08-24, Part 28 — matches the
+                client's AutoCAD demo): a single selected line gets draggable
+                grips at each endpoint (stretch that end freely; hold Shift
+                to rotate the whole line around the OTHER, fixed end instead)
+                and its midpoint (move the whole line). Screen-space size
+                (not world-space) so grips stay a constant, easy-to-grab
+                size regardless of zoom, the same as every real CAD tool. */}
+            {(() => {
+              if (rectSelect || lassoPath) return null;
+              const gripLine = gripDrag
+                ? lines.find((l) => l.id === gripDrag.lineId)
+                : draftTool === "select"
+                ? lines.find((l) => l.id === selected) ?? (canvasSelection.size === 1 ? lines.find((l) => canvasSelection.has(l.id)) : undefined)
+                : undefined;
+              if (!gripLine) return null;
+              const [mx, my] = toScreen((gripLine.aE + gripLine.bE) / 2, (gripLine.aN + gripLine.bN) / 2);
+              const [ax, ay] = toScreen(gripLine.aE, gripLine.aN);
+              const [bx, by] = toScreen(gripLine.bE, gripLine.bN);
+              const GS = 5;
+              const fillFor = (hot: boolean) => (hot ? "#dc2626" : "#2563eb");
+              return (
+                <g>
+                  <rect
+                    x={ax - GS} y={ay - GS} width={GS * 2} height={GS * 2}
+                    fill={fillFor(gripDrag?.mode === "stretch-a" || gripDrag?.mode === "rotate-a")}
+                    stroke="white" strokeWidth={1}
+                    style={{ cursor: "move" }}
+                    onPointerDown={(e) => startGripDrag(gripLine, e.shiftKey ? "rotate-a" : "stretch-a", e)}
+                  />
+                  <rect
+                    x={bx - GS} y={by - GS} width={GS * 2} height={GS * 2}
+                    fill={fillFor(gripDrag?.mode === "stretch-b" || gripDrag?.mode === "rotate-b")}
+                    stroke="white" strokeWidth={1}
+                    style={{ cursor: "move" }}
+                    onPointerDown={(e) => startGripDrag(gripLine, e.shiftKey ? "rotate-b" : "stretch-b", e)}
+                  />
+                  <rect
+                    x={mx - GS} y={my - GS} width={GS * 2} height={GS * 2}
+                    fill={fillFor(gripDrag?.mode === "move")}
+                    stroke="white" strokeWidth={1}
+                    style={{ cursor: "grab" }}
+                    onPointerDown={(e) => startGripDrag(gripLine, "move", e)}
+                  />
+                </g>
+              );
+            })()}
           </svg>
+
+          {/* Live dynamic-input readout while stretching/rotating a grip
+              (client req 2026-08-24, Part 28 — "matching the AutoCAD demo's
+              dynamic input fields, so the user can type an exact value
+              instead of dragging by eye"). Not shown for a plain Move drag
+              — there's no single length/angle to read out for a translation. */}
+          {gripDrag && gripDrag.mode !== "move" && (() => {
+            const line = lines.find((l) => l.id === gripDrag.lineId);
+            if (!line) return null;
+            const isA = gripDrag.mode === "stretch-a" || gripDrag.mode === "rotate-a";
+            const isRotate = gripDrag.mode.startsWith("rotate");
+            const [px, py] = toScreen(isA ? line.aE : line.bE, isA ? line.aN : line.bN);
+            return (
+              <div
+                className="absolute z-10 w-40 rounded border border-brand bg-white p-2 text-xs shadow-md"
+                style={{ left: `${(px / W) * 100}%`, top: `${(py / H) * 100}%`, transform: "translate(12px, 12px)" }}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">{isRotate ? "Rotate" : "Stretch"}</span>
+                  <button type="button" onClick={cancelGripDrag} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                </div>
+                <label className="mb-1 block">
+                  <span className="mb-0.5 block text-slate-500">Length</span>
+                  <input
+                    type="number"
+                    value={gripDrag.lengthText}
+                    readOnly={isRotate}
+                    onChange={(e) => setGripDrag((g) => (g ? { ...g, lengthText: e.target.value } : g))}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyGripReadout(); if (e.key === "Escape") cancelGripDrag(); }}
+                    className={`w-full rounded border border-slate-200 px-1.5 py-1 ${isRotate ? "bg-slate-50 text-slate-500" : ""}`}
+                  />
+                </label>
+                <label className="mb-1.5 block">
+                  <span className="mb-0.5 block text-slate-500">Angle (bearing)</span>
+                  <input
+                    value={gripDrag.angleText}
+                    onChange={(e) => setGripDrag((g) => (g ? { ...g, angleText: e.target.value } : g))}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyGripReadout(); if (e.key === "Escape") cancelGripDrag(); }}
+                    className="w-full rounded border border-slate-200 px-1.5 py-1"
+                  />
+                </label>
+                <button type="button" onClick={applyGripReadout} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
+              </div>
+            );
+          })()}
 
           {rename && (
             <input
