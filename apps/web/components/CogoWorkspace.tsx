@@ -76,7 +76,24 @@ export function CogoWorkspace({
     closed: boolean;
   } | null;
 }) {
-  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots } = useStore();
+  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
+  // Restore whatever was drawn here last time (client req 2026-08-23: a
+  // polygon/line/point added in this work station must survive a refresh,
+  // not need redoing) — read once, synchronously, as each piece of state's
+  // own initial value below, so there's no flash of an empty canvas before
+  // a later effect kicks in.
+  const savedDoc = (cogoWorkspaceDoc ?? {}) as {
+    extra?: WPoint[];
+    hidden?: string[];
+    lines?: WLine[];
+    arcs?: WArc[];
+    polygons?: WPolygon[];
+    texts?: WText[];
+    pointMeta?: Record<string, PointMeta>;
+    lineMeta?: Record<string, LineMeta>;
+    polygonMeta?: Record<string, PolygonMeta>;
+    lastPlotNumber?: string | null;
+  };
   const [active, setActive] = useState(false);
   // Which toolbar group's icon row is showing — a tab bar instead of 9
   // permanently-stacked rows, so the toolbar reads as one screenful instead
@@ -99,8 +116,8 @@ export function CogoWorkspace({
 
   // ---- drafting state: points/lines added/removed in the workspace only ----
   const [draftTool, setDraftTool] = useState<DraftTool>("select");
-  const [extra, setExtra] = useState<WPoint[]>([]);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [extra, setExtra] = useState<WPoint[]>(savedDoc.extra ?? []);
+  const [hidden, setHidden] = useState<Set<string>>(new Set(savedDoc.hidden ?? []));
   const [moving, setMoving] = useState<string | null>(null); // point picked up by the Move tool, awaiting drop
   const [snapEnabled, setSnapEnabled] = useState(false);
   // ---- Visibility toggles (client req 2026-08-21, Part 15a) ----
@@ -142,9 +159,9 @@ export function CogoWorkspace({
   const [tableTab, setTableTab] = useState<"points" | "lines" | "polygons">("points");
   const [tableSelected, setTableSelected] = useState<Set<string>>(new Set());
   const [tableAnchor, setTableAnchor] = useState<string | null>(null);
-  const [pointMeta, setPointMeta] = useState<Record<string, PointMeta>>({});
-  const [lineMeta, setLineMeta] = useState<Record<string, LineMeta>>({});
-  const [polygonMeta, setPolygonMeta] = useState<Record<string, PolygonMeta>>({});
+  const [pointMeta, setPointMeta] = useState<Record<string, PointMeta>>(savedDoc.pointMeta ?? {});
+  const [lineMeta, setLineMeta] = useState<Record<string, LineMeta>>(savedDoc.lineMeta ?? {});
+  const [polygonMeta, setPolygonMeta] = useState<Record<string, PolygonMeta>>(savedDoc.polygonMeta ?? {});
   const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; erf: string; area: string } | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
@@ -175,15 +192,15 @@ export function CogoWorkspace({
   // Number pre-filled with the next number after whichever was last
   // confirmed in this sheet. ----
   const [travCompleteDialog, setTravCompleteDialog] = useState<{ areaHa: string; plotNumber: string } | null>(null);
-  const [lastPlotNumber, setLastPlotNumber] = useState<string | null>(null);
+  const [lastPlotNumber, setLastPlotNumber] = useState<string | null>(savedDoc.lastPlotNumber ?? null);
   // ---- per-plot diagram generation (Part 7d): click a specific plot on the
   // canvas, confirm a scale, generate the Diagrams-tab sheet for just that plot. ----
   const [diagramPicking, setDiagramPicking] = useState(false);
   const [diagramPrompt, setDiagramPrompt] = useState<{ polygon: WPolygon; screenX: number; screenY: number; value: string } | null>(null);
-  const [lines, setLines] = useState<WLine[]>([]);
-  const [arcs, setArcs] = useState<WArc[]>([]);
-  const [polygons, setPolygons] = useState<WPolygon[]>([]);
-  const [texts, setTexts] = useState<WText[]>([]);
+  const [lines, setLines] = useState<WLine[]>(savedDoc.lines ?? []);
+  const [arcs, setArcs] = useState<WArc[]>(savedDoc.arcs ?? []);
+  const [polygons, setPolygons] = useState<WPolygon[]>(savedDoc.polygons ?? []);
+  const [texts, setTexts] = useState<WText[]>(savedDoc.texts ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   // ---- Multi-select (Part 10) — click-to-add / box-drag / lasso-drag build
   // up this set; Delete and (for points) Move act on it as a group. ----
@@ -942,6 +959,56 @@ export function CogoWorkspace({
   function finishDraft() {
     finishDraftWith(draft);
   }
+
+  // Persist everything drawn here into the project bundle (client req
+  // 2026-08-23) — picked up automatically by the store's existing
+  // autosave, and restored above via `savedDoc` on next mount/refresh, so
+  // a polygon built in this work station is still there afterwards
+  // instead of needing to be redrawn from scratch.
+  //
+  // Skips its very first LOGICAL invocation (mount): this component and
+  // the store's own restore-on-mount effect (in StoreProvider, an
+  // ancestor) both fire in the same commit — React runs child effects
+  // before parent effects, so without this guard this effect would fire
+  // first with this component's still-empty freshly-initialised state and
+  // stomp the restore's ref write with an empty placeholder moments
+  // before the parent even reads localStorage.
+  //
+  // React 18 Strict Mode (dev only) complicates "skip the first call": it
+  // double-invokes a fresh effect (mount, run, simulate-cleanup, run
+  // again) using the SAME captured closure both times. A plain boolean
+  // flag either lets the 2nd call slip through (if nothing re-arms it,
+  // stomping the restore anyway) or, if a naive cleanup re-arms it, ends
+  // up re-arming on every *real* subsequent change too (cleanup runs
+  // before every re-invocation, not just Strict Mode's simulated one),
+  // which never lets a real change through again — either way broken.
+  // Deduplicating by comparing this run's values against the last-seen
+  // ones (Strict Mode's replay passes byte-for-byte identical references)
+  // correctly collapses the replay into the same single skip without
+  // needing a cleanup at all, while still writing every later *real* change.
+  const lastPersistValuesRef = useRef<unknown[] | null>(null);
+  const persistCallCountRef = useRef(0);
+  useEffect(() => {
+    const cur = [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber];
+    const isStrictModeReplay = lastPersistValuesRef.current !== null && cur.every((v, i) => v === lastPersistValuesRef.current![i]);
+    lastPersistValuesRef.current = cur;
+    if (isStrictModeReplay) return;
+    persistCallCountRef.current += 1;
+    if (persistCallCountRef.current === 1) return; // first genuine invocation (mount) — may race the restore, skip it
+    setCogoWorkspaceDoc({
+      extra,
+      hidden: Array.from(hidden),
+      lines,
+      arcs,
+      polygons,
+      texts,
+      pointMeta,
+      lineMeta,
+      polygonMeta,
+      lastPlotNumber,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber]);
 
   // Auto-frame the imported points whenever the point set changes size (e.g. a
   // fresh import) so newly loaded beacons are visible without manual panning.

@@ -60,6 +60,13 @@ interface Store {
   /** Sectional-title doc (building sections + quotas) — saved with the project. */
   sectionalDoc: unknown;
   setSectionalDoc: (d: unknown) => void;
+  /** Cadastral work station's own drawn geometry — added points, lines,
+   *  arcs, polygons, labels, and their attribute tables (client req
+   *  2026-08-23: drawing a polygon must survive a refresh, not need
+   *  redoing). Separate from `cogoResult` (the computed traverse), since
+   *  this is the freehand canvas state CogoWorkspace builds up locally. */
+  cogoWorkspaceDoc: unknown;
+  setCogoWorkspaceDoc: (d: unknown) => void;
   /** Module input blobs (form state) so projects round-trip the inputs, not just results. */
   diagramInput: unknown;
   setDiagramInput: (d: unknown) => void;
@@ -114,6 +121,7 @@ export interface ProjectState {
   editorDoc?: unknown;
   parcelDoc?: unknown;
   sectionalDoc?: unknown;
+  cogoWorkspaceDoc?: unknown;
   diagramInput?: unknown;
   topoInput?: unknown;
   volumeInput?: unknown;
@@ -163,6 +171,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setParcelDoc = (d: unknown) => { parcelDocRef.current = d; };
   const sectionalDocRef = useRef<unknown>(null);
   const setSectionalDoc = (d: unknown) => { sectionalDocRef.current = d; };
+  const cogoWorkspaceDocRef = useRef<unknown>(null);
+  const setCogoWorkspaceDoc = (d: unknown) => { cogoWorkspaceDocRef.current = d; };
   // Module input blobs (also refs — synchronous, captured by Save, no re-render).
   const diagramInputRef = useRef<unknown>(null);
   const setDiagramInput = (d: unknown) => { diagramInputRef.current = d; };
@@ -208,6 +218,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     editorDoc: editorDocRef.current,
     parcelDoc: parcelDocRef.current,
     sectionalDoc: sectionalDocRef.current,
+    cogoWorkspaceDoc: cogoWorkspaceDocRef.current,
     diagramInput: diagramInputRef.current,
     topoInput: topoInputRef.current,
     volumeInput: volumeInputRef.current,
@@ -227,6 +238,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     editorDocRef.current = s.editorDoc ?? null;
     parcelDocRef.current = s.parcelDoc ?? null;
     sectionalDocRef.current = s.sectionalDoc ?? null;
+    cogoWorkspaceDocRef.current = s.cogoWorkspaceDoc ?? null;
     diagramInputRef.current = s.diagramInput ?? null;
     topoInputRef.current = s.topoInput ?? null;
     volumeInputRef.current = s.volumeInput ?? null;
@@ -251,6 +263,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     editorDocRef.current = null;
     parcelDocRef.current = null;
     sectionalDocRef.current = null;
+    cogoWorkspaceDocRef.current = null;
     diagramInputRef.current = null;
     topoInputRef.current = null;
     volumeInputRef.current = null;
@@ -293,6 +306,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       editorDocRef.current = saved.editorDoc ?? null;
       parcelDocRef.current = saved.parcelDoc ?? null;
       sectionalDocRef.current = saved.sectionalDoc ?? null;
+      cogoWorkspaceDocRef.current = saved.cogoWorkspaceDoc ?? null;
       diagramInputRef.current = saved.diagramInput ?? null;
       topoInputRef.current = saved.topoInput ?? null;
       volumeInputRef.current = saved.volumeInput ?? null;
@@ -354,6 +368,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setParcelDoc,
         sectionalDoc: sectionalDocRef.current,
         setSectionalDoc,
+        cogoWorkspaceDoc: cogoWorkspaceDocRef.current,
+        setCogoWorkspaceDoc,
         diagramInput: diagramInputRef.current,
         setDiagramInput,
         topoInput: topoInputRef.current,

@@ -154,6 +154,18 @@ function sideLabel(from: string | null, to: string | null): string {
   const f = from ?? "", t = to ?? "";
   return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f}-${t}`;
 }
+/** Sequential boundary letter — A, B, ... Z, AA, AB, ... (client req
+ *  2026-08-23: the diagram must letter the boundary A, B, C, ... on the
+ *  official sheet regardless of what the underlying survey data calls
+ *  those points, e.g. "25A2"/"M1" — same as every SG reference sample). */
+function boundaryLetter(i: number): string {
+  let n = i, s = "";
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
 /** Area line: small plots in SQUARE METRES, larger in HECTARES (SG convention). */
 function areaText(areaHa: number): string {
   return areaHa < 1
@@ -182,9 +194,19 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points, sides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint, selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick },
+  { meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint, selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick },
   ref
 ) {
+  // The diagram always letters the boundary A, B, C, ... on the printed
+  // sheet, ignoring whatever the survey data actually calls each point
+  // (client req 2026-08-23) — geometry (east/north) is untouched, only the
+  // display name changes, and only for the certified boundary; extraPoints
+  // (witness/reference marks, not part of "the figure") keep their real
+  // names. Every side is assumed to join points[i] -> points[i+1], the
+  // same adjacency already relied on elsewhere in this file (vertex
+  // labels, side-distance labels), so sides relabel the same way.
+  const points = rawPoints.map((p, i) => ({ ...p, name: boundaryLetter(i) }));
+  const sides = rawSides.map((s, i) => ({ ...s, from: boundaryLetter(i), to: boundaryLetter((i + 1) % rawPoints.length) }));
   // ---------------------------------------------------------------------
   // Exact page geometry (client req 2026-08-22, Part 23) — measured
   // directly from the vector geometry of the client's official "Lot 15267
