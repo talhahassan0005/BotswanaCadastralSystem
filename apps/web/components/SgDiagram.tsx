@@ -233,12 +233,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
   // Font sizes — increased across the board per the client's explicit
   // "increase font" feedback comparing the app's output to the reference.
-  const FS_TABLE_HEAD = 29, FS_TABLE_SUB = 25, FS_CONSTANTS = 21;
-  const FS_BEACON_HEAD = 31, FS_BEACON = 28, FS_LOCALITY = 35;
-  const FS_DOS = 26, FS_ARROW = 24, FS_SCALE = 24;
-  const FS_VERTEX = 33, FS_SIDE_LONG = 27, FS_SIDE_SHORT = 21, FS_NEIGHBOR = 21;
-  const FS_LEGAL = 34, FS_LANDCALLED = 34, FS_PARENT = 28, FS_CERT = 28;
-  const FS_SURVEYOR = 23, FS_SURVEYOR_TITLE = 23, FS_FOOTER = 19, FS_ANNEX = 22;
+  const FS_TABLE_HEAD = 32, FS_TABLE_SUB = 28, FS_CONSTANTS = 23;
+  const FS_BEACON_HEAD = 34, FS_BEACON = 31, FS_LOCALITY = 38;
+  const FS_DOS = 29, FS_ARROW = 26, FS_SCALE = 26;
+  const FS_VERTEX = 36, FS_SIDE_LONG = 30, FS_SIDE_SHORT = 23, FS_NEIGHBOR = 23;
+  const FS_LEGAL = 37, FS_LANDCALLED = 37, FS_PARENT = 31, FS_CERT = 31;
+  const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 25, FS_FOOTER = 21, FS_ANNEX = 24;
 
   // ---- top data table: fixed 51.0mm band, 14.0mm header (client req,
   // Part 23) — the table no longer grows the page as points are added;
@@ -255,7 +255,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const dataH = topBandH - headH;
   const n = Math.max(points.length, sides.length, 1);
   const rowH = dataH / n;
-  const dataFS = Math.max(15, Math.min(FS_TABLE_SUB, rowH * 0.55));
+  const dataFS = Math.max(17, Math.min(FS_TABLE_SUB, rowH * 0.55));
 
   // column x boundaries — cumulative from the frame's own left edge,
   // widths per Part 23 (7.9 / 25.6 / 27.9 / 6.6 / 25.5 / 27.0 / 39.9mm).
@@ -277,7 +277,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const xYR = xY + 25.5 * MM;
   const xX = xYR;                           // X coordinate column
   const xXR = xX + 27.0 * MM;
-  const xDsm = xXR;                         // D.S.M No. box
+  // Shifted a bit left of the exact Part 23 boundary (client req
+  // 2026-08-23) — widens the D.S.M/Approved/Director column slightly;
+  // exact figure to follow once the client sends their own measurement.
+  const xDsm = xXR - 40;                    // D.S.M No. box
   const tableRight = tx + tw;               // = FRAME_RIGHT
   // header sub-row baselines and the partial-height Y/X dividers (no exact
   // figures given for these internal header rows — proportioned the same
@@ -426,7 +429,6 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={0.7} />
         {/* header underline */}
         <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={0.7} />
-        <line x1={xDsm} y1={xYDividerTop} x2={tableRight} y2={xYDividerTop} stroke="black" strokeWidth={0.5} />
 
         {/* header row 1 */}
         <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>SIDES</text>
@@ -488,7 +490,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           top/left/right edges are already the frame's + table's own
           borders; only the box's closing bottom edge is new here. */}
       {(() => {
-        const dsmApprovedY = tableBottom + 40;
+        const dsmApprovedY = tableBottom + 25;
         const dosY1 = tableBottom + 100;
         const dosY2 = dosY1 + FS_DOS * 1.3;
         const dosLineY = dosY2 + FS_DOS * 1.1;
