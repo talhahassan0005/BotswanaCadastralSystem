@@ -236,7 +236,6 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const FS_TABLE_HEAD = 32, FS_TABLE_SUB = 28, FS_CONSTANTS = 23;
   const FS_BEACON_HEAD = 34, FS_BEACON = 31, FS_LOCALITY = 38;
   const FS_DOS = 29, FS_ARROW = 26, FS_SCALE = 26;
-  const FS_VERTEX = 36, FS_SIDE_LONG = 30, FS_SIDE_SHORT = 23, FS_NEIGHBOR = 23;
   const FS_LEGAL = 37, FS_LANDCALLED = 37, FS_PARENT = 31, FS_CERT = 31;
   const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 25, FS_FOOTER = 21, FS_ANNEX = 24;
 
@@ -578,34 +577,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </g>
         );
       })}
-      {/* Each side's distance, placed next to that side of the boundary
-          (client req 2026-08-21, Part 19 reference template) — offset to
-          whichever side of the line is actually outside the polygon
-          (tested directly, not guessed from the centroid — a centroid
-          direction is wrong for concave/irregular boundaries and was
-          putting labels on top of the figure). Short sides use a smaller
-          font and a proportionally smaller offset, so on a tight zigzag of
-          short legs the label doesn't overshoot into the next side's own
-          label or the neighboring vertex letter (both offset independently). */}
-      {sides.map((s, i) => {
-        const a = points[i], b = points[(i + 1) % points.length];
-        if (!a || !b) return null;
-        const ax = toX(a.east), ay = toY(a.north);
-        const bx = toX(b.east), by = toY(b.north);
-        const mx = (ax + bx) / 2, my = (ay + by) / 2;
-        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
-        let nx = -dy / len, ny = dx / len;
-        const probe = 10; // small offset — enough to clear the line without crossing a nearby vertex
-        if (insidePoly(mx + nx * probe, my + ny * probe)) { nx = -nx; ny = -ny; }
-        const short = len < 96;
-        const off = short ? 26 : 35;
-        const fs = short ? FS_SIDE_SHORT : FS_SIDE_LONG;
-        return (
-          <text key={`sd${i}`} x={mx + nx * off} y={my + ny * off + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
-            {s.distance.toFixed(2)}
-          </text>
-        );
-      })}
+      {/* Side distances are NOT drawn on the figure itself by default
+          (client req 2026-08-23) — they're already tabulated in the SIDES
+          METRES column of the top table; repeating them on the boundary
+          lines was redundant clutter the client explicitly crossed out. */}
       {/* Manually-drawn adjoining-parcel extension lines (client req
           2026-08-22, Part 24) — the surveyor draws these directly on the
           rendered diagram (there's no survey data to compute them from),
