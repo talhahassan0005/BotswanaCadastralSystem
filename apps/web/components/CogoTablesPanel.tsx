@@ -8,15 +8,18 @@
 // presentational + local metadata editing only.
 
 import { useRef } from "react";
-import { inverse, polygonArea } from "@/lib/server/geometry";
+import { inverse, polygonArea, formatArea } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import type { WLine, WPoint, WPolygon } from "@/lib/cogoTools/types";
 
 export interface PointMeta { height?: string; sdNumber?: string; epoch?: string; klass?: string; subclass?: string; description?: string }
 export interface LineMeta { type?: string }
+// Simplified to just the fields the client actually uses (client req
+// 2026-08-24) — the earlier South-Africa-style Erf/Farm/Township/Extension/
+// SD Number/Min Number/Width/Symbol set was never used and just cluttered
+// the table.
 export interface PolygonMeta {
-  position?: string; erf?: string; farm?: string; township?: string; extension?: string; type?: string;
-  sdNumber?: string; minNumber?: string; parent?: string; width?: string; symbol?: string;
+  position?: string; village?: string; surveyor?: string; srNumber?: string; dsmNumber?: string; type?: string; parent?: string;
 }
 
 type Tab = "points" | "lines" | "polygons";
@@ -184,14 +187,14 @@ export function CogoTablesPanel({
           <table className="w-full border-collapse">
             <thead className="sticky top-0 bg-slate-50 text-left text-[10px] uppercase text-slate-500">
               <tr>
-                {["", "Lot No. (Position)", "Erf", "Farm", "Township", "Extension", "Type", "Area", "SD Number", "Min Number", "Parent", "Width", "Symbol"].map((h) => (
+                {["", "Lot No.", "Village", "Land Surveyor", "SR Number", "DSM Number", "Type", "Area", "Parent"].map((h) => (
                   <th key={h} className="whitespace-nowrap border-b border-slate-200 px-2 py-1">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {polygons.length === 0 ? (
-                <tr><td colSpan={13} className="px-2 py-3 text-center text-slate-400">No polygons yet.</td></tr>
+                <tr><td colSpan={9} className="px-2 py-3 text-center text-slate-400">No polygons yet.</td></tr>
               ) : polygons.map((p) => {
                 const m = polygonMeta[p.id] ?? {};
                 const isSel = selected.has(p.id);
@@ -203,7 +206,7 @@ export function CogoTablesPanel({
                     onMouseEnter={() => { if (draggingRef.current) onRowMouseEnter(p.id); }}
                     onDoubleClick={() => onOpenPolygonAttrs(p.id)}
                     className={`cursor-pointer select-none ${isSel ? "bg-brand-light/40" : "hover:bg-slate-50"}`}
-                    title="Double-click for Attributes"
+                    title="Double-click for Attributes. Select a row, then Delete above to remove it."
                   >
                     <td className="border-b border-slate-100 px-1 py-0.5">
                       <button
@@ -215,7 +218,7 @@ export function CogoTablesPanel({
                         Attrs
                       </button>
                     </td>
-                    {(["position", "erf", "farm", "township", "extension", "type"] as const).map((k) => (
+                    {(["position", "village", "surveyor", "srNumber", "dsmNumber", "type"] as const).map((k) => (
                       <td key={k} className="border-b border-slate-100 px-1 py-0.5">
                         <input
                           value={m[k] ?? ""}
@@ -225,17 +228,15 @@ export function CogoTablesPanel({
                         />
                       </td>
                     ))}
-                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{(areaM2 / 10000).toFixed(4)} ha</td>
-                    {(["sdNumber", "minNumber", "parent", "width", "symbol"] as const).map((k) => (
-                      <td key={k} className="border-b border-slate-100 px-1 py-0.5">
-                        <input
-                          value={m[k] ?? ""}
-                          onChange={(e) => onSetPolygonMeta(p.id, { [k]: e.target.value })}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-brand focus:bg-white focus:outline-none"
-                        />
-                      </td>
-                    ))}
+                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{formatArea(areaM2)}</td>
+                    <td className="border-b border-slate-100 px-1 py-0.5">
+                      <input
+                        value={m.parent ?? ""}
+                        onChange={(e) => onSetPolygonMeta(p.id, { parent: e.target.value })}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-brand focus:bg-white focus:outline-none"
+                      />
+                    </td>
                   </tr>
                 );
               })}

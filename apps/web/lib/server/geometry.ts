@@ -52,6 +52,18 @@ export function polygonArea(points: Point[]): number {
   return total / 2;
 }
 
+/** Area read-out matching SG diagram convention (client req 2026-08-24):
+ *  under 1 ha, show square metres (a fraction-of-a-hectare reads as
+ *  "0.0875 ha" — meaningless at a glance — vs "875 sq m"); 1 ha and up,
+ *  show hectares. `polygonArea` is signed (winding-direction dependent),
+ *  which isn't a real property of a physical area, so this always reports
+ *  the magnitude. */
+export function formatArea(areaM2: number): string {
+  const abs = Math.abs(areaM2);
+  const areaHa = abs / 10000;
+  return areaHa < 1 ? `${Math.round(abs).toLocaleString("en-US")} sq m` : `${areaHa.toFixed(4)} ha`;
+}
+
 export function areaHectares(points: Point[]): number {
   return Math.abs(polygonArea(points)) / 10_000;
 }

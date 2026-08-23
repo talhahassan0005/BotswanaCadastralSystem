@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
-import { forward, inverse, polygonArea } from "@/lib/server/geometry";
+import { forward, inverse, polygonArea, formatArea } from "@/lib/server/geometry";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
@@ -162,7 +162,10 @@ export function CogoWorkspace({
   const [pointMeta, setPointMeta] = useState<Record<string, PointMeta>>(savedDoc.pointMeta ?? {});
   const [lineMeta, setLineMeta] = useState<Record<string, LineMeta>>(savedDoc.lineMeta ?? {});
   const [polygonMeta, setPolygonMeta] = useState<Record<string, PolygonMeta>>(savedDoc.polygonMeta ?? {});
-  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; erf: string; area: string } | null>(null);
+  // Just Lot Number + (read-only) Area — the "ID / Erf" field was dropped
+  // per client req 2026-08-24 ("I think we don't need that part, lets just
+  // use Lot Number").
+  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; area: string } | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
@@ -584,12 +587,12 @@ export function CogoWorkspace({
     // polygon always opens with a sensible number ready to accept or edit,
     // instead of a blank field.
     const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
-    setPolygonAttrDialog({ id, position: m.position ?? suggested, erf: m.erf ?? "", area: `${(areaM2 / 10000).toFixed(4)} ha` });
+    setPolygonAttrDialog({ id, position: m.position ?? suggested, area: formatArea(areaM2) });
   }
   function savePolygonAttrs() {
     if (!polygonAttrDialog) return;
-    const { id, position, erf } = polygonAttrDialog;
-    setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, erf } }));
+    const { id, position } = polygonAttrDialog;
+    setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position } }));
     if (position.trim()) {
       setLastPlotNumber(position.trim());
       const poly = polygons.find((p) => p.id === id);
@@ -2317,8 +2320,10 @@ export function CogoWorkspace({
             );
           })()}
 
-          {/* Parcel Query panel (Part 15d) — Position/Erf/Area, matching the
-              Polygons table columns from Part 9d. */}
+          {/* Parcel Query panel (Part 15d) — matches the simplified Polygons
+              table columns from Part 9d (client req 2026-08-24: Lot Number,
+              Village, Land Surveyor, SR Number, DSM Number, Type, Area,
+              Parent — no more Erf/Farm/Township/etc.). */}
           {parcelQueryId && (() => {
             const poly = polygons.find((pp) => pp.id === parcelQueryId);
             if (!poly) return null;
@@ -2332,8 +2337,13 @@ export function CogoWorkspace({
                 </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                   <span className="text-slate-500">Lot Number</span><span>{m.position || poly.name || "—"}</span>
-                  <span className="text-slate-500">Erf</span><span>{m.erf || "—"}</span>
-                  <span className="text-slate-500">Area</span><span className="font-mono">{(areaM2 / 10000).toFixed(4)} ha</span>
+                  <span className="text-slate-500">Village</span><span>{m.village || "—"}</span>
+                  <span className="text-slate-500">Land Surveyor</span><span>{m.surveyor || "—"}</span>
+                  <span className="text-slate-500">SR Number</span><span>{m.srNumber || "—"}</span>
+                  <span className="text-slate-500">DSM Number</span><span>{m.dsmNumber || "—"}</span>
+                  <span className="text-slate-500">Type</span><span>{m.type || "—"}</span>
+                  <span className="text-slate-500">Area</span><span className="font-mono">{formatArea(areaM2)}</span>
+                  <span className="text-slate-500">Parent</span><span>{m.parent || "—"}</span>
                   <span className="text-slate-500">Vertices</span><span>{poly.points.length}</span>
                 </div>
               </div>
@@ -2479,24 +2489,18 @@ export function CogoWorkspace({
             />
           )}
 
-          {/* Polygon quick-edit dialog (Part 9f) — Position, ID/Erf, Area, Cancel/OK. */}
+          {/* Polygon quick-edit dialog (Part 9f) — Lot Number, Area, Cancel/OK.
+              No "ID / Erf" field (client req 2026-08-24: "I think we don't
+              need that part. Lets just use Lot Number"). */}
           {polygonAttrDialog && (
             <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setPolygonAttrDialog(null)}>
               <div className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl" onClick={(e) => e.stopPropagation()}>
                 <h3 className="mb-3 text-sm font-semibold text-slate-700">Polygon Attributes</h3>
                 <label className="mb-2 block">
-                  <span className="mb-0.5 block text-slate-500">Lot Number (Position)</span>
+                  <span className="mb-0.5 block text-slate-500">Lot Number</span>
                   <input
                     value={polygonAttrDialog.position}
                     onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, position: e.target.value })}
-                    className="w-full rounded border border-slate-200 px-2 py-1.5"
-                  />
-                </label>
-                <label className="mb-2 block">
-                  <span className="mb-0.5 block text-slate-500">ID / Erf</span>
-                  <input
-                    value={polygonAttrDialog.erf}
-                    onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, erf: e.target.value })}
                     className="w-full rounded border border-slate-200 px-2 py-1.5"
                   />
                 </label>

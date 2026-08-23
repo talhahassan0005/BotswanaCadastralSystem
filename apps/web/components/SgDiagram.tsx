@@ -84,6 +84,18 @@ export interface ManualAnnotation {
   y2: number;
 }
 
+/** A free-text note the surveyor places directly on the diagram (client req
+ *  2026-08-24: "I want to Add text there... How do I add Text") — same
+ *  plain SVG-space-coordinate approach as the manual extension lines above,
+ *  for cases the fixed template wording doesn't cover (e.g. a note next to
+ *  a specific corner). */
+export interface ManualText {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+}
+
 interface Props {
   meta: DiagramMeta;
   points: DiagramPoint[];
@@ -124,6 +136,15 @@ interface Props {
   onAnnotationHandleDown?: (id: string, handle: "start" | "end" | "move", e: PointerEvent<SVGElement>) => void;
   onCanvasMouseMove?: (e: PointerEvent<SVGSVGElement>) => void;
   onCanvasMouseUp?: (e: PointerEvent<SVGSVGElement>) => void;
+  /** Free-text notes placed directly on the diagram (client req 2026-08-24). */
+  manualTexts?: ManualText[];
+  selectedTextId?: string | null;
+  onTextClick?: (id: string, e: MouseEvent) => void;
+  onTextDoubleClick?: (id: string) => void;
+  /** Drag to move (client req 2026-08-24) — same pointer-capture-on-grip
+   *  robustness as the extension-line grips (Part 28); a single point has
+   *  no length/angle to stretch or rotate, so move is the only mode. */
+  onTextHandleDown?: (id: string, e: PointerEvent<SVGElement>) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -209,6 +230,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   {
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
+    manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown,
   },
   ref
 ) {
@@ -723,6 +745,26 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {pendingAnnotationPoint && (
         <circle cx={pendingAnnotationPoint.x} cy={pendingAnnotationPoint.y} r={5} fill="black" />
       )}
+      {/* Free-text notes the surveyor placed directly on the diagram
+          (client req 2026-08-24). A selected note is underlined and drag-
+          movable (no length/angle to stretch or rotate — it's one point). */}
+      {(manualTexts ?? []).map((t) => {
+        const isSel = selectedTextId === t.id;
+        return (
+          <text
+            key={t.id}
+            x={t.x} y={t.y}
+            fontSize={FS_BEACON_HEAD}
+            textDecoration={isSel ? "underline" : undefined}
+            onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
+            onDoubleClick={(e) => { e.stopPropagation(); onTextDoubleClick?.(t.id); }}
+            onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } }}
+            style={{ cursor: isSel ? "move" : "pointer" }}
+          >
+            {t.text}
+          </text>
+        );
+      })}
       {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse
           (no boundary side, no coordinate-table row). */}
       {(extraPoints ?? []).map((p, i) => (
@@ -835,7 +877,19 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const annexedTo = fitSvgText(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
         const annexedDate = fitSvgText(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
         const annexedFavour = fitSvgText(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
-        const annexName = fitSvgText(meta.annexName ?? "", annC1 - tx - 40, FS_BEACON_HEAD);
+        // Wraps to a second line instead of shrinking/truncating (client req
+        // 2026-08-24: "it should not go beyond the boundary.. it should go
+        // to next line") — unlike the single-line label/value fields above,
+        // this sits alone in open space with genuine room below it before
+        // "Registrar of Deeds", so wrapping (not shrinking) is the right
+        // fix here. The last line keeps the field's original fixed Y so a
+        // short name (the common case) renders in exactly the same spot as
+        // before; a second line only appears when actually needed, stacked
+        // above it.
+        const annexNameLines = meta.annexName && meta.annexName.trim()
+          ? wrapSvgWords(meta.annexName.trim().split(/\s+/), annC1 - tx - 40, FS_BEACON_HEAD)
+          : [];
+        const ANNEX_NAME_LH = FS_BEACON_HEAD * 1.15;
         const parentDiagramNo = fitSvgText(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50) - 10, FS_BEACON_HEAD);
         return (
           <g fontSize={FS_BEACON_HEAD}>
@@ -849,11 +903,17 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <text x={tx + 10} y={annTop + 140} fontSize={annexedDate.fontSize}>{annexedDate.text}</text>
             <text x={annC1 - 140} y={annTop + 140}>in favour</text>
             <text x={tx + 10} y={annTop + 190} fontSize={annexedFavour.fontSize}>{annexedFavour.text}</text>
-            {meta.annexName && meta.annexName.trim() && (
-              <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={annexName.fontSize}>
-                {annexName.text}
+            {annexNameLines.map((line, i) => (
+              <text
+                key={i}
+                x={(tx + annC1) / 2}
+                y={annBottom - 46 - (annexNameLines.length - 1 - i) * ANNEX_NAME_LH}
+                textAnchor="middle"
+                fontSize={FS_BEACON_HEAD}
+              >
+                {line}
               </text>
-            )}
+            ))}
             <text x={(tx + annC1) / 2} y={annBottom - 14} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
               Registrar of Deeds
             </text>

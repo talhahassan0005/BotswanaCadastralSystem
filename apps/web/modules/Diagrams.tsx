@@ -5,7 +5,7 @@ import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import type { CogoResult, ParcelDoc } from "@/lib/types";
-import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation } from "@/components/SgDiagram";
+import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation, type ManualText } from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -84,6 +84,13 @@ export function Diagrams() {
   // the Traverse panel's Calculate) is saved to the project by that number.
   const [plotNumberInput, setPlotNumberInput] = useState("");
   const [plotNumberError, setPlotNumberError] = useState<string | null>(null);
+  // Once a lot's diagram is loaded there was no way back to the "choose a
+  // lot" screen to pick a different one (client req 2026-08-24) — the "Lot /
+  // parcel" dropdown further down only lets you switch between existing
+  // Parcels-tab lots, and doesn't even render if there aren't any yet, so a
+  // lot loaded by typing its number (Part 16c) had literally no way back.
+  // This flag forces that screen back regardless of what figure is loaded.
+  const [forcePicker, setForcePicker] = useState(false);
   const parcelFigure = useMemo<CogoResult | null>(() => {
     if (!pdoc || !selParcelId) return null;
     const p = pdoc.parcels.find((x) => x.id === selParcelId);
@@ -125,6 +132,7 @@ export function Diagrams() {
     meta?: Omit<DiagramMeta, "closed" | "kind">;
     leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
     annotations?: ManualAnnotation[];
+    texts?: ManualText[];
   };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
@@ -193,6 +201,16 @@ export function Diagrams() {
     lengthText: string;
     angleText: string;
   } | null>(null);
+  // Free-text notes placed directly on the diagram (client req 2026-08-24:
+  // "I want to Add text there... How do I add Text") — same click-to-place
+  // approach as the extension lines above, but one point instead of two,
+  // followed by a small prompt for the text content instead of committing
+  // immediately.
+  const [texts, setTexts] = useState<ManualText[]>(di.texts ?? []);
+  const [addingText, setAddingText] = useState(false);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string } | null>(null);
+  const [draggingText, setDraggingText] = useState<{ id: string; startSvg: { x: number; y: number }; orig: { x: number; y: number } } | null>(null);
   // Diagram-sheet mm/unit ratio (matches SgDiagram.tsx's own MM=10 constant)
   // — these annotation lines live in SVG/print-sheet space, not real ground
   // coordinates, so their live readout is printed millimetres, not metres.
@@ -220,8 +238,16 @@ export function Diagrams() {
     return { x: p.x, y: p.y };
   }
   function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
+    if (addingText) {
+      const p = toSvgPoint(e);
+      setTextPrompt({ id: null, x: p.x, y: p.y, value: "" });
+      setAddingText(false);
+      return;
+    }
     if (!drawingAnnotation) {
-      setSelectedAnnotationId(null); // clicking empty canvas outside draw mode clears selection
+      // Clicking empty canvas outside draw mode clears whatever's selected.
+      setSelectedAnnotationId(null);
+      setSelectedTextId(null);
       return;
     }
     const p = toSvgPoint(e);
@@ -242,6 +268,42 @@ export function Diagrams() {
       return;
     }
     setSelectedAnnotationId((cur) => (cur === id ? null : id));
+  }
+  function handleTextClick(id: string) {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false; // swallow the click that trails a drag
+      return;
+    }
+    setSelectedTextId((cur) => (cur === id ? null : id));
+  }
+  function handleTextDoubleClick(id: string) {
+    const t = texts.find((x) => x.id === id);
+    if (!t) return;
+    setTextPrompt({ id, x: t.x, y: t.y, value: t.text });
+  }
+  function commitTextPrompt() {
+    if (!textPrompt) return;
+    const value = textPrompt.value.trim();
+    if (value) {
+      if (textPrompt.id) {
+        setTexts((arr) => arr.map((t) => (t.id === textPrompt.id ? { ...t, text: value } : t)));
+      } else {
+        setTexts((arr) => [...arr, { id: `txt-${Date.now()}`, x: textPrompt.x, y: textPrompt.y, text: value }]);
+      }
+    }
+    setTextPrompt(null);
+  }
+  function deleteSelectedText() {
+    if (!selectedTextId) return;
+    setTexts((arr) => arr.filter((t) => t.id !== selectedTextId));
+    setSelectedTextId(null);
+  }
+  function handleTextHandleDown(id: string, e: ReactPointerEvent<SVGElement>) {
+    const t = texts.find((x) => x.id === id);
+    if (!t) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragMovedRef.current = false;
+    setDraggingText({ id, startSvg: toSvgPoint(e), orig: { x: t.x, y: t.y } });
   }
   function deleteSelectedAnnotation() {
     if (!selectedAnnotationId) return;
@@ -268,6 +330,14 @@ export function Diagrams() {
     });
   }
   function handleCanvasMouseMove(e: ReactPointerEvent<SVGSVGElement>) {
+    if (draggingText) {
+      const p = toSvgPoint(e);
+      const dx = p.x - draggingText.startSvg.x, dy = p.y - draggingText.startSvg.y;
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
+      const { orig, id } = draggingText;
+      setTexts((arr) => arr.map((t) => (t.id === id ? { ...t, x: orig.x + dx, y: orig.y + dy } : t)));
+      return;
+    }
     if (!draggingAnnotation) return;
     const p = toSvgPoint(e);
     const dx = p.x - draggingAnnotation.startSvg.x;
@@ -304,6 +374,7 @@ export function Diagrams() {
   function handleCanvasMouseUp() {
     // Already committed live on every mousemove above — release just ends
     // the drag session (client req 2026-08-24: "confirm on release").
+    if (draggingText) { setDraggingText(null); return; }
     setDraggingAnnotation(null);
   }
   /** Commits the typed Length(mm)/Angle readout, matching AutoCAD's dynamic
@@ -334,17 +405,29 @@ export function Diagrams() {
     setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, ...orig } : a)));
     setDraggingAnnotation(null);
   }
-  // Escape reverts an in-progress grip drag to its pre-drag geometry
-  // (client req 2026-08-24: "Escape cancels and reverts to the pre-drag state").
+  function cancelTextDrag() {
+    if (!draggingText) return;
+    const { orig, id } = draggingText;
+    setTexts((arr) => arr.map((t) => (t.id === id ? { ...t, ...orig } : t)));
+    setDraggingText(null);
+  }
+  // Escape reverts an in-progress grip drag to its pre-drag geometry, closes
+  // an open text prompt, or cancels the Add Text tool (client req
+  // 2026-08-24: "Escape cancels and reverts to the pre-drag state").
   useEffect(() => {
-    if (!draggingAnnotation) return;
+    if (!draggingAnnotation && !draggingText && !textPrompt && !addingText) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.preventDefault(); cancelAnnotationDrag(); }
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (draggingAnnotation) cancelAnnotationDrag();
+      else if (draggingText) cancelTextDrag();
+      else if (textPrompt) setTextPrompt(null);
+      else if (addingText) setAddingText(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draggingAnnotation]);
+  }, [draggingAnnotation, draggingText, textPrompt, addingText]);
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -387,8 +470,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta, leaseMeta, annotations });
-  }, [kind, meta, leaseMeta, annotations, setDiagramInput]);
+    setDiagramInput({ kind, meta, leaseMeta, annotations, texts });
+  }, [kind, meta, leaseMeta, annotations, texts, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: meta.coordinateSystem,
@@ -521,11 +604,12 @@ export function Diagrams() {
     setPlotNumberError(null);
     setSelParcelId(null); // a typed-in plot always wins over a Parcels-tab pick
     setDiagramFigure(plot.fig);
+    setForcePicker(false);
     const suggested = suggestDiagramScale(plot.fig.points);
     setMeta((m) => ({ ...m, lotName: plot.number.toUpperCase(), scale: suggested }));
   }
 
-  if (!fig || points.length < 3) {
+  if (forcePicker || !fig || points.length < 3) {
     return (
       <Card>
         <div className="py-12 text-center text-slate-500">
@@ -551,7 +635,7 @@ export function Diagrams() {
               <div className="mx-auto mt-4 max-w-xs text-left">
                 <Select
                   value={selParcelId ?? ""}
-                  onChange={(v) => setSelParcelId(v || null)}
+                  onChange={(v) => { setSelParcelId(v || null); if (v) setForcePicker(false); }}
                   options={[{ value: "", label: "— select a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
                 />
               </div>
@@ -564,6 +648,12 @@ export function Diagrams() {
             </p>
           )}
           <div className="mt-4 flex justify-center gap-2">
+            {/* Only relevant when a diagram is ALREADY loaded and the user
+                opened this screen just to switch lots (client req
+                2026-08-24) — lets them back out without losing it. */}
+            {forcePicker && fig && points.length >= 3 && (
+              <Button variant="ghost" onClick={() => setForcePicker(false)}>← Back to current diagram</Button>
+            )}
             <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels</Button>
             <Button variant="ghost" onClick={() => setActiveTab("cogo")}>Go to {cogoTabLabel(config.discipline)}</Button>
           </div>
@@ -577,20 +667,30 @@ export function Diagrams() {
 
   return (
     <div className="space-y-5">
-      {/* Lot / parcel picker — which figure this diagram draws */}
-      {parcels.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <span className="text-sm font-medium text-slate-600">Lot / parcel:</span>
-          <div className="min-w-[200px]">
-            <Select
-              value={selParcelId ?? ""}
-              onChange={(v) => setSelParcelId(v || null)}
-              options={[{ value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
-            />
-          </div>
-          {selParcelId && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}
+      {/* Lot / parcel picker — which figure this diagram draws. Always
+          rendered (not just when Parcels-tab lots exist) with a "Change
+          Lot" escape hatch back to the picker screen — previously the only
+          way back was this dropdown, which didn't even appear for a lot
+          loaded by typing its number, leaving no way back at all (client
+          req 2026-08-24). */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        {parcels.length > 0 && (
+          <>
+            <span className="text-sm font-medium text-slate-600">Lot / parcel:</span>
+            <div className="min-w-[200px]">
+              <Select
+                value={selParcelId ?? ""}
+                onChange={(v) => setSelParcelId(v || null)}
+                options={[{ value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
+              />
+            </div>
+            {selParcelId && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}
+          </>
+        )}
+        <div className="ml-auto">
+          <Button variant="ghost" onClick={() => setForcePicker(true)}>← Change Lot</Button>
         </div>
-      )}
+      </div>
 
       {/* Diagram type selector */}
       <div className="flex flex-wrap gap-2">
@@ -696,6 +796,27 @@ export function Diagrams() {
                   </div>
                 </Card>
               )}
+              {!isBorehole && (
+                <Card title="Custom Text">
+                  <p className="mb-2 text-xs text-slate-400">
+                    For a note the fixed template wording doesn't cover — e.g. a remark next to a specific
+                    corner (client req 2026-08-24). Click "Add Text" below, then click where it should sit on
+                    the preview and type it. Click an existing note to select it, then drag to move it,
+                    double-click to edit its wording, or Delete to remove it.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={addingText ? "primary" : "ghost"}
+                      onClick={() => setAddingText((v) => !v)}
+                    >
+                      {addingText ? "Click where it should go…" : "Add Text"}
+                    </Button>
+                    {selectedTextId && (
+                      <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
+                    )}
+                  </div>
+                </Card>
+              )}
               <Card title="Registration">
                 <div className="space-y-3">
                   <Field label="D.S.M No."><Input value={meta.dsmNo} onChange={set("dsmNo")} /></Field>
@@ -749,12 +870,17 @@ export function Diagrams() {
                 manualAnnotations={annotations}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}
-                drawMode={drawingAnnotation}
+                drawMode={drawingAnnotation || addingText}
                 onCanvasClick={handleCanvasClick}
                 onAnnotationClick={handleAnnotationClick}
                 onAnnotationHandleDown={handleAnnotationHandleDown}
                 onCanvasMouseMove={handleCanvasMouseMove}
                 onCanvasMouseUp={handleCanvasMouseUp}
+                manualTexts={texts}
+                selectedTextId={selectedTextId}
+                onTextClick={handleTextClick}
+                onTextDoubleClick={handleTextDoubleClick}
+                onTextHandleDown={handleTextHandleDown}
               />
             )}
           </div>
@@ -807,6 +933,42 @@ export function Diagrams() {
                   />
                 </label>
                 <button type="button" onClick={applyAnnotationReadout} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
+              </div>
+            );
+          })()}
+          {/* Custom-text prompt (client req 2026-08-24) — appears right where
+              the surveyor clicked (new note) or where an existing one sits
+              (double-click to edit), matching the same screen-CTM
+              positioning as the stretch/rotate readout above. */}
+          {textPrompt && (() => {
+            const svg = svgRef.current;
+            if (!svg) return null;
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return null;
+            const pt = svg.createSVGPoint();
+            pt.x = textPrompt.x;
+            pt.y = textPrompt.y;
+            const p = pt.matrixTransform(ctm);
+            return (
+              <div
+                className="fixed z-20 w-52 rounded border border-brand bg-white p-2 text-xs shadow-md"
+                style={{ left: p.x + 12, top: p.y + 12 }}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">{textPrompt.id ? "Edit Text" : "Add Text"}</span>
+                  <button type="button" onClick={() => setTextPrompt(null)} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                </div>
+                <input
+                  autoFocus
+                  value={textPrompt.value}
+                  onChange={(e) => setTextPrompt((g) => (g ? { ...g, value: e.target.value } : g))}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
+                  placeholder="Note text…"
+                  className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1"
+                />
+                <button type="button" onClick={commitTextPrompt} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">
+                  {textPrompt.id ? "Save" : "Add"}
+                </button>
               </div>
             );
           })()}
