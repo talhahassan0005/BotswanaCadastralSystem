@@ -236,7 +236,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const FS_BEACON_HEAD = 34, FS_BEACON = 31, FS_LOCALITY = 38;
   const FS_DOS = 29, FS_ARROW = 26, FS_SCALE = 26;
   const FS_LEGAL = 37, FS_LANDCALLED = 37, FS_PARENT = 31, FS_CERT = 31;
-  const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 25, FS_FOOTER = 21, FS_ANNEX = 24;
+  // Name and title kept equal on purpose (client req 2026-08-22: "same
+  // font size as how the lower one is") — a later across-the-board font
+  // bump accidentally drifted them apart by 1pt; restored here.
+  const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 26, FS_FOOTER = 21, FS_ANNEX = 24;
 
   // ---- top data table: fixed 51.0mm band, 14.0mm header (client req,
   // Part 23) — the table no longer grows the page as points are added;
