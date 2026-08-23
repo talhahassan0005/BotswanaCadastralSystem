@@ -174,8 +174,22 @@ export function Diagrams() {
   const [drawingAnnotation, setDrawingAnnotation] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  // In-progress drag of a selected line's move-handle (translate the whole
+  // line) or either end-handle (rotate/resize around the other end) —
+  // client req 2026-08-23: "select, move, rotate/tilt the extension lines."
+  const [draggingAnnotation, setDraggingAnnotation] = useState<{
+    id: string;
+    handle: "start" | "end" | "move";
+    startSvg: { x: number; y: number };
+    orig: { x1: number; y1: number; x2: number; y2: number };
+  } | null>(null);
+  // Set once a handle-drag actually moves the pointer, so the native click
+  // event that follows mouseup (browsers fire it whenever mousedown/mouseup
+  // share a target, regardless of movement in between) doesn't get treated
+  // as a fresh click and toggle the selection back off right after a drag.
+  const dragMovedRef = useRef(false);
 
-  function toSvgPoint(e: ReactMouseEvent<SVGSVGElement>): { x: number; y: number } {
+  function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
     const ctm = svg?.getScreenCTM();
     if (!svg || !ctm) return { x: 0, y: 0 };
@@ -203,12 +217,41 @@ export function Diagrams() {
   }
   function handleAnnotationClick(id: string) {
     if (drawingAnnotation) return;
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false; // swallow the click that trails a drag
+      return;
+    }
     setSelectedAnnotationId((cur) => (cur === id ? null : id));
   }
   function deleteSelectedAnnotation() {
     if (!selectedAnnotationId) return;
     setAnnotations((arr) => arr.filter((a) => a.id !== selectedAnnotationId));
     setSelectedAnnotationId(null);
+  }
+  function handleAnnotationHandleDown(id: string, handle: "start" | "end" | "move", e: ReactMouseEvent<SVGElement>) {
+    const a = annotations.find((x) => x.id === id);
+    if (!a) return;
+    dragMovedRef.current = false;
+    setDraggingAnnotation({ id, handle, startSvg: toSvgPoint(e), orig: { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 } });
+  }
+  function handleCanvasMouseMove(e: ReactMouseEvent<SVGSVGElement>) {
+    if (!draggingAnnotation) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingAnnotation.startSvg.x;
+    const dy = p.y - draggingAnnotation.startSvg.y;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
+    const { orig, handle, id } = draggingAnnotation;
+    setAnnotations((arr) =>
+      arr.map((a) => {
+        if (a.id !== id) return a;
+        if (handle === "move") return { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy };
+        if (handle === "start") return { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy };
+        return { ...a, x2: orig.x2 + dx, y2: orig.y2 + dy };
+      })
+    );
+  }
+  function handleCanvasMouseUp() {
+    setDraggingAnnotation(null);
   }
 
   const fullMeta: DiagramMeta = {
@@ -510,9 +553,17 @@ export function Diagrams() {
                       </div>
                     </>
                   ) : (
-                    <Field label="Parent / portion">
-                      <Input value={meta.parent} onChange={onParent} placeholder="e.g. A PORTION OF CADASTRE 243" />
-                    </Field>
+                    <>
+                      <Field label="Parent / portion">
+                        <Input value={meta.parent} onChange={onParent} placeholder="e.g. A PORTION OF CADASTRE 243" />
+                      </Field>
+                      <Field label="Parent / portion — extra line (optional)">
+                        <Input value={meta.parent2 ?? ""} onChange={set("parent2")} placeholder="for plots with a longer history" />
+                      </Field>
+                      <Field label="Parent / portion — extra line 2 (optional)">
+                        <Input value={meta.parent3 ?? ""} onChange={set("parent3")} placeholder="e.g. A PORTION OF CADASTRE 87" />
+                      </Field>
+                    </>
                   )}
                   {(kind === "compiled" || kind === "framed") && (
                     <Field label={kind === "framed" ? "Framed from (General Plan No.)" : "Compiled from (source document)"}>
@@ -535,8 +586,8 @@ export function Diagrams() {
                     These dashed extension lines are added by hand, the same way a surveyor marks them up on
                     paper — there's no survey data to compute them from. They just mark that a side borders a
                     neighbouring plot, with no label. Click "Draw Extension Line" below, then click two points
-                    directly on the preview to draw one. Click an existing line to select it, then Delete to
-                    remove it.
+                    directly on the preview to draw one. Click an existing line to select it — drag the line
+                    itself to move it, or drag either end-handle to rotate/resize it — then Delete to remove it.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -563,11 +614,6 @@ export function Diagrams() {
                   <Field label="Comp."><Input value={meta.comp ?? ""} onChange={set("comp")} /></Field>
                   <Field label="LIR No."><Input value={meta.lirNo ?? ""} onChange={set("lirNo")} /></Field>
                   <Field label="Immediate parent diagram No. (subdivisions)"><Input value={meta.parentDiagramNo ?? meta.parentDiagram ?? ""} onChange={set("parentDiagramNo")} placeholder="e.g. SR 1087/2014" /></Field>
-                  <Field label="Annexed to (Deeds Registry No.)"><Input value={meta.annexedToNo ?? ""} onChange={set("annexedToNo")} /></Field>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label="Annexed — dated"><Input value={meta.annexedDate ?? ""} onChange={set("annexedDate")} /></Field>
-                    <Field label="In favour of"><Input value={meta.annexedInFavourOf ?? ""} onChange={set("annexedInFavourOf")} /></Field>
-                  </div>
                   <Field label="Name above ‘Registrar of Deeds’ (optional)"><Input value={meta.annexName ?? ""} onChange={set("annexName")} placeholder="optional" /></Field>
                 </div>
               </Card>
@@ -612,6 +658,9 @@ export function Diagrams() {
                 drawMode={drawingAnnotation}
                 onCanvasClick={handleCanvasClick}
                 onAnnotationClick={handleAnnotationClick}
+                onAnnotationHandleDown={handleAnnotationHandleDown}
+                onCanvasMouseMove={handleCanvasMouseMove}
+                onCanvasMouseUp={handleCanvasMouseUp}
               />
             )}
           </div>

@@ -25,6 +25,8 @@ export type DiagramKind = "surveyed" | "compiled" | "framed" | "borehole" | "lea
 export interface DiagramMeta {
   lotName: string;        // e.g. "LOT 3508 MATEBELE"
   parent: string;         // e.g. "A PORTION OF CADASTRE 21"
+  parent2?: string;       // optional 2nd "(A PORTION OF ...)" line — long-history plots with several ancestor parcels
+  parent3?: string;       // optional 3rd "(A PORTION OF ...)" line
   location: string;       // e.g. "MATEBELE"
   tribalArea: string;     // e.g. "BAKGATLA TRIBAL TERRITORY"
   surveyor: string;       // e.g. "I.N. MULALU"
@@ -111,6 +113,12 @@ interface Props {
   drawMode?: boolean;
   onCanvasClick?: (e: MouseEvent<SVGSVGElement>) => void;
   onAnnotationClick?: (id: string, e: MouseEvent) => void;
+  /** Mousedown on a selected annotation's move-handle (drag the whole
+   *  line) or either end-handle (drag just that endpoint — rotates/
+   *  resizes the line around the other end), client req 2026-08-23. */
+  onAnnotationHandleDown?: (id: string, handle: "start" | "end" | "move", e: MouseEvent<SVGElement>) => void;
+  onCanvasMouseMove?: (e: MouseEvent<SVGSVGElement>) => void;
+  onCanvasMouseUp?: (e: MouseEvent<SVGSVGElement>) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -193,7 +201,10 @@ const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
 // the coordinates; the layout/structure is fixed.
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
-  { meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint, selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick },
+  {
+    meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
+    selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
+  },
   ref
 ) {
   // The diagram always letters the boundary A, B, C, ... on the printed
@@ -332,11 +343,19 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     FS_LEGAL
   );
   const LEGAL_LH = FS_LEGAL * 1.5;
+  // Optional "(A PORTION OF ...)" ancestry lines — client req 2026-08-23:
+  // long-history plots (subdivided from a lot, itself a portion of another
+  // lot, itself a portion of a cadastre) need up to 3 stacked lines here,
+  // not just the one `parent` field. Blank ones are skipped entirely so a
+  // plot with a simple history renders exactly as before.
+  const parentLines = [meta.parent, meta.parent2, meta.parent3]
+    .map((p) => (p ?? "").trim())
+    .filter(Boolean);
   // Reserve room at the bottom of the middle zone for the legal-description
   // block (however many lines it wraps to) + the certificate/surveyor
   // lines, so the figure box above it never overlaps this text no matter
   // how long the point-letter string gets.
-  const legalBlockH = (figureLines.length + 7) * LEGAL_LH + 60;
+  const legalBlockH = (figureLines.length + parentLines.length + 7) * LEGAL_LH + 60;
   const legalY0 = annTop - legalBlockH;
 
   // Beacon Description (dynamic line count) + locality name sit right
@@ -406,6 +425,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
       onClick={onCanvasClick}
+      onMouseMove={onCanvasMouseMove}
+      onMouseUp={onCanvasMouseUp}
       style={{
         width: "100%",
         height: "auto",
@@ -604,18 +625,47 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           print/export taken mid-edit still reads as plain black-and-white. */}
       {/* No label on these — they only mark that a side borders a
           neighbouring plot (client req 2026-08-23), not which one. */}
+      {/* Selected line gets a move-handle (drag anywhere on the line to
+          translate it) and an end-handle at each tip (drag to rotate/
+          resize around the other end) — client req 2026-08-23: "select,
+          move, rotate/tilt the extension lines." A wider transparent
+          "hit" line sits under the visible dashed one so the line is easy
+          to grab without needing pixel-perfect precision on the thin
+          dashed stroke itself. */}
       {(manualAnnotations ?? []).map((a) => {
         const isSel = selectedAnnotationId === a.id;
         return (
-          <line
-            key={a.id}
-            x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-            stroke="black"
-            strokeWidth={isSel ? 2.2 : 1}
-            strokeDasharray="6 4"
-            onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
-            style={onAnnotationClick ? { cursor: "pointer" } : undefined}
-          />
+          <g key={a.id}>
+            <line
+              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              stroke="transparent"
+              strokeWidth={16}
+              onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
+              onMouseDown={(e) => { if (isSel) { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "move", e); } }}
+              style={{ cursor: isSel ? "move" : "pointer" }}
+            />
+            <line
+              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              stroke="black"
+              strokeWidth={isSel ? 2.2 : 1}
+              strokeDasharray="6 4"
+              style={{ pointerEvents: "none" }}
+            />
+            {isSel && (
+              <>
+                <circle
+                  cx={a.x1} cy={a.y1} r={9} fill="white" stroke="black" strokeWidth={1.4}
+                  onMouseDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "start", e); }}
+                  style={{ cursor: "grab" }}
+                />
+                <circle
+                  cx={a.x2} cy={a.y2} r={9} fill="white" stroke="black" strokeWidth={1.4}
+                  onMouseDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "end", e); }}
+                  style={{ cursor: "grab" }}
+                />
+              </>
+            )}
+          </g>
         );
       })}
       {pendingAnnotationPoint && (
@@ -635,9 +685,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       {(() => {
         const landCalledY = legalY0 + figureLines.length * LEGAL_LH;
-        // "(A PORTION OF ...)" line removed (client req 2026-08-22) — SITUATE
-        // AT now follows directly after the underlined lot name.
-        const situateY = landCalledY + LEGAL_LH;
+        // Optional "(A PORTION OF ...)" ancestry line(s) sit right after the
+        // underlined lot name, one per non-blank parent field (client req
+        // 2026-08-23) — SITUATE AT follows after however many of those print.
+        const parentY0 = landCalledY + LEGAL_LH;
+        const situateY = parentY0 + parentLines.length * LEGAL_LH;
         // Certification + deductions note sit on two tight, back-to-back
         // lines with no gap between them (client req 2026-08-22) — was
         // previously split across "Surveyed"/"IN ... BY ME," on separate
@@ -657,6 +709,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 </text>
               ))}
               <text x={VB_W / 2} y={landCalledY} fontSize={FS_LANDCALLED} fontWeight="medium" textDecoration="underline">{landCalled}</text>
+              {parentLines.map((p, i) => (
+                <text key={i} x={VB_W / 2} y={parentY0 + i * LEGAL_LH} fontSize={FS_LEGAL} fontWeight="medium">
+                  ({p})
+                </text>
+              ))}
               <text x={VB_W / 2} y={situateY} fontSize={FS_BEACON_HEAD}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
             </g>
 
