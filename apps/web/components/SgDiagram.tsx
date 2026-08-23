@@ -204,8 +204,21 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // names. Every side is assumed to join points[i] -> points[i+1], the
   // same adjacency already relied on elsewhere in this file (vertex
   // labels, side-distance labels), so sides relabel the same way.
-  const points = rawPoints.map((p, i) => ({ ...p, name: boundaryLetter(i) }));
-  const sides = rawSides.map((s, i) => ({ ...s, from: boundaryLetter(i), to: boundaryLetter((i + 1) % rawPoints.length) }));
+  // Some upstream sources represent a closed ring by repeating the first
+  // point at the end (e.g. a 4-corner boundary A,B,C,D arriving as
+  // [A,B,C,D,A'] with a matching degenerate zero-length closing side) —
+  // relabeling that duplicate as a brand-new "E" is wrong regardless of
+  // which source did it (client req 2026-08-23: "where do we get E, we
+  // only had A to D"). Detect and drop it before lettering.
+  const DUP_TOL = 0.01; // metres — points within 1cm count as "the same point"
+  const isSamePoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+    Math.abs(a.east - b.east) < DUP_TOL && Math.abs(a.north - b.north) < DUP_TOL;
+  const hasDupClosingPoint =
+    rawPoints.length > 1 && isSamePoint(rawPoints[0], rawPoints[rawPoints.length - 1]);
+  const boundaryPoints = hasDupClosingPoint ? rawPoints.slice(0, -1) : rawPoints;
+  const boundarySides = hasDupClosingPoint ? rawSides.slice(0, -1) : rawSides;
+  const points = boundaryPoints.map((p, i) => ({ ...p, name: boundaryLetter(i) }));
+  const sides = boundarySides.map((s, i) => ({ ...s, from: boundaryLetter(i), to: boundaryLetter((i + 1) % boundaryPoints.length) }));
   // ---------------------------------------------------------------------
   // Exact page geometry (client req 2026-08-22, Part 23) — measured
   // directly from the vector geometry of the client's official "Lot 15267
