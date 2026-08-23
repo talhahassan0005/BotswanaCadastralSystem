@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type MouseEvent } from "react";
-import { wrapSvgWords } from "@/lib/wrapSvgText";
+import { wrapSvgWords, fitSvgText } from "@/lib/wrapSvgText";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -343,25 +343,65 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     FS_LEGAL
   );
   const LEGAL_LH = FS_LEGAL * 1.5;
+  // "LAND CALLED" line carries the village/location too, e.g. "LOT 323
+  // CHARLESHILL" — wrapped like every other free-text block here (client
+  // req 2026-08-24: an unusually long lot name/location used to just run
+  // off the sheet as one un-wrapped line instead of dropping to a second).
+  const landCalled =
+    meta.location && !meta.lotName.toUpperCase().includes(meta.location.trim().toUpperCase())
+      ? `${meta.lotName} ${meta.location}`
+      : meta.lotName;
+  const landCalledLines = wrapSvgWords(landCalled.split(/\s+/).filter(Boolean), tw - 80, FS_LANDCALLED);
   // Optional "(A PORTION OF ...)" ancestry lines — client req 2026-08-23:
   // long-history plots (subdivided from a lot, itself a portion of another
   // lot, itself a portion of a cadastre) need up to 3 stacked lines here,
   // not just the one `parent` field. Blank ones are skipped entirely so a
-  // plot with a simple history renders exactly as before.
-  const parentLines = [meta.parent, meta.parent2, meta.parent3]
+  // plot with a simple history renders exactly as before. Each one is
+  // itself word-wrapped (client req 2026-08-24) rather than assumed to fit
+  // on one line — the wrapping parens are stitched onto the first/last
+  // wrapped word so a long ancestry line still reads as "(... ... ...)".
+  const parentLineGroups: string[][] = [meta.parent, meta.parent2, meta.parent3]
     .map((p) => (p ?? "").trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((p) => {
+      const wrapped = wrapSvgWords(p.split(/\s+/).filter(Boolean), tw - 100, FS_LEGAL);
+      if (wrapped.length === 0) return wrapped;
+      const withParens = [...wrapped];
+      withParens[0] = `(${withParens[0]}`;
+      withParens[withParens.length - 1] = `${withParens[withParens.length - 1]})`;
+      return withParens;
+    });
+  const situateLines = wrapSvgWords(
+    ["SITUATE", "AT", ...meta.location.split(/\s+/).filter(Boolean), "IN", "THE", ...meta.tribalArea.split(/\s+/).filter(Boolean)],
+    tw - 80,
+    FS_BEACON_HEAD
+  );
   // Reserve room at the bottom of the middle zone for the legal-description
-  // block (however many lines it wraps to) + the certificate/surveyor
-  // lines, so the figure box above it never overlaps this text no matter
-  // how long the point-letter string gets.
-  const legalBlockH = (figureLines.length + parentLines.length + 7) * LEGAL_LH + 60;
+  // block (however many lines each free-text piece wraps to) + the
+  // certificate/surveyor lines, so the figure box above it never overlaps
+  // this text no matter how long any of the underlying fields get.
+  const legalBlockH =
+    (figureLines.length +
+      landCalledLines.length +
+      parentLineGroups.reduce((a, g) => a + g.length, 0) +
+      situateLines.length +
+      2 + // certification + deductions lines
+      3) * // spare margin, matching the original fixed-block breathing room
+      LEGAL_LH +
+    60;
   const legalY0 = annTop - legalBlockH;
 
   // Beacon Description (dynamic line count) + locality name sit right
   // below the top table; the figure gets whatever's left above the legal
   // block reserve.
-  const beaconLines = meta.beaconDescription.split(/\s*[;\n]\s*/).filter(Boolean);
+  // Each semicolon-separated entry gets its own word-wrap pass (client req
+  // 2026-08-24 — an unusually long single entry, with no semicolon to break
+  // on, used to just run off the right edge of the sheet instead of
+  // dropping to a second line like every other free-text block here).
+  const beaconLines = meta.beaconDescription
+    .split(/\s*[;\n]\s*/)
+    .filter(Boolean)
+    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8, FS_BEACON_HEAD));
   const BD_LH = FS_BEACON * 1.35;
   const bdHeadingY = midTop + 40;
   const bdLinesY0 = midTop + 74;
@@ -412,12 +452,6 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     }
     return inside;
   }
-  // "LAND CALLED" line carries the village/location too, e.g. "LOT 323 CHARLESHILL".
-  const landCalled =
-    meta.location && !meta.lotName.toUpperCase().includes(meta.location.trim().toUpperCase())
-      ? `${meta.lotName} ${meta.location}`
-      : meta.lotName;
-
   return (
     <svg
       ref={ref}
@@ -473,9 +507,17 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         {/* header row 2 */}
         <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>METRES</text>
         <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">Y</text>
-        <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB}>System {fmtSystem(meta.coordinateSystem)}</text>
+        {(() => {
+          const fit = fitSvgText(`System ${fmtSystem(meta.coordinateSystem)}`, xXR - xY - 12, FS_TABLE_SUB);
+          return <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={fit.fontSize}>{fit.text}</text>;
+        })()}
         <text x={xX + (xXR - xX) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
-        <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_HEAD}>{meta.dsmNo || ""}</text>
+        {(() => {
+          const fit = fitSvgText(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD);
+          return (
+            <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={fit.fontSize}>{fit.text}</text>
+          );
+        })()}
         {/* header row 3 — constants */}
         <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="medium" fontSize={FS_CONSTANTS}>CONSTANTS</text>
         <text x={xY + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
@@ -515,7 +557,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {beaconLines.map((ln, i) => (
         <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
       ))}
-      <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">{meta.location}</text>
+      {(() => {
+        const fit = fitSvgText(meta.location, tw - 8, FS_BEACON_HEAD);
+        return <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={fit.fontSize} letterSpacing="1">{fit.text}</text>;
+      })()}
 
       {/* ===================== Right-side D.S.M / Approved / Director of
           Surveys column (client req 2026-08-22) — reference shows this as
@@ -684,12 +729,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       {(() => {
-        const landCalledY = legalY0 + figureLines.length * LEGAL_LH;
+        const landCalledY0 = legalY0 + figureLines.length * LEGAL_LH;
         // Optional "(A PORTION OF ...)" ancestry line(s) sit right after the
         // underlined lot name, one per non-blank parent field (client req
-        // 2026-08-23) — SITUATE AT follows after however many of those print.
-        const parentY0 = landCalledY + LEGAL_LH;
-        const situateY = parentY0 + parentLines.length * LEGAL_LH;
+        // 2026-08-23) — SITUATE AT follows after however many of those (and
+        // however many lines each one itself wraps to, client req
+        // 2026-08-24) print.
+        const parentY0 = landCalledY0 + landCalledLines.length * LEGAL_LH;
+        const parentTotalLines = parentLineGroups.reduce((a, g) => a + g.length, 0);
+        const situateY0 = parentY0 + parentTotalLines * LEGAL_LH;
         // Certification + deductions note sit on two tight, back-to-back
         // lines with no gap between them (client req 2026-08-22) — was
         // previously split across "Surveyed"/"IN ... BY ME," on separate
@@ -700,6 +748,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // floating wherever the legal-description flow happens to end.
         const deductionsY = annTop - 20;
         const certY1 = deductionsY - FS_CERT * 1.15;
+        const leftColW = VB_W - 700 - (tx + 4) - 20;
+        const rightColW = tableRight - (VB_W - 700) - 20;
+        const cert = fitSvgText(certificationLine(meta), leftColW, FS_BEACON_HEAD);
+        const surveyorFit = fitSvgText(meta.surveyor, rightColW, FS_BEACON_HEAD);
+        let parentLine = 0;
         return (
           <>
             <g textAnchor="middle">
@@ -708,69 +761,118 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                   {line}
                 </text>
               ))}
-              <text x={VB_W / 2} y={landCalledY} fontSize={FS_LANDCALLED} fontWeight="medium" textDecoration="underline">{landCalled}</text>
-              {parentLines.map((p, i) => (
-                <text key={i} x={VB_W / 2} y={parentY0 + i * LEGAL_LH} fontSize={FS_LEGAL} fontWeight="medium">
-                  ({p})
+              {landCalledLines.map((line, i) => (
+                <text key={i} x={VB_W / 2} y={landCalledY0 + i * LEGAL_LH} fontSize={FS_LANDCALLED} fontWeight="medium" textDecoration="underline">
+                  {line}
                 </text>
               ))}
-              <text x={VB_W / 2} y={situateY} fontSize={FS_BEACON_HEAD}>SITUATE AT {meta.location} IN THE {meta.tribalArea}</text>
+              {parentLineGroups.map((group, gi) =>
+                group.map((line, li) => {
+                  const y = parentY0 + parentLine * LEGAL_LH;
+                  parentLine += 1;
+                  return (
+                    <text key={`${gi}-${li}`} x={VB_W / 2} y={y} fontSize={FS_LEGAL} fontWeight="medium">
+                      {line}
+                    </text>
+                  );
+                })
+              )}
+              {situateLines.map((line, i) => (
+                <text key={i} x={VB_W / 2} y={situateY0 + i * LEGAL_LH} fontSize={FS_BEACON_HEAD}>
+                  {line}
+                </text>
+              ))}
             </g>
 
             {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
-            <text x={tx + 4} y={certY1} fontSize={FS_BEACON_HEAD}>{certificationLine(meta)}</text>
+            <text x={tx + 4} y={certY1} fontSize={cert.fontSize}>{cert.text}</text>
             <text x={tx + 4} y={deductionsY} fontSize={FS_BEACON_HEAD}>DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
             {/* Plain/simple styling (client req 2026-08-22) — no bold, no
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
                 title read. */}
-            <text x={VB_W - 700} y={certY1} fontSize={FS_BEACON_HEAD}>{meta.surveyor}</text>
+            <text x={VB_W - 700} y={certY1} fontSize={surveyorFit.fontSize}>{surveyorFit.text}</text>
             <text x={VB_W - 700} y={deductionsY} fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
           </>
         );
       })()}
 
       {/* ===================== deeds/annexure table ===================== */}
-      <g fontSize={FS_BEACON_HEAD}>
-        <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={1.2} />
-        <line x1={annC1} y1={annTop} x2={annC1} y2={annBottom} stroke="black" strokeWidth={1} />
-        <line x1={annC2} y1={annTop} x2={annC2} y2={annBottom} stroke="black" strokeWidth={1} />
+      {/* Every value here is a single fixed-height row with no room to wrap
+          onto a second line — an unusually long field value used to just
+          run past its column and collide with whatever printed next to it
+          (client req 2026-08-24), so each one shrinks-to-fit (and, only if
+          still too long even at the floor size, truncates with "…")
+          instead. */}
+      {(() => {
+        // The value column used to start at a flat annC2+200 regardless of
+        // the row's own label — fine while every label was short enough to
+        // clear it, but "General Plan No." and "Degree Square:" are already
+        // wider than that gap on their own, so the value ran straight into
+        // the label even with a perfectly ordinary value (client req
+        // 2026-08-24). Each row's value now starts right after its own
+        // label's actual (estimated) width instead of a shared fixed x.
+        const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.62 + 16;
+        const gpNoX = valueX("General Plan No.");
+        const srNoX = valueX("S.R No.");
+        const dsmFileX = valueX("D.S.M File:");
+        const compX = valueX("Comp.");
+        const degreeSquareX = valueX("Degree Square:");
+        const lirNoX = valueX("LIR No:");
+        const gpNo = fitSvgText(dash(meta.gpNo), tableRight - gpNoX - 10, FS_BEACON_HEAD);
+        const srNo = fitSvgText(dash(meta.srNo), tableRight - srNoX - 10, FS_BEACON_HEAD);
+        const dsmFile = fitSvgText(dash(meta.dsmFile), tableRight - dsmFileX - 10, FS_BEACON_HEAD);
+        const comp = fitSvgText(dash(meta.comp), tableRight - compX - 10, FS_BEACON_HEAD);
+        const degreeSquare = fitSvgText(dash(meta.degreeSquare), tableRight - degreeSquareX - 10, FS_BEACON_HEAD);
+        const lirNo = fitSvgText(dash(meta.lirNo), tableRight - lirNoX - 10, FS_BEACON_HEAD);
+        const annexedTo = fitSvgText(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
+        const annexedDate = fitSvgText(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
+        const annexedFavour = fitSvgText(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
+        const annexName = fitSvgText(meta.annexName ?? "", annC1 - tx - 40, FS_BEACON_HEAD);
+        const parentDiagramNo = fitSvgText(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50) - 10, FS_BEACON_HEAD);
+        return (
+          <g fontSize={FS_BEACON_HEAD}>
+            <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={1.2} />
+            <line x1={annC1} y1={annTop} x2={annC1} y2={annBottom} stroke="black" strokeWidth={1} />
+            <line x1={annC2} y1={annTop} x2={annC2} y2={annBottom} stroke="black" strokeWidth={1} />
 
-        {/* left — Deeds Registry annexure */}
-        <text x={tx + 10} y={annTop + 40}>This diagram is annexed to</text>
-        <text x={tx + 10} y={annTop + 90}>No. {dash(meta.annexedToNo)}</text>
-        <text x={tx + 10} y={annTop + 140}>Dated {dash(meta.annexedDate)}</text>
-        <text x={annC1 - 140} y={annTop + 140}>in favour</text>
-        <text x={tx + 10} y={annTop + 190}>of {dash(meta.annexedInFavourOf)}</text>
-        {meta.annexName && meta.annexName.trim() && (
-          <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
-            {meta.annexName}
-          </text>
-        )}
-        <text x={(tx + annC1) / 2} y={annBottom - 14} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
-          Registrar of Deeds
-        </text>
+            {/* left — Deeds Registry annexure */}
+            <text x={tx + 10} y={annTop + 40}>This diagram is annexed to</text>
+            <text x={tx + 10} y={annTop + 90} fontSize={annexedTo.fontSize}>{annexedTo.text}</text>
+            <text x={tx + 10} y={annTop + 140} fontSize={annexedDate.fontSize}>{annexedDate.text}</text>
+            <text x={annC1 - 140} y={annTop + 140}>in favour</text>
+            <text x={tx + 10} y={annTop + 190} fontSize={annexedFavour.fontSize}>{annexedFavour.text}</text>
+            {meta.annexName && meta.annexName.trim() && (
+              <text x={(tx + annC1) / 2} y={annBottom - 46} textAnchor="middle" fontSize={annexName.fontSize}>
+                {annexName.text}
+              </text>
+            )}
+            <text x={(tx + annC1) / 2} y={annBottom - 14} textAnchor="middle" fontSize={FS_BEACON_HEAD}>
+              Registrar of Deeds
+            </text>
 
-        {/* middle — immediate parent diagram */}
-        <text x={annC1 + 10} y={annTop + 40}>The immediate parent diagram is</text>
-        <text x={annC2 - 14} y={annTop + 90} textAnchor="end">Annexed</text>
-        <text x={annC1 + 10} y={annTop + 140}>to</text>
-        <text x={annC1 + 50} y={annTop + 140}>No. {dash(meta.parentDiagramNo || meta.parentDiagram)}</text>
+            {/* middle — immediate parent diagram */}
+            <text x={annC1 + 10} y={annTop + 40}>The immediate parent diagram is</text>
+            <text x={annC2 - 14} y={annTop + 90} textAnchor="end">Annexed</text>
+            <text x={annC1 + 10} y={annTop + 140}>to</text>
+            <text x={annC1 + 50} y={annTop + 140} fontSize={parentDiagramNo.fontSize}>{parentDiagramNo.text}</text>
 
-        {/* right — registration numbers (label + value in an aligned column, with a gap) */}
-        <text x={annC2 + 12} y={annTop + 40}>General Plan No.</text>
-        <text x={annC2 + 200} y={annTop + 40}>{dash(meta.gpNo)}</text>
-        <text x={annC2 + 12} y={annTop + 90}>S.R No.</text>
-        <text x={annC2 + 200} y={annTop + 90}>{dash(meta.srNo)}</text>
-        <text x={annC2 + 12} y={annTop + 140}>D.S.M File:</text>
-        <text x={annC2 + 200} y={annTop + 140}>{dash(meta.dsmFile)}</text>
-        <text x={annC2 + 12} y={annTop + 190}>Comp.</text>
-        <text x={annC2 + 200} y={annTop + 190}>{dash(meta.comp)}</text>
-        <text x={annC2 + 12} y={annTop + 240}>Degree Square:</text>
-        <text x={annC2 + 200} y={annTop + 240}>{dash(meta.degreeSquare)}</text>
-        <text x={annC2 + 12} y={annTop + 290}>LIR No:</text>
-        <text x={annC2 + 200} y={annTop + 290}>{dash(meta.lirNo)}</text>
-      </g>
+            {/* right — registration numbers (label + value in an aligned column, with a gap) */}
+            <text x={annC2 + 12} y={annTop + 40}>General Plan No.</text>
+            <text x={gpNoX} y={annTop + 40} fontSize={gpNo.fontSize}>{gpNo.text}</text>
+            <text x={annC2 + 12} y={annTop + 90}>S.R No.</text>
+            <text x={srNoX} y={annTop + 90} fontSize={srNo.fontSize}>{srNo.text}</text>
+            <text x={annC2 + 12} y={annTop + 140}>D.S.M File:</text>
+            <text x={dsmFileX} y={annTop + 140} fontSize={dsmFile.fontSize}>{dsmFile.text}</text>
+            <text x={annC2 + 12} y={annTop + 190}>Comp.</text>
+            <text x={compX} y={annTop + 190} fontSize={comp.fontSize}>{comp.text}</text>
+            <text x={annC2 + 12} y={annTop + 240}>Degree Square:</text>
+            <text x={degreeSquareX} y={annTop + 240} fontSize={degreeSquare.fontSize}>{degreeSquare.text}</text>
+            <text x={annC2 + 12} y={annTop + 290}>LIR No:</text>
+            <text x={lirNoX} y={annTop + 290} fontSize={lirNo.fontSize}>{lirNo.text}</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 });
