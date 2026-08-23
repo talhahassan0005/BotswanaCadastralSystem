@@ -195,10 +195,9 @@ export function Diagrams() {
       setPendingPoint(p);
       return;
     }
-    const label = window.prompt("Label for this line (e.g. REMAINDER OF CADASTRE 477):", "") ?? "";
-    if (label.trim()) {
-      setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, x1: pendingPoint.x, y1: pendingPoint.y, x2: p.x, y2: p.y, label: label.trim() }]);
-    }
+    // No label — these lines only mark that a side borders a neighbouring
+    // plot (client req 2026-08-23), they don't need to name which one.
+    setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, x1: pendingPoint.x, y1: pendingPoint.y, x2: p.x, y2: p.y }]);
     setPendingPoint(null);
     setDrawingAnnotation(false);
   }
@@ -534,9 +533,10 @@ export function Diagrams() {
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
                     These dashed extension lines are added by hand, the same way a surveyor marks them up on
-                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
-                    click two points directly on the preview to draw one and type its label (e.g. "REMAINDER OF
-                    CADASTRE 477"). Click an existing line to select it, then Delete to remove it.
+                    paper — there's no survey data to compute them from. They just mark that a side borders a
+                    neighbouring plot, with no label. Click "Draw Extension Line" below, then click two points
+                    directly on the preview to draw one. Click an existing line to select it, then Delete to
+                    remove it.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button

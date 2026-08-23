@@ -80,7 +80,6 @@ export interface ManualAnnotation {
   y1: number;
   x2: number;
   y2: number;
-  label: string;
 }
 
 interface Props {
@@ -587,14 +586,20 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           so they're plain SVG-space lines + free-text labels, not derived
           from a boundary side. Never coloured, even when selected, so a
           print/export taken mid-edit still reads as plain black-and-white. */}
+      {/* No label on these — they only mark that a side borders a
+          neighbouring plot (client req 2026-08-23), not which one. */}
       {(manualAnnotations ?? []).map((a) => {
         const isSel = selectedAnnotationId === a.id;
-        const midx = (a.x1 + a.x2) / 2, midy = (a.y1 + a.y2) / 2;
         return (
-          <g key={a.id} onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }} style={onAnnotationClick ? { cursor: "pointer" } : undefined}>
-            <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="black" strokeWidth={isSel ? 2.2 : 1} strokeDasharray="6 4" />
-            <text x={midx} y={midy - 8} fontSize={FS_BEACON_HEAD} fontWeight={isSel ? "bold" : undefined} textAnchor="middle">{a.label}</text>
-          </g>
+          <line
+            key={a.id}
+            x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+            stroke="black"
+            strokeWidth={isSel ? 2.2 : 1}
+            strokeDasharray="6 4"
+            onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
+            style={onAnnotationClick ? { cursor: "pointer" } : undefined}
+          />
         );
       })}
       {pendingAnnotationPoint && (
