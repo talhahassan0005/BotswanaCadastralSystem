@@ -26,17 +26,28 @@ import { Export } from "@/modules/Export";
 
 function Workspace() {
   const { activeTab, setActiveTab, loadVersion, resetProject, started } = useStore();
-  const { user } = useAccount();
+  const { user, ready } = useAccount();
 
   // Clear the in-memory project when the signed-in surveyor changes or signs out,
   // so one user's data never lingers for the next (and a stale project id can't break Save).
+  //
+  // `ready` guards this: the initial session check is async, so on every
+  // fresh page load `user` starts at its default (no session yet) and then
+  // flips to the real signed-in user a moment later. Without this guard
+  // that flip looked exactly like "a different surveyor signed in" and
+  // called resetProject() on every refresh — wiping the just-restored
+  // session (client req 2026-08-23: "refresh sends me back to New/Open
+  // Project"). Only start comparing uid once the session check has
+  // actually settled, so a real account switch still clears the project,
+  // but a plain refresh of the same session never does.
   const prevUid = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (!ready) return;
     const uid = user?.id ?? null;
     if (prevUid.current !== undefined && prevUid.current !== uid) resetProject();
     prevUid.current = uid;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, ready]);
 
   // Stage 1–3 setup gate runs before the working station.
   if (!started) return <ProjectGate />;

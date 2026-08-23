@@ -152,28 +152,73 @@ export function parseDxf(text: string): ImportedDrawing {
   return out;
 }
 
+/** Writes a full HEADER + TABLES + ENTITIES DXF (client req 2026-08-23:
+ *  the previous ENTITIES-only file "refused to open" in real CAD
+ *  software). This app's own reader (parseDxf, above) only ever looked at
+ *  the ENTITIES section and happily accepted the bare-bones version, but
+ *  several DXF readers — including plenty of real-world AutoCAD/GIS
+ *  installs — require a $ACADVER header to identify the format version
+ *  and a LAYER table defining every layer before ENTITIES references it;
+ *  without those, the file can fail to open at all rather than just
+ *  looking wrong. AC1015 (AutoCAD 2000) is used as a broadly-supported
+ *  baseline format version. */
 export function writeDxf(d: ImportedDrawing): string {
   const L: string[] = [];
   const e = (code: number, val: string | number) => {
     L.push(String(code));
     L.push(String(val));
   };
+
+  const layers = new Set<string>(["0"]);
+  for (const p of d.points) {
+    layers.add(dxfLayer(p.layer ?? "POINTS"));
+    if (p.label) layers.add(dxfLayer(p.layer ?? "LABELS"));
+  }
+  for (const l of d.polylines) layers.add(dxfLayer(l.layer ?? "LINES"));
+  for (const t of d.texts) layers.add(dxfLayer(t.layer ?? "TEXT"));
+
+  // $EXTMIN/$EXTMAX: some viewers zoom-to-extents from these on open
+  // rather than the raw geometry — a missing/zero range can make an
+  // otherwise-valid drawing appear blank or fail to display.
+  const allX = [...d.points.map((p) => p.x), ...d.polylines.flatMap((l) => l.pts.map((v) => v.x)), ...d.texts.map((t) => t.x)];
+  const allY = [...d.points.map((p) => p.y), ...d.polylines.flatMap((l) => l.pts.map((v) => v.y)), ...d.texts.map((t) => t.y)];
+  const minX = allX.length ? Math.min(...allX) : 0, maxX = allX.length ? Math.max(...allX) : 0;
+  const minY = allY.length ? Math.min(...allY) : 0, maxY = allY.length ? Math.max(...allY) : 0;
+
+  let handle = 0x30;
+  const nextHandle = () => (handle++).toString(16).toUpperCase();
+
+  e(0, "SECTION"); e(2, "HEADER");
+  e(9, "$ACADVER"); e(1, "AC1015");
+  e(9, "$INSBASE"); e(10, 0); e(20, 0); e(30, 0);
+  e(9, "$EXTMIN"); e(10, minX); e(20, minY); e(30, 0);
+  e(9, "$EXTMAX"); e(10, maxX); e(20, maxY); e(30, 0);
+  e(0, "ENDSEC");
+
+  e(0, "SECTION"); e(2, "TABLES");
+  e(0, "TABLE"); e(2, "LAYER"); e(70, layers.size);
+  for (const lay of layers) {
+    e(0, "LAYER"); e(2, lay); e(70, 0); e(62, 7); e(6, "CONTINUOUS");
+  }
+  e(0, "ENDTAB");
+  e(0, "ENDSEC");
+
   e(0, "SECTION");
   e(2, "ENTITIES");
   for (const p of d.points) {
-    e(0, "POINT"); e(8, dxfLayer(p.layer ?? "POINTS")); e(10, p.x); e(20, p.y); e(30, 0);
+    e(0, "POINT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(p.layer ?? "POINTS")); e(100, "AcDbPoint"); e(10, p.x); e(20, p.y); e(30, 0);
     if (p.label) {
-      e(0, "TEXT"); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(40, 1.5); e(1, p.label);
+      e(0, "TEXT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(p.layer ?? "LABELS")); e(100, "AcDbText"); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(1, p.label);
     }
   }
   for (const l of d.polylines) {
-    e(0, "LWPOLYLINE"); e(8, dxfLayer(l.layer ?? "LINES")); e(90, l.pts.length); e(70, l.closed ? 1 : 0);
+    e(0, "LWPOLYLINE"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(l.layer ?? "LINES")); e(100, "AcDbPolyline"); e(90, l.pts.length); e(70, l.closed ? 1 : 0);
     for (const v of l.pts) {
       e(10, v.x); e(20, v.y);
     }
   }
   for (const t of d.texts) {
-    e(0, "TEXT"); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(40, t.height); e(1, t.text);
+    e(0, "TEXT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(t.layer ?? "TEXT")); e(100, "AcDbText"); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(1, t.text);
   }
   e(0, "ENDSEC");
   e(0, "EOF");
