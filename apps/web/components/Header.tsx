@@ -21,6 +21,7 @@ export const TABS = [
   { id: "collab", label: "Surveyors", module: "Surveyor Check-in & Collaboration" },
   { id: "export", label: "Export", module: "Export" },
   { id: "validate", label: "AI Validate", module: "AI Validation" },
+  { id: "reports", label: "Reports", module: "Reports" },
 ];
 
 // Per-discipline tab sets (Stage-3 branch). Generous overlap — common tools are in all.
@@ -30,9 +31,9 @@ export const TABS = [
 // first; Traverse and Parcels are dropped from the nav (Parcels stays reachable via
 // in-page "Go to Parcels" links from Diagrams/Working Plan/General Plan).
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
-  Cadastral: ["cogo", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate"],
-  Engineering: ["cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "validate"],
-  Mining: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate"],
+  Cadastral: ["cogo", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate", "reports"],
+  Engineering: ["cogo", "traverse", "topo", "volume", "editor", "diagrams", "workingplan", "gis", "collab", "validate", "reports"],
+  Mining: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate", "reports"],
   GIS: ["gis", "editor", "topo", "collab"],
 };
 

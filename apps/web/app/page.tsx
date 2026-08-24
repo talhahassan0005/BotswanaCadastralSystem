@@ -16,6 +16,7 @@ import { RefMarks } from "@/modules/RefMarks";
 import { GisMap } from "@/modules/GisMap";
 import { Collaborate } from "@/modules/Collaborate";
 import { AiValidate } from "@/modules/AiValidate";
+import { Reports } from "@/modules/Reports";
 import { Diagrams } from "@/modules/Diagrams";
 import { Parcels } from "@/modules/Parcels";
 import { WorkingPlanView } from "@/modules/WorkingPlanView";
@@ -74,6 +75,7 @@ function Workspace() {
           )}
           {activeTab === "collab" && <Collaborate />}
           {activeTab === "validate" && <AiValidate />}
+          {activeTab === "reports" && <Reports />}
           {activeTab === "diagrams" && <Diagrams />}
           {activeTab === "parcels" && <Parcels />}
           {activeTab === "workingplan" && <WorkingPlanView />}
