@@ -152,16 +152,28 @@ export function parseDxf(text: string): ImportedDrawing {
   return out;
 }
 
-/** Writes a full HEADER + TABLES + ENTITIES DXF (client req 2026-08-23:
- *  the previous ENTITIES-only file "refused to open" in real CAD
- *  software). This app's own reader (parseDxf, above) only ever looked at
- *  the ENTITIES section and happily accepted the bare-bones version, but
- *  several DXF readers — including plenty of real-world AutoCAD/GIS
- *  installs — require a $ACADVER header to identify the format version
- *  and a LAYER table defining every layer before ENTITIES references it;
- *  without those, the file can fail to open at all rather than just
- *  looking wrong. AC1015 (AutoCAD 2000) is used as a broadly-supported
- *  baseline format version. */
+/** Writes a HEADER + TABLES + ENTITIES DXF, targeting the AutoCAD R12
+ *  (AC1009) format (client req 2026-08-26: the AC1015-declared version
+ *  with AcDb* subclass markers and LWPOLYLINE entities "refuses to open"
+ *  in real-world CAD software).
+ *
+ *  R12 is the deliberate choice here, not just "an older version" — AC1015
+ *  ("AutoCAD 2000") introduced a database-backed object model that expects
+ *  a fuller TABLES section (VPORT/STYLE/BLOCK_RECORD, not just LAYER), a
+ *  BLOCKS section defining *Model_Space/*Paper_Space, and often an OBJECTS
+ *  section for its named-object dictionary — a file that only claims to be
+ *  AC1015 while skipping all of that is exactly the kind of "structurally
+ *  incomplete for its declared version" file that trips up real DXF
+ *  importers (AutoCAD itself is lenient about it; plenty of other CAD/GIS
+ *  tools are not). AC1015 was also emitting AcDb* subclass markers (group
+ *  100) and LWPOLYLINE entities, both introduced in later versions —
+ *  declaring an old version but using newer constructs is its own way to
+ *  fail strict parsers. R12 has none of these traps: it doesn't need
+ *  BLOCKS/OBJECTS, a LAYER-only TABLES section is completely normal for
+ *  it, and every DXF-capable program ever built can read it — it's the
+ *  universal lowest-common-denominator interchange format. Polylines are
+ *  written the classic way (POLYLINE/VERTEX/SEQEND) since LWPOLYLINE
+ *  didn't exist yet in R12; parseDxf already reads that form. */
 export function writeDxf(d: ImportedDrawing): string {
   const L: string[] = [];
   const e = (code: number, val: string | number) => {
@@ -189,7 +201,7 @@ export function writeDxf(d: ImportedDrawing): string {
   const nextHandle = () => (handle++).toString(16).toUpperCase();
 
   e(0, "SECTION"); e(2, "HEADER");
-  e(9, "$ACADVER"); e(1, "AC1015");
+  e(9, "$ACADVER"); e(1, "AC1009");
   e(9, "$INSBASE"); e(10, 0); e(20, 0); e(30, 0);
   e(9, "$EXTMIN"); e(10, minX); e(20, minY); e(30, 0);
   e(9, "$EXTMAX"); e(10, maxX); e(20, maxY); e(30, 0);
@@ -206,19 +218,20 @@ export function writeDxf(d: ImportedDrawing): string {
   e(0, "SECTION");
   e(2, "ENTITIES");
   for (const p of d.points) {
-    e(0, "POINT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(p.layer ?? "POINTS")); e(100, "AcDbPoint"); e(10, p.x); e(20, p.y); e(30, 0);
+    e(0, "POINT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "POINTS")); e(10, p.x); e(20, p.y); e(30, 0);
     if (p.label) {
-      e(0, "TEXT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(p.layer ?? "LABELS")); e(100, "AcDbText"); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(1, p.label);
+      e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(1, p.label);
     }
   }
   for (const l of d.polylines) {
-    e(0, "LWPOLYLINE"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(l.layer ?? "LINES")); e(100, "AcDbPolyline"); e(90, l.pts.length); e(70, l.closed ? 1 : 0);
+    e(0, "POLYLINE"); e(5, nextHandle()); e(8, dxfLayer(l.layer ?? "LINES")); e(66, 1); e(70, l.closed ? 1 : 0);
     for (const v of l.pts) {
-      e(10, v.x); e(20, v.y);
+      e(0, "VERTEX"); e(5, nextHandle()); e(8, dxfLayer(l.layer ?? "LINES")); e(10, v.x); e(20, v.y); e(30, 0);
     }
+    e(0, "SEQEND"); e(5, nextHandle());
   }
   for (const t of d.texts) {
-    e(0, "TEXT"); e(5, nextHandle()); e(100, "AcDbEntity"); e(8, dxfLayer(t.layer ?? "TEXT")); e(100, "AcDbText"); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(1, t.text);
+    e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(1, t.text);
   }
   e(0, "ENDSEC");
   e(0, "EOF");
