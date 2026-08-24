@@ -415,6 +415,17 @@ export function CogoWorkspace({
       polygonIds = result.polygons.map((_, i) => `poly-${now}-${polyIdRef.current + i}`);
       setPolygons((ps) => [...ps, ...result.polygons!.map((p, i) => ({ id: polygonIds[i], ...p }))]);
       polyIdRef.current += result.polygons.length;
+      // Land Surveyor defaults to the project's configured surveyor (client
+      // req 2026-08-24) — it's the same person for every plot in a project,
+      // so retyping it per polygon was pure busywork. Only pre-fills it;
+      // the Polygons table cell stays freely editable/overridable per plot.
+      if (config.surveyor.trim()) {
+        setPolygonMeta((m) => {
+          const next = { ...m };
+          for (const id of polygonIds) next[id] = { ...next[id], surveyor: next[id]?.surveyor ?? config.surveyor };
+          return next;
+        });
+      }
     }
     if (result.texts?.length) {
       setTexts((ts) => [
@@ -791,6 +802,11 @@ export function CogoWorkspace({
     const polyId = `travpoly-${Date.now()}`;
     const boundaryPts = boundary.map((p) => ({ name: p.name, east: p.east, north: p.north }));
     setPolygons((ps) => [...ps, { id: polyId, name: plotNumber || undefined, points: boundaryPts }]);
+    // Land Surveyor defaults to the project's configured surveyor (client
+    // req 2026-08-24) — same reasoning as addToolResult's polygon branch.
+    if (config.surveyor.trim()) {
+      setPolygonMeta((m) => ({ ...m, [polyId]: { ...m[polyId], surveyor: m[polyId]?.surveyor ?? config.surveyor } }));
+    }
     if (plotNumber) {
       setPolygonMeta((m) => ({ ...m, [polyId]: { ...m[polyId], position: plotNumber } }));
       setLastPlotNumber(plotNumber);
@@ -1073,10 +1089,16 @@ export function CogoWorkspace({
     setLines((ls) => [...ls, ...newLines]);
     setTexts((ts) => [...ts, ...newTexts]);
     if (resultBoundary.closed && resultBoundary.points.length >= 3) {
+      const polyId = `cogores-poly-${now}`;
       setPolygons((ps) => [
         ...ps,
-        { id: `cogores-poly-${now}`, points: resultBoundary.points.map((p) => ({ name: p.name ?? "", east: p.east, north: p.north })) },
+        { id: polyId, points: resultBoundary.points.map((p) => ({ name: p.name ?? "", east: p.east, north: p.north })) },
       ]);
+      // Land Surveyor defaults to the project's configured surveyor (client
+      // req 2026-08-24) — same reasoning as the other polygon-creation paths.
+      if (config.surveyor.trim()) {
+        setPolygonMeta((m) => ({ ...m, [polyId]: { ...m[polyId], surveyor: config.surveyor } }));
+      }
     }
     frameOn(resultBoundary.points.map((p, i) => ({ id: `cogores-frame-${i}`, name: p.name ?? "", east: p.east, north: p.north })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
