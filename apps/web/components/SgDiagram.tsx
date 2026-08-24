@@ -69,31 +69,47 @@ export function certificationLine(meta: DiagramMeta): string {
   }
 }
 
-/** A hand-drawn dashed extension line + free-text label on the diagram
- *  (client req 2026-08-22, Part 24) — the client clarified these lines are
- *  added manually by the surveyor (there's no reliable survey data to
- *  compute them from), so they're plain SVG-space coordinates the user
- *  clicked on the rendered diagram itself, not derived from a boundary
- *  side. Persisted with the diagram so they round-trip and appear in the
- *  exported SVG/PDF. */
+/** A hand-drawn dashed extension line the surveyor draws directly on the
+ *  diagram (client req 2026-08-22, Part 24) — there's no survey data to
+ *  compute it from, so its endpoints are wherever the surveyor clicked, but
+ *  stored as real east/north survey coordinates (the same space the
+ *  boundary itself lives in), not raw page pixels. Storing raw page
+ *  coordinates was a real bug (client req 2026-08-25, "when I zoom, those
+ *  edits are left behind... should be fixed to the drawing"): the figure's
+ *  on-page position and scale are recomputed from meta.scale/the boundary
+ *  every render, so a line anchored to a fixed pixel position drifts off
+ *  the boundary the moment either changes, instead of staying attached to
+ *  whatever point on the plot the surveyor actually clicked. */
 export interface ManualAnnotation {
   id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  e1: number;
+  n1: number;
+  e2: number;
+  n2: number;
 }
 
 /** A free-text note the surveyor places directly on the diagram (client req
- *  2026-08-24: "I want to Add text there... How do I add Text") — same
- *  plain SVG-space-coordinate approach as the manual extension lines above,
- *  for cases the fixed template wording doesn't cover (e.g. a note next to
- *  a specific corner). */
+ *  2026-08-24: "I want to Add text there... How do I add Text"), anchored
+ *  in the same real east/north survey coordinates as the extension lines
+ *  above and for the same reason — it has to stay attached to the plot
+ *  when the figure's scale/position recomputes, not drift off at a fixed
+ *  page position. */
 export interface ManualText {
   id: string;
-  x: number;
-  y: number;
+  east: number;
+  north: number;
   text: string;
+}
+
+/** Live conversion between this diagram's on-page pixel space and the real
+ *  survey east/north coordinates it's drawn from — handed to the caller via
+ *  onTransform so annotations/text (drawn and dragged in page-pixel terms,
+ *  same as any other pointer interaction) can be stored in survey
+ *  coordinates and always stay attached to the boundary, however the
+ *  figure's scale or position recompute (client req 2026-08-25). */
+export interface DiagramTransform {
+  toScreen: (east: number, north: number) => { x: number; y: number };
+  toWorld: (x: number, y: number) => { east: number; north: number };
 }
 
 interface Props {
@@ -145,6 +161,12 @@ interface Props {
    *  robustness as the extension-line grips (Part 28); a single point has
    *  no length/angle to stretch or rotate, so move is the only mode. */
   onTextHandleDown?: (id: string, e: PointerEvent<SVGElement>) => void;
+  /** Fires on every render with this diagram's current pixel<->survey-
+   *  coordinate conversion (client req 2026-08-25) — the caller stores it
+   *  in a ref (not state — this runs during render, so setState here would
+   *  be a React anti-pattern) and uses it to convert annotation/text
+   *  clicks and drags to/from real east/north before persisting them. */
+  onTransform?: (t: DiagramTransform) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -230,7 +252,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   {
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
-    manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown,
+    manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTransform,
   },
   ref
 ) {
@@ -462,6 +484,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   const offY = fig.y + (fig.h - dh) / 2;
   const toX = (e: number) => offX + (e - minE) * sc;
   const toY = (north: number) => offY + (maxN - north) * sc;
+  // Inverse of toX/toY (client req 2026-08-25) — lets the caller convert a
+  // pixel-space click/drag back to real survey coordinates so annotations
+  // stay attached to the boundary regardless of how this scale/offset
+  // recomputes later (a fixed pixel position doesn't).
+  onTransform?.({
+    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
+    toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
+  });
   const cx = toX(avg(es)), cy = toY(avg(nsv));
   const polyPoints = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
   // Screen-space vertices + point-in-polygon test, used to pick which side of
@@ -701,10 +731,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           dashed stroke itself. */}
       {(manualAnnotations ?? []).map((a) => {
         const isSel = selectedAnnotationId === a.id;
+        const x1 = toX(a.e1), y1 = toY(a.n1), x2 = toX(a.e2), y2 = toY(a.n2);
         return (
           <g key={a.id}>
             <line
-              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              x1={x1} y1={y1} x2={x2} y2={y2}
               stroke="transparent"
               strokeWidth={16}
               onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
@@ -712,7 +743,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               style={{ cursor: isSel ? "move" : "pointer" }}
             />
             <line
-              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              x1={x1} y1={y1} x2={x2} y2={y2}
               stroke="black"
               strokeWidth={isSel ? 2.2 : 1}
               strokeDasharray="6 4"
@@ -721,13 +752,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             {isSel && (
               <>
                 <circle
-                  cx={a.x1} cy={a.y1} r={9} fill="white" stroke="black" strokeWidth={1.4}
+                  cx={x1} cy={y1} r={9} fill="white" stroke="black" strokeWidth={1.4}
                   onPointerDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "start", e); }}
                   onClick={(e) => e.stopPropagation()}
                   style={{ cursor: "grab" }}
                 />
                 <circle
-                  cx={a.x2} cy={a.y2} r={9} fill="white" stroke="black" strokeWidth={1.4}
+                  cx={x2} cy={y2} r={9} fill="white" stroke="black" strokeWidth={1.4}
                   onPointerDown={(e) => { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "end", e); }}
                   onClick={(e) => e.stopPropagation()}
                   style={{ cursor: "grab" }}
@@ -748,7 +779,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         return (
           <text
             key={t.id}
-            x={t.x} y={t.y}
+            x={toX(t.east)} y={toY(t.north)}
             fontSize={FS_BEACON_HEAD}
             textDecoration={isSel ? "underline" : undefined}
             onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}

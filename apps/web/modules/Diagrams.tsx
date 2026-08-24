@@ -5,7 +5,7 @@ import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import type { CogoResult, ParcelDoc } from "@/lib/types";
-import { SgDiagram, type DiagramKind, type DiagramMeta, type ManualAnnotation, type ManualText } from "@/components/SgDiagram";
+import { SgDiagram, type DiagramKind, type DiagramMeta, type DiagramTransform, type ManualAnnotation, type ManualText } from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -198,6 +198,7 @@ export function Diagrams() {
     rotate: boolean;
     startSvg: { x: number; y: number };
     orig: { x1: number; y1: number; x2: number; y2: number };
+    origWorld: { e1: number; n1: number; e2: number; n2: number };
     lengthText: string;
     angleText: string;
   } | null>(null);
@@ -210,10 +211,28 @@ export function Diagrams() {
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string } | null>(null);
-  const [draggingText, setDraggingText] = useState<{ id: string; startSvg: { x: number; y: number }; orig: { x: number; y: number } } | null>(null);
+  const [draggingText, setDraggingText] = useState<{
+    id: string;
+    startSvg: { x: number; y: number };
+    orig: { x: number; y: number };
+    origWorld: { east: number; north: number };
+  } | null>(null);
+  // Live pixel<->survey-coordinate conversion for the diagram currently on
+  // screen (client req 2026-08-25) — a ref, not state: SgDiagram hands this
+  // over during its own render, so writing it via setState here would be a
+  // React anti-pattern (render-phase side effect triggering a re-render).
+  // Annotations/text are drawn and dragged in pixel terms (that's what a
+  // mouse/pointer event gives you) but PERSISTED in real east/north, same
+  // as the boundary itself, so they stay attached to the plot regardless of
+  // how the figure's scale or position later recompute — storing raw pixel
+  // positions was the bug: they'd stay exactly where drawn on the page even
+  // after the boundary moved/rescaled under them ("when I zoom, those edits
+  // are left behind... should be fixed to the drawing").
+  const transformRef = useRef<DiagramTransform | null>(null);
   // Diagram-sheet mm/unit ratio (matches SgDiagram.tsx's own MM=10 constant)
-  // — these annotation lines live in SVG/print-sheet space, not real ground
-  // coordinates, so their live readout is printed millimetres, not metres.
+  // — the live length/angle readout while dragging works in pixel/mm terms
+  // (what's on the printed sheet), not real ground metres, since these are
+  // freehand annotations, not measured survey data.
   const ANN_MM = 10;
   function annLengthAngle(x1: number, y1: number, x2: number, y2: number): { lengthMm: number; angleDeg: number } {
     const dx = x2 - x1, dy = y2 - y1;
@@ -257,7 +276,12 @@ export function Diagrams() {
     }
     // No label — these lines only mark that a side borders a neighbouring
     // plot (client req 2026-08-23), they don't need to name which one.
-    setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, x1: pendingPoint.x, y1: pendingPoint.y, x2: p.x, y2: p.y }]);
+    // Stored as real survey coordinates, not the raw pixel click (client
+    // req 2026-08-25) — see transformRef's comment above.
+    const t = transformRef.current;
+    const start = t ? t.toWorld(pendingPoint.x, pendingPoint.y) : { east: 0, north: 0 };
+    const end = t ? t.toWorld(p.x, p.y) : { east: 0, north: 0 };
+    setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, e1: start.east, n1: start.north, e2: end.east, n2: end.north }]);
     setPendingPoint(null);
     setDrawingAnnotation(false);
   }
@@ -277,33 +301,37 @@ export function Diagrams() {
     setSelectedTextId((cur) => (cur === id ? null : id));
   }
   function handleTextDoubleClick(id: string) {
-    const t = texts.find((x) => x.id === id);
-    if (!t) return;
-    setTextPrompt({ id, x: t.x, y: t.y, value: t.text });
+    const tt = texts.find((x) => x.id === id);
+    if (!tt) return;
+    const p = transformRef.current?.toScreen(tt.east, tt.north) ?? { x: 0, y: 0 };
+    setTextPrompt({ id, x: p.x, y: p.y, value: tt.text });
   }
   function commitTextPrompt() {
     if (!textPrompt) return;
     const value = textPrompt.value.trim();
     if (value) {
+      const w = transformRef.current?.toWorld(textPrompt.x, textPrompt.y) ?? { east: 0, north: 0 };
       if (textPrompt.id) {
-        setTexts((arr) => arr.map((t) => (t.id === textPrompt.id ? { ...t, text: value } : t)));
+        setTexts((arr) => arr.map((tt) => (tt.id === textPrompt.id ? { ...tt, text: value } : tt)));
       } else {
-        setTexts((arr) => [...arr, { id: `txt-${Date.now()}`, x: textPrompt.x, y: textPrompt.y, text: value }]);
+        setTexts((arr) => [...arr, { id: `txt-${Date.now()}`, east: w.east, north: w.north, text: value }]);
       }
     }
     setTextPrompt(null);
   }
   function deleteSelectedText() {
     if (!selectedTextId) return;
-    setTexts((arr) => arr.filter((t) => t.id !== selectedTextId));
+    setTexts((arr) => arr.filter((tt) => tt.id !== selectedTextId));
     setSelectedTextId(null);
   }
   function handleTextHandleDown(id: string, e: ReactPointerEvent<SVGElement>) {
-    const t = texts.find((x) => x.id === id);
-    if (!t) return;
+    const tt = texts.find((x) => x.id === id);
+    const t = transformRef.current;
+    if (!tt || !t) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragMovedRef.current = false;
-    setDraggingText({ id, startSvg: toSvgPoint(e), orig: { x: t.x, y: t.y } });
+    const p = t.toScreen(tt.east, tt.north);
+    setDraggingText({ id, startSvg: toSvgPoint(e), orig: p, origWorld: { east: tt.east, north: tt.north } });
   }
   function deleteSelectedAnnotation() {
     if (!selectedAnnotationId) return;
@@ -312,40 +340,48 @@ export function Diagrams() {
   }
   function handleAnnotationHandleDown(id: string, handle: "start" | "end" | "move", e: ReactPointerEvent<SVGElement>) {
     const a = annotations.find((x) => x.id === id);
-    if (!a) return;
+    const t = transformRef.current;
+    if (!a || !t) return;
     // Pointer capture (client req 2026-08-24, Part 28) — without it a fast
     // drag that slips the cursor off the small grip hit-target, or off the
     // diagram entirely, stops delivering move events partway through.
     e.currentTarget.setPointerCapture(e.pointerId);
     dragMovedRef.current = false;
-    const { lengthMm, angleDeg } = annLengthAngle(a.x1, a.y1, a.x2, a.y2);
+    const p1 = t.toScreen(a.e1, a.n1);
+    const p2 = t.toScreen(a.e2, a.n2);
+    const { lengthMm, angleDeg } = annLengthAngle(p1.x, p1.y, p2.x, p2.y);
     setDraggingAnnotation({
       id,
       handle,
       rotate: handle !== "move" && e.shiftKey,
       startSvg: toSvgPoint(e),
-      orig: { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2 },
+      orig: { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y },
+      origWorld: { e1: a.e1, n1: a.n1, e2: a.e2, n2: a.n2 },
       lengthText: lengthMm.toFixed(1),
       angleText: formatDms(angleDeg),
     });
   }
   function handleCanvasMouseMove(e: ReactPointerEvent<SVGSVGElement>) {
-    if (draggingText) {
+    const t = transformRef.current;
+    if (draggingText && t) {
       const p = toSvgPoint(e);
       const dx = p.x - draggingText.startSvg.x, dy = p.y - draggingText.startSvg.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
       const { orig, id } = draggingText;
-      setTexts((arr) => arr.map((t) => (t.id === id ? { ...t, x: orig.x + dx, y: orig.y + dy } : t)));
+      const w = t.toWorld(orig.x + dx, orig.y + dy);
+      setTexts((arr) => arr.map((tt) => (tt.id === id ? { ...tt, east: w.east, north: w.north } : tt)));
       return;
     }
-    if (!draggingAnnotation) return;
+    if (!draggingAnnotation || !t) return;
     const p = toSvgPoint(e);
     const dx = p.x - draggingAnnotation.startSvg.x;
     const dy = p.y - draggingAnnotation.startSvg.y;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
     const { orig, handle, id, rotate } = draggingAnnotation;
     if (handle === "move") {
-      setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy } : a)));
+      const w1 = t.toWorld(orig.x1 + dx, orig.y1 + dy);
+      const w2 = t.toWorld(orig.x2 + dx, orig.y2 + dy);
+      setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, e1: w1.east, n1: w1.north, e2: w2.east, n2: w2.north } : a)));
       return;
     }
     const isStart = handle === "start";
@@ -368,7 +404,8 @@ export function Diagrams() {
       ny = orig[isStart ? "y1" : "y2"] + dy;
       ({ lengthMm, angleDeg } = annLengthAngle(pivot.x, pivot.y, nx, ny));
     }
-    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, x1: nx, y1: ny } : { ...a, x2: nx, y2: ny }) : a)));
+    const w = t.toWorld(nx, ny);
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
     setDraggingAnnotation((g) => (g ? { ...g, lengthText: lengthMm.toFixed(1), angleText: formatDms(angleDeg) } : g));
   }
   function handleCanvasMouseUp() {
@@ -381,7 +418,8 @@ export function Diagrams() {
    *  input Enter behavior — ends the drag at exactly the typed values
    *  rather than wherever the mouse happens to be (client req 2026-08-24). */
   function applyAnnotationReadout() {
-    if (!draggingAnnotation || draggingAnnotation.handle === "move") return;
+    const t = transformRef.current;
+    if (!draggingAnnotation || draggingAnnotation.handle === "move" || !t) return;
     const lengthMm = Number(draggingAnnotation.lengthText);
     if (!Number.isFinite(lengthMm) || lengthMm <= 0) return;
     let angleDeg: number;
@@ -396,19 +434,20 @@ export function Diagrams() {
     const rad = (angleDeg * Math.PI) / 180;
     const nx = pivot.x + lengthMm * ANN_MM * Math.sin(rad);
     const ny = pivot.y - lengthMm * ANN_MM * Math.cos(rad);
-    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, x1: nx, y1: ny } : { ...a, x2: nx, y2: ny }) : a)));
+    const w = t.toWorld(nx, ny);
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
     setDraggingAnnotation(null);
   }
   function cancelAnnotationDrag() {
     if (!draggingAnnotation) return;
-    const { orig, id } = draggingAnnotation;
-    setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, ...orig } : a)));
+    const { origWorld, id } = draggingAnnotation;
+    setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, ...origWorld } : a)));
     setDraggingAnnotation(null);
   }
   function cancelTextDrag() {
     if (!draggingText) return;
-    const { orig, id } = draggingText;
-    setTexts((arr) => arr.map((t) => (t.id === id ? { ...t, ...orig } : t)));
+    const { origWorld, id } = draggingText;
+    setTexts((arr) => arr.map((tt) => (tt.id === id ? { ...tt, ...origWorld } : tt)));
     setDraggingText(null);
   }
   // Escape reverts an in-progress grip drag to its pre-drag geometry, closes
@@ -881,6 +920,7 @@ export function Diagrams() {
                 onTextClick={handleTextClick}
                 onTextDoubleClick={handleTextDoubleClick}
                 onTextHandleDown={handleTextHandleDown}
+                onTransform={(t) => { transformRef.current = t; }}
               />
             )}
           </div>
@@ -895,12 +935,14 @@ export function Diagrams() {
           {draggingAnnotation && draggingAnnotation.handle !== "move" && (() => {
             const a = annotations.find((x) => x.id === draggingAnnotation.id);
             const svg = svgRef.current;
-            if (!a || !svg) return null;
+            const tr = transformRef.current;
+            if (!a || !svg || !tr) return null;
             const ctm = svg.getScreenCTM();
             if (!ctm) return null;
+            const svgPos = draggingAnnotation.handle === "start" ? tr.toScreen(a.e1, a.n1) : tr.toScreen(a.e2, a.n2);
             const pt = svg.createSVGPoint();
-            pt.x = draggingAnnotation.handle === "start" ? a.x1 : a.x2;
-            pt.y = draggingAnnotation.handle === "start" ? a.y1 : a.y2;
+            pt.x = svgPos.x;
+            pt.y = svgPos.y;
             const p = pt.matrixTransform(ctm);
             const isRotate = draggingAnnotation.rotate;
             return (
