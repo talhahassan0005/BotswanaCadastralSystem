@@ -546,15 +546,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         {/* Row-label / distance-value split within SIDES METRES (client req
             2026-08-22) — matches the point-letter/Y divider's style: a
             light line starting below the header, not cutting through the
-            merged "SIDES METRES" heading above it. */}
-        <line x1={xSideVal} y1={dataTop} x2={xSideVal} y2={tableBottom} stroke="black" strokeWidth={0.5} />
-        <line x1={xMetR} y1={ty} x2={xMetR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
-        <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
-        <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={0.5} />
-        <line x1={xX} y1={xXDividerTop} x2={xX} y2={tableBottom} stroke="black" strokeWidth={0.5} />
-        <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={0.7} />
+            merged "SIDES METRES" heading above it. Bumped from a hairline
+            (0.5/0.7) to a full solid weight (client req 2026-08-25: "make
+            all the lines black" — thin enough to anti-alias into a faint
+            gray on screen/print despite already being color #000). */}
+        <line x1={xSideVal} y1={dataTop} x2={xSideVal} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        <line x1={xMetR} y1={ty} x2={xMetR} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        <line x1={xX} y1={xXDividerTop} x2={xX} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={1.2} />
         {/* header underline */}
-        <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={0.7} />
+        <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={1.2} />
 
         {/* header row 1 */}
         <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>SIDES</text>
@@ -631,11 +634,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             {/* Open at the bottom, like the top table (client req
                 2026-08-22) — no closing border, just the left divider
                 running down to the signature line below "and Mapping". */}
-            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1} />
+            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1.2} />
             <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
             <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
             <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
-            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1} />
+            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1.2} />
           </>
         );
       })()}
@@ -745,8 +748,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <line
               x1={x1} y1={y1} x2={x2} y2={y2}
               stroke="black"
-              strokeWidth={isSel ? 2.2 : 1}
-              strokeDasharray="6 4"
+              strokeWidth={isSel ? 3 : 1.8}
+              strokeDasharray="16 10"
               style={{ pointerEvents: "none" }}
             />
             {isSel && (

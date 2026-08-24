@@ -749,7 +749,7 @@ export function Diagrams() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{KINDS.find((k) => k.id === kind)?.blurb}</p>
 
-      <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
           {isLease ? (
             <Card title="Tribal Lease Details">
