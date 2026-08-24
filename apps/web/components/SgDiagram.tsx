@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type MouseEvent, type PointerEvent } from "react";
-import { wrapSvgWords, fitSvgText } from "@/lib/wrapSvgText";
+import { wrapSvgWords, clampWords, clampToLines } from "@/lib/wrapSvgText";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -534,17 +534,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         {/* header row 2 */}
         <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>METRES</text>
         <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">Y</text>
-        {(() => {
-          const fit = fitSvgText(`System ${fmtSystem(meta.coordinateSystem)}`, xXR - xY - 12, FS_TABLE_SUB);
-          return <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={fit.fontSize}>{fit.text}</text>;
-        })()}
+        <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB}>
+          {clampWords(`System ${fmtSystem(meta.coordinateSystem)}`, xXR - xY - 12, FS_TABLE_SUB)}
+        </text>
         <text x={xX + (xXR - xX) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
-        {(() => {
-          const fit = fitSvgText(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD);
-          return (
-            <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={fit.fontSize}>{fit.text}</text>
-          );
-        })()}
+        <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_HEAD}>
+          {clampWords(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}
+        </text>
         {/* header row 3 — constants */}
         <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="medium" fontSize={FS_CONSTANTS}>CONSTANTS</text>
         <text x={xY + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
@@ -584,10 +580,9 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {beaconLines.map((ln, i) => (
         <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
       ))}
-      {(() => {
-        const fit = fitSvgText(meta.location, tw - 8, FS_BEACON_HEAD);
-        return <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={fit.fontSize} letterSpacing="1">{fit.text}</text>;
-      })()}
+      <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">
+        {clampWords(meta.location, tw - 8, FS_BEACON_HEAD)}
+      </text>
 
       {/* ===================== Right-side D.S.M / Approved / Director of
           Surveys column (client req 2026-08-22) — reference shows this as
@@ -799,8 +794,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const certY1 = deductionsY - FS_CERT * 1.15;
         const leftColW = VB_W - 700 - (tx + 4) - 20;
         const rightColW = tableRight - (VB_W - 700) - 20;
-        const cert = fitSvgText(certificationLine(meta), leftColW, FS_BEACON_HEAD);
-        const surveyorFit = fitSvgText(meta.surveyor, rightColW, FS_BEACON_HEAD);
+        // A higher word cap than the default 5 — "Surveyed in FEBRUARY 2026
+        // by me," is already 6 words in the ordinary case (more for
+        // Compiled/Framed, which also fold in a source-document
+        // reference), so the default would truncate perfectly normal text.
+        // The character-width fallback still catches genuinely long input.
+        const cert = clampWords(certificationLine(meta), leftColW, FS_BEACON_HEAD, 12);
+        const surveyorFit = clampWords(meta.surveyor, rightColW, FS_BEACON_HEAD);
         let parentLine = 0;
         return (
           <>
@@ -834,13 +834,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             </g>
 
             {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
-            <text x={tx + 4} y={certY1} fontSize={cert.fontSize}>{cert.text}</text>
+            <text x={tx + 4} y={certY1} fontSize={FS_BEACON_HEAD}>{cert}</text>
             <text x={tx + 4} y={deductionsY} fontSize={FS_BEACON_HEAD}>DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
             {/* Plain/simple styling (client req 2026-08-22) — no bold, no
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
                 title read. */}
-            <text x={VB_W - 700} y={certY1} fontSize={surveyorFit.fontSize}>{surveyorFit.text}</text>
+            <text x={VB_W - 700} y={certY1} fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
             <text x={VB_W - 700} y={deductionsY} fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
           </>
         );
@@ -868,29 +868,29 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const compX = valueX("Comp.");
         const degreeSquareX = valueX("Degree Square:");
         const lirNoX = valueX("LIR No:");
-        const gpNo = fitSvgText(dash(meta.gpNo), tableRight - gpNoX - 10, FS_BEACON_HEAD);
-        const srNo = fitSvgText(dash(meta.srNo), tableRight - srNoX - 10, FS_BEACON_HEAD);
-        const dsmFile = fitSvgText(dash(meta.dsmFile), tableRight - dsmFileX - 10, FS_BEACON_HEAD);
-        const comp = fitSvgText(dash(meta.comp), tableRight - compX - 10, FS_BEACON_HEAD);
-        const degreeSquare = fitSvgText(dash(meta.degreeSquare), tableRight - degreeSquareX - 10, FS_BEACON_HEAD);
-        const lirNo = fitSvgText(dash(meta.lirNo), tableRight - lirNoX - 10, FS_BEACON_HEAD);
-        const annexedTo = fitSvgText(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
-        const annexedDate = fitSvgText(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
-        const annexedFavour = fitSvgText(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
-        // Wraps to a second line instead of shrinking/truncating (client req
+        const gpNo = clampWords(dash(meta.gpNo), tableRight - gpNoX - 10, FS_BEACON_HEAD);
+        const srNo = clampWords(dash(meta.srNo), tableRight - srNoX - 10, FS_BEACON_HEAD);
+        const dsmFile = clampWords(dash(meta.dsmFile), tableRight - dsmFileX - 10, FS_BEACON_HEAD);
+        const comp = clampWords(dash(meta.comp), tableRight - compX - 10, FS_BEACON_HEAD);
+        const degreeSquare = clampWords(dash(meta.degreeSquare), tableRight - degreeSquareX - 10, FS_BEACON_HEAD);
+        const lirNo = clampWords(dash(meta.lirNo), tableRight - lirNoX - 10, FS_BEACON_HEAD);
+        const annexedTo = clampWords(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
+        const annexedDate = clampWords(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
+        const annexedFavour = clampWords(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
+        // Wraps to a second line instead of shrinking (client req
         // 2026-08-24: "it should not go beyond the boundary.. it should go
-        // to next line") — unlike the single-line label/value fields above,
-        // this sits alone in open space with genuine room below it before
-        // "Registrar of Deeds", so wrapping (not shrinking) is the right
-        // fix here. The last line keeps the field's original fixed Y so a
-        // short name (the common case) renders in exactly the same spot as
-        // before; a second line only appears when actually needed, stacked
-        // above it.
+        // to next line") — capped at 2 lines: that's all the room there is
+        // before "Registrar of Deeds" below it, so a 3rd line (e.g. from a
+        // long unbroken run with no word breaks) folds into the 2nd and
+        // ellipsizes there instead of climbing into the "of ___" line above
+        // (found via stress-test data). The last line keeps the field's
+        // original fixed Y so a short name (the common case) renders in
+        // exactly the same spot as before.
         const annexNameLines = meta.annexName && meta.annexName.trim()
-          ? wrapSvgWords(meta.annexName.trim().split(/\s+/), annC1 - tx - 40, FS_BEACON_HEAD)
+          ? clampToLines(meta.annexName, annC1 - tx - 40, FS_BEACON_HEAD, 2)
           : [];
         const ANNEX_NAME_LH = FS_BEACON_HEAD * 1.15;
-        const parentDiagramNo = fitSvgText(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50) - 10, FS_BEACON_HEAD);
+        const parentDiagramNo = clampWords(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50) - 10, FS_BEACON_HEAD);
         return (
           <g fontSize={FS_BEACON_HEAD}>
             <rect x={tx} y={annTop} width={tw} height={annBottom - annTop} fill="none" stroke="black" strokeWidth={1.2} />
@@ -899,10 +899,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
             {/* left — Deeds Registry annexure */}
             <text x={tx + 10} y={annTop + 40}>This diagram is annexed to</text>
-            <text x={tx + 10} y={annTop + 90} fontSize={annexedTo.fontSize}>{annexedTo.text}</text>
-            <text x={tx + 10} y={annTop + 140} fontSize={annexedDate.fontSize}>{annexedDate.text}</text>
+            <text x={tx + 10} y={annTop + 90}>{annexedTo}</text>
+            <text x={tx + 10} y={annTop + 140}>{annexedDate}</text>
             <text x={annC1 - 140} y={annTop + 140}>in favour</text>
-            <text x={tx + 10} y={annTop + 190} fontSize={annexedFavour.fontSize}>{annexedFavour.text}</text>
+            <text x={tx + 10} y={annTop + 190}>{annexedFavour}</text>
             {annexNameLines.map((line, i) => (
               <text
                 key={i}
@@ -922,21 +922,21 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <text x={annC1 + 10} y={annTop + 40}>The immediate parent diagram is</text>
             <text x={annC2 - 14} y={annTop + 90} textAnchor="end">Annexed</text>
             <text x={annC1 + 10} y={annTop + 140}>to</text>
-            <text x={annC1 + 50} y={annTop + 140} fontSize={parentDiagramNo.fontSize}>{parentDiagramNo.text}</text>
+            <text x={annC1 + 50} y={annTop + 140}>{parentDiagramNo}</text>
 
             {/* right — registration numbers (label + value in an aligned column, with a gap) */}
             <text x={annC2 + 12} y={annTop + 40}>General Plan No.</text>
-            <text x={gpNoX} y={annTop + 40} fontSize={gpNo.fontSize}>{gpNo.text}</text>
+            <text x={gpNoX} y={annTop + 40}>{gpNo}</text>
             <text x={annC2 + 12} y={annTop + 90}>S.R No.</text>
-            <text x={srNoX} y={annTop + 90} fontSize={srNo.fontSize}>{srNo.text}</text>
+            <text x={srNoX} y={annTop + 90}>{srNo}</text>
             <text x={annC2 + 12} y={annTop + 140}>D.S.M File:</text>
-            <text x={dsmFileX} y={annTop + 140} fontSize={dsmFile.fontSize}>{dsmFile.text}</text>
+            <text x={dsmFileX} y={annTop + 140}>{dsmFile}</text>
             <text x={annC2 + 12} y={annTop + 190}>Comp.</text>
-            <text x={compX} y={annTop + 190} fontSize={comp.fontSize}>{comp.text}</text>
+            <text x={compX} y={annTop + 190}>{comp}</text>
             <text x={annC2 + 12} y={annTop + 240}>Degree Square:</text>
-            <text x={degreeSquareX} y={annTop + 240} fontSize={degreeSquare.fontSize}>{degreeSquare.text}</text>
+            <text x={degreeSquareX} y={annTop + 240}>{degreeSquare}</text>
             <text x={annC2 + 12} y={annTop + 290}>LIR No:</text>
-            <text x={lirNoX} y={annTop + 290} fontSize={lirNo.fontSize}>{lirNo.text}</text>
+            <text x={lirNoX} y={annTop + 290}>{lirNo}</text>
           </g>
         );
       })()}
