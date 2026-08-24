@@ -755,7 +755,7 @@ export function Diagrams() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{KINDS.find((k) => k.id === kind)?.blurb}</p>
 
-      <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
           {isLease ? (
             <Card title="Tribal Lease Details">
@@ -883,19 +883,19 @@ export function Diagrams() {
             <div className="flex flex-col gap-2">
               <Button onClick={downloadSvg}>⬇ Download SVG</Button>
               <Button variant="ghost" onClick={printDiagram}>Print / Save PDF</Button>
-              {!isLease && (
-                <Button variant="ghost" onClick={downloadDxf}>⬇ Download DXF</Button>
-              )}
+              <Button variant="ghost" onClick={downloadDxf}>⬇ Download DXF</Button>
             </div>
-            {!isLease && (
-              <p className="mt-2 text-xs text-slate-400">
-                DXF exports the surveyed geometry (beacons + boundary), not the printed sheet layout — opens
-                directly in AutoCAD and most CAD/GIS software. DGN (MicroStation) isn't available: it's a
-                proprietary binary format with no reliable open writer, so a from-scratch export would risk
-                producing a file that doesn't actually open correctly. If you need DGN, the common path is
-                importing this DXF into MicroStation (or a converter) and saving as DGN there.
-              </p>
-            )}
+            {/* Client req 2026-08-26: "i also want to save Dxf under tribal
+                lease" — the DXF button used to be hidden for the lease kind,
+                but downloadDxf() only ever needed points/sides, which the
+                lease sketch already has same as every other kind. */}
+            <p className="mt-2 text-xs text-slate-400">
+              DXF exports the surveyed geometry (beacons + boundary), not the printed sheet layout — opens
+              directly in AutoCAD and most CAD/GIS software. DGN (MicroStation) isn't available: it's a
+              proprietary binary format with no reliable open writer, so a from-scratch export would risk
+              producing a file that doesn't actually open correctly. If you need DGN, the common path is
+              importing this DXF into MicroStation (or a converter) and saving as DGN there.
+            </p>
           </Card>
         </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import { fmtCoord, fmtDist, toDotted, type DiagramPoint, type DiagramSide } from "./SgDiagram";
+import { areaText, fmtCoord, fmtDist, toDotted, type DiagramPoint, type DiagramSide } from "./SgDiagram";
 import { wrapSvgWords } from "@/lib/wrapSvgText";
 
 /** Land Board "Tribal Lease Sketch" — compiled by Mapping from a base map. */
@@ -45,8 +45,13 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
   // to stay space-separated (not the old no-space join) so it can wrap.
   const DECL_FONT = 12;
   const DECL_LINE_H = 17;
+  // Client req 2026-08-26: this always said "square metres" even for a
+  // large plot (e.g. 99,676 m² read as "9.9676 hectares" everywhere else in
+  // the app) — switch to the same SG under-1ha/over-1ha convention SgDiagram
+  // already uses for its own area line.
+  const areaWords = areaText(meta.areaM2 / 10000).toLowerCase().split(" ");
   const declLines = wrapSvgWords(
-    ["The", "figure", ...figureLetters.split(" "), "represents", "about", Math.round(meta.areaM2).toLocaleString(), "square", "metres", "of", "land"],
+    ["The", "figure", ...figureLetters.split(" "), "represents", "about", ...areaWords, "of", "land"],
     W - 80,
     DECL_FONT
   );

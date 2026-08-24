@@ -57,7 +57,7 @@ function Workspace() {
       <Header activeTab={activeTab} onTab={setActiveTab}>
         <ProjectBar />
       </Header>
-      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
+      <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-6 sm:py-6">
         {/* keyed by loadVersion so opening a project remounts modules with fresh state */}
         <div key={loadVersion}>
           {activeTab === "import" && <DataImport />}
