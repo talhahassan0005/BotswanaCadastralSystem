@@ -63,10 +63,16 @@ function suggestDiagramScale(pts: { east: number; north: number }[]): number {
 /** Default "Beacon Description" text — lists the actual boundary point
  *  names (client req 2026-08-22: "ALL" isn't what the reference shows,
  *  it lists the real letters, e.g. "A,B,C,D : 12mm iron peg"), falling
- *  back to "ALL" only when no points are loaded yet to describe. */
+ *  back to "ALL" only when no points are loaded yet to describe. Capped at
+ *  15 names (client req 2026-08-26) — a beacon-heavy plot's full name list
+ *  otherwise wraps across several lines and reads as clutter; the field
+ *  stays freely editable afterward if the surveyor wants the exact full list. */
+const BEACON_DESCRIPTION_NAME_LIMIT = 15;
 function defaultBeaconDescription(pts: { name: string | null }[]): string {
   const names = pts.map((p) => p.name).filter(Boolean);
-  return `${names.length ? names.join(",") : "ALL"} : 12mm Iron peg`;
+  if (!names.length) return "ALL : 12mm Iron peg";
+  const shown = names.length > BEACON_DESCRIPTION_NAME_LIMIT ? [...names.slice(0, BEACON_DESCRIPTION_NAME_LIMIT), "…"] : names;
+  return `${shown.join(",")} : 12mm Iron peg`;
 }
 
 export function Diagrams() {
@@ -749,7 +755,7 @@ export function Diagrams() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{KINDS.find((k) => k.id === kind)?.blurb}</p>
 
-      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
         <div className="space-y-4">
           {isLease ? (
             <Card title="Tribal Lease Details">

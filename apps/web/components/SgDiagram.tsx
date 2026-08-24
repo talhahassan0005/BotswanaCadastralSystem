@@ -314,22 +314,31 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // bump accidentally drifted them apart by 1pt; restored here.
   const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 26, FS_FOOTER = 21, FS_ANNEX = 24;
 
-  // ---- top data table: fixed 51.0mm band, 14.0mm header (client req,
-  // Part 23) — the table no longer grows the page as points are added;
-  // its 37.0mm data area's row height shrinks instead, so the band below
-  // it (and therefore the bottom registration table's position) never
-  // moves regardless of how many boundary points a plot has. ----
+  // ---- top data table: fixed 51.0mm band, 14.0mm header for a normal-
+  // sized plot (client req, Part 23) — the data area's row height used to
+  // shrink to force every row into that fixed 37.0mm band regardless of
+  // point count, but that meant the row font kept shrinking right along
+  // with it on a beacon-heavy plot (client req 2026-08-26: "font chota ku
+  // hogaya hai points zyada honay ki waja se, ye chota nahi hona chahiye"
+  // — the font must NOT shrink). The font is fixed now; once there are
+  // more rows than the 37.0mm band comfortably fits at that fixed size,
+  // the band itself grows instead (pushing the rest of the page's
+  // dynamically-sized content down, the same way a long legal-description
+  // or beacon-description block already does) — a small, beacon-light plot
+  // (the overwhelmingly common case, and the one Part 23's exact mm figures
+  // were measured against) renders at exactly the original dimensions. ----
   const tx = FRAME_X;
   const tw = FRAME_W;
   const ty = FRAME_Y;
   const headH = 14.0 * MM;
-  const topBandH = 51.0 * MM;
-  const tableBottom = ty + topBandH;
   const dataTop = ty + headH;
-  const dataH = topBandH - headH;
   const n = Math.max(points.length, sides.length, 1);
-  const rowH = dataH / n;
-  const dataFS = Math.max(17, Math.min(FS_TABLE_SUB, rowH * 0.55));
+  const dataFS = FS_TABLE_SUB;
+  const ROW_H_MIN = FS_TABLE_SUB / 0.55; // the row height a fixed-size row actually needs
+  const rowH = Math.max((51.0 * MM - headH) / n, ROW_H_MIN);
+  const dataH = rowH * n;
+  const topBandH = headH + dataH;
+  const tableBottom = ty + topBandH;
 
   // column x boundaries — cumulative from the frame's own left edge,
   // widths per Part 23 (7.9 / 25.6 / 27.9 / 6.6 / 25.5 / 27.0 / 39.9mm).
@@ -546,18 +555,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         {/* Row-label / distance-value split within SIDES METRES (client req
             2026-08-22) — matches the point-letter/Y divider's style: a
             light line starting below the header, not cutting through the
-            merged "SIDES METRES" heading above it. Bumped from a hairline
-            (0.5/0.7) to a full solid weight (client req 2026-08-25: "make
-            all the lines black" — thin enough to anti-alias into a faint
-            gray on screen/print despite already being color #000). */}
-        <line x1={xSideVal} y1={dataTop} x2={xSideVal} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xMetR} y1={ty} x2={xMetR} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xX} y1={xXDividerTop} x2={xX} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+            merged "SIDES METRES" heading above it. */}
+        <line x1={xSideVal} y1={dataTop} x2={xSideVal} y2={tableBottom} stroke="black" strokeWidth={0.5} />
+        <line x1={xMetR} y1={ty} x2={xMetR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
+        <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={0.7} />
+        <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={0.5} />
+        <line x1={xX} y1={xXDividerTop} x2={xX} y2={tableBottom} stroke="black" strokeWidth={0.5} />
+        <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={0.7} />
         {/* header underline */}
-        <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={1.2} />
+        <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={0.7} />
 
         {/* header row 1 */}
         <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>SIDES</text>
@@ -634,11 +640,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             {/* Open at the bottom, like the top table (client req
                 2026-08-22) — no closing border, just the left divider
                 running down to the signature line below "and Mapping". */}
-            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1.2} />
+            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1} />
             <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
             <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
             <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
-            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1.2} />
+            <line x1={xDsm + 16} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1} />
           </>
         );
       })()}
@@ -748,8 +754,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             <line
               x1={x1} y1={y1} x2={x2} y2={y2}
               stroke="black"
-              strokeWidth={isSel ? 3 : 1.8}
-              strokeDasharray="16 10"
+              strokeWidth={isSel ? 2.2 : 1}
+              strokeDasharray="6 4"
               style={{ pointerEvents: "none" }}
             />
             {isSel && (
