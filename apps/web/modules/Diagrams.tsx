@@ -576,53 +576,162 @@ export function Diagrams() {
    *  app's existing DXF writer (client req 2026-08-22) — each boundary point
    *  as a labelled POINT, the boundary itself as a closed LWPOLYLINE, and
    *  any off-boundary reference beacons as their own layer. */
-  /** Beside the beacon labels/boundary, also write the SIDES/DIRECTIONS,
-   *  CO-ORDINATES, beacon description and area declaration as plain TEXT
-   *  entities next to the plot (client req 2026-08-26: "dxf main properly
-   *  complete details ke sath download nahi ho rahi hai" — a bare outline
-   *  read as missing data next to the full printed sheet, even though the
-   *  points/labels were already there). This is deliberately NOT a replica
-   *  of the printed A4 sheet's fixed-mm layout: that layout and the
-   *  boundary's real-world survey coordinates have no common scale, so
-   *  mixing them in one DXF space would make one or the other unreadable.
-   *  Instead the same schedule the sheet prints is written as notes at a
-   *  text height scaled to the plot's own extent, positioned right below
-   *  it — readable at zoom-to-extents like any other CAD annotation. */
+  /** Replicates the printed sheet's frame border, top data table (grid
+   *  lines + headers + rows), north arrow, and title/area text as real DXF
+   *  geometry (client req 2026-08-26: "I want the dxf to come exactly the
+   *  way it is in the system" — a text-only schedule wasn't enough).
+   *
+   *  The printed sheet's layout lives in fixed page-mm coordinates totally
+   *  unrelated to the boundary's real east/north scale, so this can't just
+   *  copy SgDiagram's numbers verbatim — instead every page-mm point (each
+   *  grid line's endpoints, each label's anchor) is run through the SAME
+   *  toWorld() transform the diagram itself exposes via onTransform, which
+   *  is exactly the map SgDiagram uses to place the boundary on the page,
+   *  just inverted. That guarantees the table/frame/north-arrow land at
+   *  the correct real-world size and position relative to the boundary —
+   *  the two are never fighting over a shared coordinate space, they're
+   *  both already expressed in it.
+   *
+   *  The column widths/row-height math below is intentionally identical to
+   *  SgDiagram's own top-table formulas (Part 23 mm figures, the
+   *  beacon-count-aware row growth from the "font must not shrink" fix) —
+   *  if either changes, keep them in sync so the DXF actually matches what
+   *  prints. Deliberately scoped to the frame + top table + north arrow +
+   *  title/area text, not the bottom deeds/annexure table or the D.S.M/
+   *  Approved signature block — those are pure lodging boilerplate with no
+   *  survey data in them, unlike everything included here. */
   function downloadDxf() {
-    const es = points.map((p) => p.east);
-    const ns = points.map((p) => p.north);
     const notes: ImportedDrawing["texts"] = [];
-    if (points.length) {
-      const spanE = Math.max(...es) - Math.min(...es);
-      const spanN = Math.max(...ns) - Math.min(...ns);
-      const th = Math.max(Math.max(spanE, spanN) * 0.018, 0.3);
-      const lineH = th * 1.6;
-      const noteX = Math.min(...es);
-      let y = Math.min(...ns) - lineH * 2;
-      const row = (text: string) => {
-        if (text) notes.push({ x: noteX, y, text, height: th, layer: "NOTES" });
-        y -= lineH;
+    const sheetLines: ImportedDrawing["polylines"] = [];
+    const t = transformRef.current;
+
+    if (points.length && t) {
+      // One page-unit's real-world length (metres per unit, MM=10
+      // units/mm matching SgDiagram) — toWorld() maps positions, not
+      // lengths, so text height needs this separately.
+      const o = t.toWorld(0, 0);
+      const u = t.toWorld(1, 0);
+      const metresPerUnit = Math.hypot(u.east - o.east, u.north - o.north) || 1e-6;
+      const w = (x: number, y: number) => t.toWorld(x, y);
+      const line = (x1: number, y1: number, x2: number, y2: number) => {
+        const a = w(x1, y1), b = w(x2, y2);
+        sheetLines.push({ pts: [{ x: a.east, y: a.north }, { x: b.east, y: b.north }], closed: false, layer: "SHEET" });
       };
-      row(meta.lotName || "");
-      row("");
-      row("SIDE      DISTANCE      DIRECTION");
-      for (const s of sides) row(`${(s.from ?? "") + (s.to ?? "")}      ${fmtDist(s.distance)}      ${toDotted(s.bearing_dms)}`);
-      row("");
-      row("PT      Y (EAST)      X (NORTH)");
-      for (const p of points) row(`${p.name ?? ""}      ${fmtCoord(p.east)}      ${fmtCoord(p.north)}`);
-      row("");
-      row(meta.beaconDescription || "");
-      if (fig) row(`Figure ${points.map((p) => p.name ?? "?").join(" ")} represents about ${areaText(fig.area_ha).toLowerCase()}.`);
+      const text = (x: number, y: number, s: string, heightUnits: number) => {
+        if (!s) return;
+        const p = w(x, y);
+        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET" });
+      };
+      const sideLbl = (from: string | null, to: string | null) => {
+        const f = from ?? "", tt = to ?? "";
+        return f.length <= 1 && tt.length <= 1 ? `${f}${tt}` : `${f}-${tt}`;
+      };
+      const fmtSys = (cs: string) => {
+        const m = cs.match(/Lo\s*(\d+)/i);
+        return m ? `LO. ${m[1]}°` : cs;
+      };
+
+      // ---- Same page-mm geometry as SgDiagram's frame + top table ----
+      const MM = 10;
+      const FRAME_X = 24.8 * MM, FRAME_Y = 12.2 * MM, FRAME_W = 160.4 * MM, FRAME_H = 272.9 * MM;
+      const tx = FRAME_X, tw = FRAME_W, ty = FRAME_Y;
+      const headH = 14.0 * MM;
+      const dataTop = ty + headH;
+      const n = Math.max(points.length, sides.length, 1);
+      const FS = 28; // matches FS_TABLE_SUB
+      const rowH = Math.max((51.0 * MM - headH) / n, FS / 0.55);
+      const tableBottom = ty + headH + rowH * n;
+      const maxSideLabelChars = Math.max(2, ...sides.map((s) => sideLbl(s.from, s.to).length));
+      const sideValExtra = Math.min(200, Math.max(0, maxSideLabelChars * FS * 0.62 + 16 - 7.9 * MM));
+      const xSideVal = tx + 7.9 * MM + sideValExtra;
+      const xMetR = xSideVal + 25.6 * MM;
+      const xDir = xMetR, xDirR = xDir + 27.9 * MM;
+      const xPt = xDirR, xPtR = xPt + 6.6 * MM;
+      const xY = xPtR, xYR = xY + 25.5 * MM;
+      const xX = xYR, xXR = xX + 27.0 * MM;
+      const xDsm = xXR - 40;
+      const tableRight = tx + tw;
+      const hRow1 = ty + headH * 0.26, hRow2 = ty + headH * 0.56;
+
+      // Outer frame border.
+      line(tx, ty, tableRight, ty);
+      line(tableRight, ty, tableRight, ty + FRAME_H);
+      line(tableRight, ty + FRAME_H, tx, ty + FRAME_H);
+      line(tx, ty + FRAME_H, tx, ty);
+
+      // Table dividers + header underline.
+      line(xSideVal, dataTop, xSideVal, tableBottom);
+      line(xMetR, ty, xMetR, tableBottom);
+      line(xDirR, ty, xDirR, tableBottom);
+      line(xY, ty, xY, tableBottom);
+      line(xX, ty, xX, tableBottom);
+      line(xDsm, ty, xDsm, tableBottom);
+      line(tx, dataTop, xDsm, dataTop);
+
+      // Header text.
+      text((tx + xMetR) / 2, hRow1, "SIDES", FS);
+      text((xDir + xDirR) / 2, hRow1, "DIRECTIONS", FS);
+      text((xPt + xXR) / 2, hRow1, "CO-ORDINATES", FS);
+      text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS);
+      text((tx + xMetR) / 2, hRow2, "METRES", FS - 5);
+      text(xPt + (xY - xPt) / 2, hRow2, "Y", FS - 5);
+      text((xY + xXR) / 2, hRow2, `System ${fmtSys(meta.coordinateSystem)}`, FS - 8);
+      text(xX + (xXR - xX) / 2, hRow2, "X", FS - 5);
+      text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS);
+
+      // Data rows.
+      for (let i = 0; i < n; i++) {
+        const s = sides[i];
+        const p = points[i];
+        const y = dataTop + i * rowH + rowH * 0.7;
+        if (s) {
+          text(tx + 10, y, sideLbl(s.from, s.to), FS);
+          text(xMetR - 200, y, fmtDist(s.distance), FS);
+          text(xDir + 12, y, toDotted(s.bearing_dms), FS);
+        }
+        if (p) {
+          text(xPt + 8, y, p.name ?? "", FS);
+          text(xY + 8, y, fmtCoord(p.east), FS);
+          text(xX + 8, y, fmtCoord(p.north), FS);
+        }
+      }
+
+      // North arrow (simple line + triangle, positioned left of the figure area).
+      const naX = tx + 90, naY = tableBottom + 400;
+      line(naX, naY + 54, naX, naY - 170);
+      line(naX, naY - 170, naX - 14, naY - 55);
+      line(naX - 14, naY - 55, naX + 4, naY - 30);
+      line(naX + 4, naY - 30, naX, naY - 170);
+      text(naX - 20, naY + 90, "T", FS);
+      text(naX + 8, naY + 90, "N", FS);
+
+      // Title / legal description / area declaration (single-line, not
+      // word-wrapped like the printed sheet — a CAD import doesn't need
+      // the sheet's line-wrap, just the text itself).
+      let titleY = ty - 60;
+      const title = (s: string, h = FS + 6) => { if (s) { text(tx + tw / 2, titleY, s, h); titleY -= h * 1.6; } };
+      const figureLetters = points.map((p) => p.name ?? "?").join(" ");
+      if (fig) title(`THE FIGURE ${figureLetters} REPRESENTS ${areaText(fig.area_ha)} OF LAND CALLED`);
+      title(meta.lotName || "", FS + 8);
+      if (meta.parent) title(`(${meta.parent})`);
+      title(`SITUATE AT ${meta.location || ""} IN THE ${meta.tribalArea || ""}`);
+
+      // Beacon description, bottom-left under the table.
+      text(tx + 4, tableBottom + 60, "BEACON DESCRIPTION", FS);
+      text(tx + 4, tableBottom + 60 + FS * 1.6, meta.beaconDescription || "", FS);
     }
+
     const drawing: ImportedDrawing = {
       points: [
         ...points.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "BEACONS" })),
         ...extraPoints.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "REFERENCE" })),
       ],
-      polylines:
-        points.length >= 2
+      polylines: [
+        ...(points.length >= 2
           ? [{ pts: points.map((p) => ({ x: p.east, y: p.north })), closed: fig?.type === "closed", layer: "BOUNDARY" }]
-          : [],
+          : []),
+        ...sheetLines,
+      ],
       texts: notes,
     };
     const dxf = writeDxf(drawing);
