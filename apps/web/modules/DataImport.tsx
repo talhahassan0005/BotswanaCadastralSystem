@@ -83,7 +83,7 @@ export function DataImport() {
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl border-2 border-brand/40 text-2xl text-brand">
         </div>
         <p className="text-lg font-medium text-brand-dark">Drop your survey file here</p>
-        <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT observations, or a DXF / Shapefile parent diagram</p>
+        <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT / Excel (.xlsx) observations, or a DXF / Shapefile parent diagram</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <Button onClick={() => fileRef.current?.click()} loading={busy}>Browse file</Button>
           <Button variant="ghost" onClick={loadSample} loading={busy}>
@@ -93,7 +93,7 @@ export function DataImport() {
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.txt,.dxf,.shp"
+          accept=".csv,.txt,.dxf,.shp,.xlsx"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
