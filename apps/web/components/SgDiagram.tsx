@@ -648,8 +648,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // so keeping the block near the top reads correctly regardless of
         // how tall the neighboring coordinate table gets.
         const dsmBoxTop = ty + headH;
-        const dsmApprovedY = dsmBoxTop + 25;
-        const dosY1 = dsmBoxTop + 100;
+        const dsmApprovedY = dsmBoxTop +(90);
+        const dosY1 = dsmBoxTop+530 ;
         const dosY2 = dosY1 + FS_DOS * 1.3;
         const dosLineY = dosY2 + FS_DOS * 1.1;
         return (
