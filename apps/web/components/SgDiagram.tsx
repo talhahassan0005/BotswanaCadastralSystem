@@ -634,16 +634,26 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           top/left/right edges are already the frame's + table's own
           borders; only the box's closing bottom edge is new here. */}
       {(() => {
-        const dsmApprovedY = tableBottom + 25;
-        const dosY1 = tableBottom + 100;
+        // Anchored right under the "D.S.M No." header (not tableBottom) —
+        // client req 2026-08-26: tableBottom moves with point count (a
+        // beacon-heavy plot's table now grows taller, Part 23-vs-consistency
+        // fix), which was dragging "Approved" down and leaving a big dead
+        // gap under the header. This column has no per-row data of its own,
+        // so keeping the block near the top reads correctly regardless of
+        // how tall the neighboring coordinate table gets.
+        const dsmBoxTop = ty + headH;
+        const dsmApprovedY = dsmBoxTop + 25;
+        const dosY1 = dsmBoxTop + 100;
         const dosY2 = dosY1 + FS_DOS * 1.3;
         const dosLineY = dosY2 + FS_DOS * 1.1;
         return (
           <>
             {/* Open at the bottom, like the top table (client req
                 2026-08-22) — no closing border, just the left divider
-                running down to the signature line below "and Mapping". */}
-            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={dosLineY} stroke="black" strokeWidth={1.2} />
+                running down to the signature line below "and Mapping".
+                Only extends past tableBottom if the block itself is taller
+                than the table (never for a normal-sized plot). */}
+            <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
             <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
             <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
             <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
