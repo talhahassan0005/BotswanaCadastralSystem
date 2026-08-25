@@ -19,6 +19,31 @@ export async function listProjects(): Promise<{ data: ProjectRow[]; error?: stri
   return { data: (data as ProjectRow[]) ?? [], error: error?.message };
 }
 
+export interface ProjectSummary extends ProjectRow {
+  /** The lot name entered under Diagrams for this project, if any — pulled
+   *  straight out of the saved state's diagramInput (no separate "lot name"
+   *  column to keep in sync), falling back to the project's own name. */
+  lotName: string;
+}
+
+/** Reports tab Statistics view (client req 2026-08-26, Part 32b): total
+ *  processed files + their lot numbers. Pulls the full `state` column
+ *  (already on this table for loadProject) rather than adding a dedicated
+ *  lot-name column — one extra JSON field read is cheap at the project
+ *  counts a solo surveyor actually has. */
+export async function listProjectSummaries(): Promise<{ data: ProjectSummary[]; error?: string }> {
+  if (!supabase) return { data: [], error: "Backend not configured." };
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id,name,updated_at,state")
+    .order("updated_at", { ascending: false });
+  const rows = ((data as { id: string; name: string; updated_at: string; state?: ProjectState }[]) ?? []).map((r) => {
+    const lotName = (r.state?.diagramInput as { meta?: { lotName?: string } } | undefined)?.meta?.lotName;
+    return { id: r.id, name: r.name, updated_at: r.updated_at, lotName: lotName || r.name };
+  });
+  return { data: rows, error: error?.message };
+}
+
 /** Load a project's full state. */
 export async function loadProject(id: string): Promise<{ name?: string; state?: ProjectState; error?: string }> {
   if (!supabase) return { error: "Backend not configured." };

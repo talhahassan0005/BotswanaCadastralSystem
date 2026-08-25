@@ -2,49 +2,95 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
-import { Badge, Button, Card, Field, Input, Stat } from "@/components/ui";
+import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import type { ParcelDoc } from "@/lib/types";
+import { buildConsistencyLines, buildCoordinateListLines, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
+import type { ParsedRow, PointType } from "@/lib/types";
 
 type DocId = "submission" | "report" | "consistency" | "coordinates" | "comparison";
 
 const DOCS: { id: DocId; label: string; blurb: string }[] = [
   { id: "submission", label: "Submission Letter", blurb: "Formal covering letter lodging the survey with the approving authority." },
   { id: "report", label: "Report on Survey", blurb: "Narrative report describing the survey, method, closure and area." },
-  { id: "consistency", label: "Data Consistency", blurb: "QA / DSM compliance checks confirming the data is internally consistent." },
-  { id: "coordinates", label: "Coordinate List", blurb: "Numbered schedule of all computed beacon coordinates." },
+  { id: "consistency", label: "Data Consistency", blurb: "Per-leg bearing/distance vs. recorded-coordinate misclosure check." },
+  { id: "coordinates", label: "Coordinate List", blurb: "Every project point grouped by type, with description and SR NO." },
   { id: "comparison", label: "Data Comparison", blurb: "Leg-by-leg bearing, distance and adjustment comparison with misclosure summary." },
 ];
+
+interface ChecklistItem {
+  text: string;
+  checked: boolean;
+}
+
+const DEFAULT_CHECKLIST: ChecklistItem[] = [
+  "Report on survey",
+  "Fieldbook report",
+  "Survey Diagrams",
+  "Coordinate list",
+  "Data consistency",
+  "Data Comparison",
+  "Working Plan",
+  "Ownership documents",
+  "Extract",
+].map((text) => ({ text, checked: true }));
+
+const DEFAULT_TO_BLOCK = "The Director\nDepartment of Surveys and Mapping\nP/Bag 0037\nGaborone";
+
+function formatLongDate(d: Date): string {
+  return `${d.getDate()} ${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
+}
 
 function fmt(n: number | null | undefined, dp = 3): string {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toFixed(dp);
 }
 
-function severityLabel(sev: "pass" | "warning" | "error"): string {
-  return sev === "pass" ? "Passed" : sev === "warning" ? "Warning" : "Error";
-}
-
 export function SurveyRecord() {
-  const { config, cogoResult, validation, importResult, parcelDoc, recordInput, setRecordInput } = useStore();
-  const pd = parcelDoc as ParcelDoc | null;
-  const ri = (recordInput ?? {}) as { doc?: DocId; date?: string; fileNo?: string; addressee?: string };
+  const { config, cogoResult, diagramFigure, diagramInput, importResult, setImportResult, recordInput, setRecordInput } = useStore();
+  const fig = diagramFigure ?? cogoResult;
+
+  // Diagrams module's own fields (client req 2026-08-26, Part 32c/32d: "pull
+  // directly from the Diagram module's existing fields" for lot name, tribal
+  // territory, land surveyor, and default date of survey — not re-collected
+  // here).
+  const dMeta = (diagramInput as { meta?: { lotName?: string; tribalArea?: string; surveyor?: string; surveyedDate?: string } } | null)?.meta;
+  const lotName = dMeta?.lotName || config.name || "the surveyed property";
+  const tribalArea = dMeta?.tribalArea || "";
+  const surveyor = dMeta?.surveyor || config.surveyor || "Land Surveyor";
+
+  const ri = (recordInput ?? {}) as {
+    doc?: DocId;
+    date?: string;
+    toBlock?: string;
+    checklist?: ChecklistItem[];
+    assistedBy?: string;
+    dateOfSurvey?: string;
+    purpose?: string;
+    authority?: string;
+    calcBasis?: string;
+    method?: string;
+    declaredArea?: string;
+  };
 
   const [doc, setDoc] = useState<DocId>(ri.doc ?? "submission");
-  const [date, setDate] = useState(() => ri.date ?? new Date().toLocaleDateString());
-  const [fileNo, setFileNo] = useState(ri.fileNo ?? "");
-  const [addressee, setAddressee] = useState(ri.addressee ?? "The Director, Department of Surveys and Mapping");
+  const [date, setDate] = useState(() => ri.date ?? formatLongDate(new Date()));
+  const [toBlock, setToBlock] = useState(ri.toBlock ?? DEFAULT_TO_BLOCK);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(ri.checklist ?? DEFAULT_CHECKLIST);
+  const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? "");
+  const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey ?? dMeta?.surveyedDate ?? "");
+  const [purpose, setPurpose] = useState(ri.purpose ?? "");
+  const [authority, setAuthority] = useState(ri.authority ?? "");
+  const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
+  const [method, setMethod] = useState(ri.method ?? "");
+  const [declaredArea, setDeclaredArea] = useState(ri.declaredArea ?? "");
 
-  // Persist the letter/report fields so the date/file-no/addressee round-trip
-  // with the project (instead of resetting the date to "today" on every reopen).
+  // Persist every field so the letter/report round-trips with the project
+  // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, fileNo, addressee });
-  }, [doc, date, fileNo, addressee, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea });
+  }, [doc, date, toBlock, checklist, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, setRecordInput]);
 
   const docRef = useRef<HTMLDivElement>(null);
-
-  const lotName = config.name || "the surveyed property";
-  const surveyor = config.surveyor || "Land Surveyor";
 
   /** Print the currently-displayed document block (its rendered HTML). */
   function printDoc() {
@@ -65,6 +111,7 @@ export function SurveyRecord() {
         `th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}` +
         `th{background:#f1f5f9}.muted{color:#64748b}.right{text-align:right}` +
         `.sign{margin-top:48px}.sep{margin:6px 0;border:none;border-top:1px solid #cbd5e1}` +
+        `pre{white-space:pre-wrap;font-family:'Courier New',monospace;font-size:10pt}` +
         `</style></head>` +
         `<body onload="window.print()">${docRef.current.innerHTML}</body></html>`
     );
@@ -78,25 +125,34 @@ export function SurveyRecord() {
     if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => undefined);
   }
 
-  // --- Coordinate list source resolution (cogo → parcelDoc → importResult) ---
-  const coordRows: { label: string; east: number; north: number }[] = (() => {
-    if (cogoResult?.points?.length) {
-      return cogoResult.points.map((p, i) => ({
-        label: p.name ?? `P${i + 1}`,
-        east: p.east,
-        north: p.north,
-      }));
-    }
-    if (pd?.beacons?.length) {
-      return pd.beacons.map((b) => ({ label: b.id, east: b.east, north: b.north }));
-    }
-    if (importResult?.rows?.length) {
-      return importResult.rows
-        .filter((r) => r.east !== null && r.north !== null)
-        .map((r, i) => ({ label: r.beaconId ?? `P${i + 1}`, east: r.east as number, north: r.north as number }));
-    }
-    return [];
-  })();
+  // --- Data Consistency (Part 30) ---
+  const consistencyLines = fig && fig.points.length >= 3 && fig.legs.length >= 3 ? buildConsistencyLines(fig.points, fig.legs) : null;
+  function downloadConsistency() {
+    if (!consistencyLines || !fig) return;
+    const areaLine = declaredArea.trim()
+      ? `The area is ${Number(declaredArea).toFixed(2)} (${fig.area_m2.toFixed(2)}) square metres.`
+      : `The area is ${fig.area_m2.toFixed(2)} square metres.`;
+    const lines = ["Consistency Report", "", lotName, "", ...consistencyLines, areaLine];
+    downloadText(`${lotName.replace(/\s+/g, "_")}_consistency_report.txt`, lines.join("\n"), "text/plain");
+  }
+
+  // --- Coordinate List (Part 31b) ---
+  const rawLotName = dMeta?.lotName || "";
+  const coordListTitle = `Survey of Lot ${rawLotName.replace(/^lot\s+/i, "") || rawLotName || "—"}`;
+  const coordSysShort = config.coordinateSystem.replace(" Botswana", "").replace(/(\d+)/, "$1°");
+  const coordListSubtitle = `Coordinate List of ${coordSysShort} (Metres)`;
+  const coordListRows = importResult?.rows ?? [];
+  const coordListLines = coordListRows.some((r) => r.east != null && r.north != null)
+    ? buildCoordinateListLines(coordListRows, coordListTitle, coordListSubtitle)
+    : null;
+  function setPointMeta(index: number, patch: Partial<Pick<ParsedRow, "description" | "srNo">>) {
+    if (!importResult) return;
+    setImportResult({ ...importResult, rows: importResult.rows.map((r) => (r.index === index ? { ...r, ...patch } : r)) });
+  }
+  function downloadCoordinateListReport() {
+    if (!coordListLines) return;
+    downloadText(`${lotName.replace(/\s+/g, "_")}_coordinate_list.txt`, coordListLines.join("\n"), "text/plain");
+  }
 
   return (
     <div className="space-y-5">
@@ -126,44 +182,191 @@ export function SurveyRecord() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{DOCS.find((d) => d.id === doc)?.blurb}</p>
 
-      {/* Editable letter fields */}
-      <Card title="Document details">
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Date"><Input value={date} onChange={setDate} placeholder="e.g. 15 June 2026" /></Field>
-          <Field label="File / Reference No."><Input value={fileNo} onChange={setFileNo} placeholder="e.g. SR 1234" /></Field>
-          <Field label="Addressee"><Input value={addressee} onChange={setAddressee} /></Field>
-        </div>
-      </Card>
+      {/* Doc-specific editable fields */}
+      {doc === "submission" && (
+        <Card title="Submission letter details">
+          <div className="space-y-3">
+            <Field label="Date"><Input value={date} onChange={setDate} placeholder="e.g. 26 August 2026" /></Field>
+            <Field label='"To:" address block'>
+              <textarea
+                value={toBlock}
+                onChange={(e) => setToBlock(e.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none"
+              />
+            </Field>
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-500">Enclosed documents (untick or edit any that don't apply)</div>
+              <div className="space-y-1.5">
+                {checklist.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={item.checked}
+                      onChange={(e) => setChecklist((c) => c.map((it, j) => (j === i ? { ...it, checked: e.target.checked } : it)))}
+                    />
+                    <input
+                      value={item.text}
+                      onChange={(e) => setChecklist((c) => c.map((it, j) => (j === i ? { ...it, text: e.target.value } : it)))}
+                      className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setChecklist((c) => c.filter((_, j) => j !== i))}
+                      className="text-slate-400 hover:text-red-600"
+                      aria-label="Remove item"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setChecklist((c) => [...c, { text: "", checked: true }])}
+                className="mt-2 text-xs font-medium text-brand underline"
+              >
+                + Add item
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {doc === "report" && (
+        <Card title="Report on Survey details">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Assisted by"><Input value={assistedBy} onChange={setAssistedBy} placeholder="e.g. K. Moatlhodi" /></Field>
+            <Field label="Date of Survey"><Input value={dateOfSurvey} onChange={setDateOfSurvey} placeholder="e.g. February 2026" /></Field>
+          </div>
+          <div className="mt-3 space-y-3">
+            <Field label="1. Purpose">
+              <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} placeholder={`Survey of ${lotName}`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+            </Field>
+            <Field label="2. Authority">
+              <textarea value={authority} onChange={(e) => setAuthority(e.target.value)} rows={2} placeholder="e.g. Land Board name" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+            </Field>
+            <Field label="3. Calculation Basis">
+              <textarea value={calcBasis} onChange={(e) => setCalcBasis(e.target.value)} rows={2} placeholder={`e.g. Based on ${displayCrs(config.coordinateSystem)} system using ${dMeta?.tribalArea || "local"} Reference Marks.`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+            </Field>
+            <Field label="4. Method">
+              <textarea value={method} onChange={(e) => setMethod(e.target.value)} rows={4} placeholder="Describe GPS/total-station equipment, beacons found/adopted with SR numbers, working-station occupation, calibration, coordinate computation and transformation, checks performed…" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+            </Field>
+          </div>
+        </Card>
+      )}
+
+      {doc === "consistency" && (
+        <Card title="Data consistency details">
+          <div className="max-w-xs">
+            <Field label="Declared area from title deed (optional)">
+              <Input type="number" value={declaredArea} onChange={setDeclaredArea} placeholder={fig ? `e.g. ${fig.area_m2.toFixed(2)}` : "e.g. 981.00"} />
+            </Field>
+          </div>
+        </Card>
+      )}
 
       {/* Rendered, printable document block */}
       <Card>
         <div ref={docRef} className="space-y-4 text-sm text-slate-700">
           {doc === "submission" && (
-            <SubmissionLetter
-              addressee={addressee}
-              date={date}
-              fileNo={fileNo}
-              lotName={lotName}
-              surveyor={surveyor}
-              discipline={config.discipline}
-            />
+            <SubmissionLetter toBlock={toBlock} date={date} lotName={lotName} tribalArea={tribalArea} checklist={checklist} surveyor={surveyor} />
           )}
           {doc === "report" && (
             <ReportOnSurvey
-              date={date}
-              fileNo={fileNo}
-              lotName={lotName}
               surveyor={surveyor}
-              config={config}
-              cogoResult={cogoResult}
-              validationNarrative={validation?.narrative}
+              assistedBy={assistedBy}
+              dateOfSurvey={dateOfSurvey}
+              purpose={purpose || `Survey of ${lotName}`}
+              authority={authority}
+              calcBasis={calcBasis}
+              method={method}
             />
           )}
-          {doc === "consistency" && <DataConsistency validation={validation} />}
-          {doc === "coordinates" && (
-            <CoordinateList rows={coordRows} coordinateSystem={displayCrs(config.coordinateSystem)} lotName={lotName} discipline={config.discipline} />
+          {doc === "consistency" && (
+            <div className="space-y-3">
+              <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
+              {!consistencyLines || !fig ? (
+                <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                  Run a closed traverse (at least 3 beacons) in the {cogoTabLabel(config.discipline)} first — the
+                  consistency check walks each leg's bearing and distance forward from its own recorded coordinate
+                  and compares the result to the next beacon's recorded coordinate.
+                </p>
+              ) : (
+                <>
+                  <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
+                    {["Consistency Report", "", lotName, "", ...consistencyLines].join("\n")}
+                    {"\n"}
+                    {declaredArea.trim()
+                      ? `The area is ${(Number(declaredArea) || 0).toFixed(2)} (${fig.area_m2.toFixed(2)}) square metres.`
+                      : `The area is ${fig.area_m2.toFixed(2)} square metres.`}
+                  </pre>
+                  <Button variant="ghost" onClick={downloadConsistency}>⬇ Download as .txt</Button>
+                </>
+              )}
+            </div>
           )}
-          {doc === "comparison" && <DataComparison cogoResult={cogoResult} discipline={config.discipline} />}
+          {doc === "coordinates" && (
+            <div className="space-y-3">
+              <h1 className="text-base font-bold text-slate-800">Coordinate List</h1>
+              {!coordListLines ? (
+                <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                  Import points under Data Import first — this groups every point by its Type (Govt Trig Station,
+                  Reference Mark, Working Station, Beacon) into one labelled coordinate schedule.
+                </p>
+              ) : (
+                <>
+                  {COORD_LIST_GROUPS.map((g) => {
+                    const rows = coordListRows.filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === (g.key as PointType));
+                    if (!rows.length) return null;
+                    return (
+                      <div key={g.key}>
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.label}</div>
+                        <table className="w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                              <th className="py-2 pr-3">Point</th>
+                              <th className="py-2 pr-3">Eastings(Y)</th>
+                              <th className="py-2 pr-3">Northings(X)</th>
+                              <th className="py-2 pr-3">Description</th>
+                              <th className="py-2">SR NO</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((r) => (
+                              <tr key={r.index} className="border-b border-slate-100">
+                                <td className="py-2 pr-3 font-medium text-slate-700">{r.beaconId ?? "—"}</td>
+                                <td className="py-2 pr-3 tabular-nums text-slate-600">{(r.east as number).toFixed(2)}</td>
+                                <td className="py-2 pr-3 tabular-nums text-slate-600">{(r.north as number).toFixed(2)}</td>
+                                <td className="py-2 pr-3 text-slate-600">
+                                  <input
+                                    value={r.description ?? ""}
+                                    onChange={(e) => setPointMeta(r.index, { description: e.target.value })}
+                                    placeholder="e.g. 12mm Iron Peg"
+                                    className="w-full rounded border border-slate-200 px-2 py-1 text-sm"
+                                  />
+                                </td>
+                                <td className="py-2 text-slate-600">
+                                  <input
+                                    value={r.srNo ?? ""}
+                                    onChange={(e) => setPointMeta(r.index, { srNo: e.target.value })}
+                                    placeholder="-"
+                                    className="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+                  <Button variant="ghost" onClick={downloadCoordinateListReport}>⬇ Download as .txt</Button>
+                </>
+              )}
+            </div>
+          )}
+          {doc === "comparison" && <DataComparison cogoResult={fig} discipline={config.discipline} />}
         </div>
       </Card>
     </div>
@@ -174,51 +377,48 @@ export function SurveyRecord() {
 /* 1. Submission letter                                                        */
 /* -------------------------------------------------------------------------- */
 function SubmissionLetter({
-  addressee,
+  toBlock,
   date,
-  fileNo,
   lotName,
+  tribalArea,
+  checklist,
   surveyor,
-  discipline,
 }: {
-  addressee: string;
+  toBlock: string;
   date: string;
-  fileNo: string;
   lotName: string;
+  tribalArea: string;
+  checklist: ChecklistItem[];
   surveyor: string;
-  discipline: string;
 }) {
+  const toLines = toBlock.split("\n").filter(Boolean);
+  // lotName from Diagrams already reads "LOT 1583 PALLAROAD" — strip any
+  // leading "LOT " so it doesn't double up against the fixed "LOT"/"Lot"
+  // word in this letter's own wording.
+  const bareLot = lotName.replace(/^lot\s+/i, "");
   return (
     <div className="space-y-4">
-      <h1 className="text-base font-bold text-slate-800">Submission Letter</h1>
-      <div className="flex justify-between text-slate-600">
-        <div className="whitespace-pre-line">{addressee}</div>
-        <div className="text-right">
-          <div>{date}</div>
-          {fileNo && <div className="muted">File No.: {fileNo}</div>}
-        </div>
+      <div>
+        {toLines.map((line, i) => (
+          <div key={i}>{i === 0 ? `To: ${line}` : line}</div>
+        ))}
       </div>
-      <p className="font-semibold text-slate-800">
-        RE: SUBMISSION OF THE {discipline.toUpperCase()} SURVEY OF {lotName.toUpperCase()}
-      </p>
-      <p>Dear Sir / Madam,</p>
+      <div>Date {date}</div>
+      <p>Dear Sir/Madam:</p>
+      <p className="font-semibold text-slate-800">Re: SUBMISSION OF LOT {bareLot.toUpperCase()}</p>
       <p>
-        I respectfully submit for your examination and approval the records of the {discipline.toLowerCase()} survey
-        of <strong>{lotName}</strong>. The survey has been carried out and computed in accordance with the
-        applicable Survey Regulations and the standards of the Department of Surveys and Mapping.
+        Herewith, please find enclosed, compilation Record in respect of Lot {bareLot}
+        {tribalArea ? ` in the ${tribalArea}` : ""}. The record consists of:
       </p>
-      <p>
-        Enclosed for your consideration are the Report on Survey, the data-consistency (compliance) checks, the
-        schedule of computed coordinates, and the data-comparison (closure and adjustment) record. I confirm that
-        the survey has been examined for consistency and that the field measurements have been adjusted and reduced
-        to the project coordinate system.
-      </p>
-      <p>I trust the submission is in order and look forward to your approval.</p>
-      <p>Yours faithfully,</p>
+      <ul className="list-none space-y-1 pl-2">
+        {checklist.filter((c) => c.checked && c.text.trim()).map((c, i) => (
+          <li key={i}>☑ {c.text}</li>
+        ))}
+      </ul>
+      <p>Yours Faithfully</p>
       <div className="sign space-y-1 pt-8">
         <hr className="sep w-56 border-slate-300" />
         <div className="font-semibold text-slate-800">{surveyor}</div>
-        <div className="muted text-slate-500">Land Surveyor</div>
       </div>
     </div>
   );
@@ -228,190 +428,52 @@ function SubmissionLetter({
 /* 2. Report on Survey                                                         */
 /* -------------------------------------------------------------------------- */
 function ReportOnSurvey({
-  date,
-  fileNo,
-  lotName,
   surveyor,
-  config,
-  cogoResult,
-  validationNarrative,
+  assistedBy,
+  dateOfSurvey,
+  purpose,
+  authority,
+  calcBasis,
+  method,
 }: {
-  date: string;
-  fileNo: string;
-  lotName: string;
   surveyor: string;
-  config: { coordinateSystem: string; discipline: import("@/lib/store").Discipline; traverseType: string; adjustment: string };
-  cogoResult: ReturnType<typeof useStore>["cogoResult"];
-  validationNarrative?: string;
-}) {
-  const beaconCount = cogoResult?.points.length ?? 0;
-  return (
-    <div className="space-y-3">
-      <h1 className="text-base font-bold text-slate-800">Report on Survey</h1>
-      <div className="muted text-xs text-slate-500">
-        {lotName} · {date}
-        {fileNo ? ` · File No. ${fileNo}` : ""}
-      </div>
-
-      <h2 className="text-sm font-semibold text-slate-800">1. Introduction</h2>
-      <p>
-        This report describes the {config.discipline.toLowerCase()} survey of <strong>{lotName}</strong>. The survey
-        was computed on the <strong>{displayCrs(config.coordinateSystem)}</strong> coordinate system.
-      </p>
-
-      <h2 className="text-sm font-semibold text-slate-800">2. Method of Survey</h2>
-      <p>
-        The survey was observed as a <strong>{config.traverseType}</strong> traverse and reduced using the{" "}
-        <strong>{config.adjustment}</strong> adjustment method.{" "}
-        {beaconCount > 0
-          ? `A total of ${beaconCount} beacon${beaconCount === 1 ? "" : "s"} was computed and adjusted.`
-          : ""}
-      </p>
-
-      {cogoResult ? (
-        <>
-          <h2 className="text-sm font-semibold text-slate-800">3. Accuracy &amp; Closure</h2>
-          <p>
-            The traverse achieved a relative precision of{" "}
-            <strong>{cogoResult.closure.relative_precision_text}</strong>, with a linear misclosure of{" "}
-            <strong>{fmt(cogoResult.closure.linear_misclosure)} m</strong> over a total measured distance of{" "}
-            <strong>{fmt(cogoResult.closure.total_distance)} m</strong>.
-          </p>
-
-          <h2 className="text-sm font-semibold text-slate-800">4. Area</h2>
-          <p>
-            The computed area of the figure is{" "}
-            <strong>{fmt(cogoResult.area_ha, 4)} ha</strong>{" "}
-            (<strong>{fmt(cogoResult.area_m2, 2)} m&sup2;</strong>).
-          </p>
-
-          {validationNarrative && (
-            <>
-              <h2 className="text-sm font-semibold text-slate-800">5. Survey QA Narrative</h2>
-              <p className="whitespace-pre-wrap">{validationNarrative}</p>
-            </>
-          )}
-        </>
-      ) : (
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          No computed figure yet. Run the {cogoTabLabel(config.discipline)} to populate the closure, precision and area sections of this
-          report.
-        </p>
-      )}
-
-      <div className="sign space-y-1 pt-8">
-        <hr className="sep w-56 border-slate-300" />
-        <div className="font-semibold text-slate-800">{surveyor}</div>
-        <div className="muted text-slate-500">Land Surveyor</div>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* 3. Data Consistency                                                         */
-/* -------------------------------------------------------------------------- */
-function DataConsistency({ validation }: { validation: ReturnType<typeof useStore>["validation"] }) {
-  if (!validation) {
-    return (
-      <div className="space-y-3">
-        <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          Run AI Validate to populate consistency checks.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-4">
-      <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat value={`${validation.overallScore}%`} label="Overall score" tone="brand" />
-        <Stat value={validation.passed} label="Passed" tone="brand" />
-        <Stat value={validation.warnings} label="Warnings" tone="warning" />
-        <Stat value={validation.errors} label="Errors" tone={validation.errors ? "error" : "default"} />
-        <Stat
-          value={validation.dsmCompliant ? "Yes" : "No"}
-          label="DSM compliant"
-          tone={validation.dsmCompliant ? "brand" : "error"}
-        />
-      </div>
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="py-2 pr-3">Rule</th>
-            <th className="py-2 pr-3">Severity</th>
-            <th className="py-2">Message</th>
-          </tr>
-        </thead>
-        <tbody>
-          {validation.checks.map((chk, i) => (
-            <tr key={i} className="border-b border-slate-100 align-top">
-              <td className="py-2 pr-3 font-medium text-slate-700">{chk.rule}</td>
-              <td className="py-2 pr-3">
-                <Badge kind={chk.severity}>{severityLabel(chk.severity)}</Badge>
-              </td>
-              <td className="py-2 text-slate-600">{chk.message}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* 4. Coordinate list                                                          */
-/* -------------------------------------------------------------------------- */
-function CoordinateList({
-  rows,
-  coordinateSystem,
-  lotName,
-  discipline,
-}: {
-  rows: { label: string; east: number; north: number }[];
-  coordinateSystem: string;
-  lotName: string;
-  discipline: import("@/lib/store").Discipline;
+  assistedBy: string;
+  dateOfSurvey: string;
+  purpose: string;
+  authority: string;
+  calcBasis: string;
+  method: string;
 }) {
   return (
     <div className="space-y-3">
-      <h1 className="text-base font-bold text-slate-800">Coordinate List</h1>
-      <p className="muted text-xs text-slate-500">
-        {lotName} · Coordinate system: {coordinateSystem}
+      <h1 className="text-base font-bold text-slate-800">REPORT ON SURVEY</h1>
+      {/* Inline style (not a Tailwind class) so the column alignment survives
+          both on-screen rendering and the print popup, which doesn't load
+          Tailwind's stylesheet — plain-text spaces otherwise collapse to one. */}
+      <div style={{ whiteSpace: "pre" }}>Land Surveyor : {surveyor}</div>
+      <div style={{ whiteSpace: "pre" }}>Assisted by   : {assistedBy || "—"}</div>
+      <div style={{ whiteSpace: "pre" }}>Date of Survey: {dateOfSurvey || "—"}</div>
+
+      <h2 className="text-sm font-semibold text-slate-800">Survey Report</h2>
+      <p>1. Purpose: {purpose}</p>
+      <p>2. Authority: {authority || "—"}</p>
+      <p>3. Calculation Basis: {calcBasis || "—"}</p>
+      <p>4. Method: {method || "—"}</p>
+      <p>
+        5. Certificate: I certify that the checks enumerated under prescribed checks Para 3.1 have been completed
+        and that the relevant check sheets are attached to the survey record.
       </p>
-      {rows.length === 0 ? (
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          No coordinates available. Run the {cogoTabLabel(discipline)}, construct parcels, or import survey data first.
-        </p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="py-2 pr-3 right">#</th>
-              <th className="py-2 pr-3">Beacon</th>
-              <th className="py-2 pr-3 right">Y / East</th>
-              <th className="py-2 right">X / North</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={`${r.label}-${i}`} className="border-b border-slate-100">
-                <td className="py-2 pr-3 text-right text-slate-500">{i + 1}</td>
-                <td className="py-2 pr-3 font-medium text-slate-700">{r.label}</td>
-                <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{fmt(r.east)}</td>
-                <td className="py-2 text-right tabular-nums text-slate-600">{fmt(r.north)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+
+      <div className="sign space-y-3 pt-8">
+        <div style={{ whiteSpace: "pre" }}>SIGNED: ____________________________</div>
+        <div style={{ whiteSpace: "pre" }}>DATE:{" ".repeat(3)}____________________________</div>
+      </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* 5. Data Comparison                                                          */
+/* 3. Data Comparison                                                          */
 /* -------------------------------------------------------------------------- */
 function DataComparison({
   cogoResult,
