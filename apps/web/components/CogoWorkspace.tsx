@@ -701,7 +701,7 @@ export function CogoWorkspace({
     const newPoint: WPoint = { id: pointId, name, east: travPreview.east, north: travPreview.north };
     setExtra((e) => [...e, newPoint]);
     setLines((ls) => [...ls, { id: lineId, aE: travFrom.east, aN: travFrom.north, bE: travPreview.east, bN: travPreview.north }]);
-    setTexts((ts) => [...ts, { id: labelId, text: `${travDir}  ${travDist}m`, east: midE, north: midN, size: 11, kind: "seglabel" }]);
+    setTexts((ts) => [...ts, { id: labelId, text: `${travDir}  ${travDist}m`, east: midE, north: midN, size: 11, kind: "seglabel", angle: segLabelAngle(travFrom, travPreview) }]);
     setTravLegs((legs) => [...legs, { point: newPoint, direction: travDir, distance: travDist, lineId, labelId, fromName: travFrom.name }]);
     setTravFrom(newPoint);
     setTravToName("");
@@ -945,7 +945,7 @@ export function CogoWorkspace({
       const [a, b] = pts;
       addToolResult({
         lines: [{ aE: a.east, aN: a.north, bE: b.east, bN: b.north }],
-        texts: [{ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" }],
+        texts: [{ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) }],
       });
     } else if (draftTool === "polyline" && pts.length >= 2) {
       const segs: NonNullable<ToolResult["lines"]> = [];
@@ -953,7 +953,7 @@ export function CogoWorkspace({
       for (let i = 0; i < pts.length - 1; i++) {
         const a = pts[i], b = pts[i + 1];
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
-        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) });
       }
       addToolResult({ lines: segs, texts });
     } else if (draftTool === "polygon" && pts.length >= 3) {
@@ -962,7 +962,7 @@ export function CogoWorkspace({
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
-        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) });
       }
       const { polygonIds } = addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
       // Client req 2026-08-21: finishing a click-to-draw Polygon should ask
@@ -982,7 +982,7 @@ export function CogoWorkspace({
         const [a, b] = pts;
         result.texts = [
           ...(result.texts ?? []),
-          { text: `${segLabel(a, b)} (chord)`, east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel" },
+          { text: `${segLabel(a, b)} (chord)`, east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) },
         ];
         addToolResult(result);
       } catch (e: any) {
@@ -1083,6 +1083,7 @@ export function CogoWorkspace({
         north: (a.north + b.north) / 2,
         size: 11,
         kind: "seglabel",
+        angle: segLabelAngle(a, b),
       });
     });
     setLines((ls) => [...ls, ...newLines]);
@@ -1120,6 +1121,19 @@ export function CogoWorkspace({
   function segLabel(a: { east: number; north: number }, b: { east: number; north: number }): string {
     const [brg, dist] = inverse(a, b);
     return `${formatDms(brg)}  ${dist.toFixed(2)}m`;
+  }
+  /** On-screen rotation for a segment's label so it runs along the segment
+   *  itself (client req 2026-08-26) instead of always sitting flat/
+   *  horizontal. Screen Y is flipped relative to north, so the north delta's
+   *  sign flips too; clamped to ±90° so the text reads upright regardless
+   *  of which endpoint is "a" and which is "b". Depends only on the
+   *  direction between the two points, not on pan/zoom, so it's safe to
+   *  compute once at creation time. */
+  function segLabelAngle(a: { east: number; north: number }, b: { east: number; north: number }): number {
+    let deg = (Math.atan2(-(b.north - a.north), b.east - a.east) * 180) / Math.PI;
+    if (deg > 90) deg -= 180;
+    if (deg < -90) deg += 180;
+    return deg;
   }
   function nearestVisible(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
@@ -1952,6 +1966,20 @@ export function CogoWorkspace({
             {texts.map((t) => {
               if (t.kind === "seglabel" && !showSegLabels) return null;
               const [x, y] = toScreen(t.east, t.north);
+              // Seglabels run along their own segment (client req 2026-08-26:
+              // "those bearings and distances should be in the same line")
+              // instead of always sitting flat/horizontal — nudged off the
+              // line itself (in the label's own local frame, before
+              // rotating) so the text doesn't sit bisected by the stroke.
+              if (t.angle) {
+                return (
+                  <g key={t.id} transform={`rotate(${t.angle} ${x} ${y})`}>
+                    <text x={x} y={y - 4} textAnchor="middle" fontSize={t.size} className="fill-slate-800 font-medium">
+                      {t.text}
+                    </text>
+                  </g>
+                );
+              }
               return (
                 <text key={t.id} x={x} y={y} fontSize={t.size} className="fill-slate-800 font-medium">
                   {t.text}

@@ -63,6 +63,16 @@ export interface WText {
    *  segment (client req 2026-08-21, Part 15a) — these have their own
    *  visibility toggle, separate from user-placed annotations (undefined). */
   kind?: "seglabel";
+  /** On-screen rotation in degrees for a seglabel (client req 2026-08-26:
+   *  "those bearings and distances should be in the same line" — a tilted
+   *  side's label used to sit flat/horizontal regardless of the side's own
+   *  angle, drifting off it and colliding with neighbouring lines/labels on
+   *  anything but a near-horizontal side). Computed once from the segment's
+   *  east/north endpoints at creation time and clamped to ±90° so the text
+   *  reads upright either way the segment runs — screen angle depends only
+   *  on that direction vector, not on pan/zoom, so it never needs
+   *  recomputing after the fact. */
+  angle?: number;
 }
 
 export type FieldType = "number" | "text" | "textarea" | "point" | "line" | "polygon" | "select" | "bearing";
@@ -103,7 +113,7 @@ export interface ToolResult {
   lines?: { name?: string; aE: number; aN: number; bE: number; bN: number }[];
   arcs?: NewArc[];
   polygons?: { name?: string; points: { name: string; east: number; north: number }[] }[];
-  texts?: { text: string; east: number; north: number; size?: number; kind?: "seglabel" }[];
+  texts?: { text: string; east: number; north: number; size?: number; kind?: "seglabel"; angle?: number }[];
   /** Existing line ids this result replaces (e.g. Fillet trims the two source
    *  lines back to their new tangent points) — removed before the new lines/
    *  arcs above are added. */
