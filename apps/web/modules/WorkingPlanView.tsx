@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
@@ -34,8 +34,30 @@ export function WorkingPlanView() {
     [importResult]
   );
 
-  // Restore saved title-block from the project, else derive defaults from config.
-  const saved = (workingPlanInput ?? null) as Partial<WorkingPlanMeta> | null;
+  // Restore saved title-block from the project, else derive defaults from
+  // config. workingPlanInput used to BE the meta object directly; it's now
+  // {meta, labelOffsets}, so accept the old bare shape too for projects
+  // saved before Part 29a.
+  const savedRaw = workingPlanInput as { meta?: Partial<WorkingPlanMeta>; labelOffsets?: Record<string, { dx: number; dy: number }> } | Partial<WorkingPlanMeta> | null;
+  const isWrappedSave = !!savedRaw && typeof savedRaw === "object" && "meta" in savedRaw;
+  const saved = (isWrappedSave ? (savedRaw as { meta?: Partial<WorkingPlanMeta> }).meta : (savedRaw as Partial<WorkingPlanMeta> | null)) ?? null;
+  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number }>>(
+    (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number }> }).labelOffsets : null) ?? {}
+  );
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  // In-progress drag of a beacon label (client req 2026-08-26, Part 29a:
+  // "snap/click on the text then... manually move it") — `orig` lets Escape
+  // revert exactly. The offset is a small nudge on top of the auto-computed
+  // position, not an absolute coordinate, so it stays sane even if the
+  // figure's own scale/position later recomputes.
+  const [draggingLabel, setDraggingLabel] = useState<{
+    name: string;
+    startSx: number;
+    startSy: number;
+    origDx: number;
+    origDy: number;
+  } | null>(null);
+  const dragMovedRef = useRef(false);
   const [meta, setMeta] = useState<WorkingPlanMeta>({
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 2773 TLOKWENG",
     tribalArea: "BATLOKWA TRIBAL TERRITORY",
@@ -52,8 +74,11 @@ export function WorkingPlanView() {
   });
 
   // Auto-captured values: the Land Surveyor comes from the project surveyor, and
-  // the placed-beacon description mirrors the one entered under Diagrams.
+  // the placed-beacon description and lot name mirror what's entered under
+  // Diagrams (client req 2026-08-26, Part 29b: the title's second line must be
+  // the actual lot name, e.g. "LOT 4231 GABANE" — not the generic project name).
   const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
+  const diagramLotName = ((diagramInput as { meta?: { lotName?: string } } | null)?.meta?.lotName) || "";
   const diagramAnnotations =
     (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
   const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
@@ -61,14 +86,62 @@ export function WorkingPlanView() {
     ...meta,
     surveyor: config.surveyor || meta.surveyor || "",
     placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
+    lotName: diagramLotName || meta.lotName,
   };
   const set = (k: keyof WorkingPlanMeta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
 
-  // Persist the title-block into the project bundle so it round-trips on save/open.
+  // Persist the title-block + label positions into the project bundle so
+  // they round-trip on save/open.
   useEffect(() => {
-    setWorkingPlanInput(meta);
-  }, [meta, setWorkingPlanInput]);
+    setWorkingPlanInput({ meta, labelOffsets });
+  }, [meta, labelOffsets, setWorkingPlanInput]);
+
+  function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+  function handleLabelClick(name: string) {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false; // swallow the click that trails a drag
+      return;
+    }
+    setSelectedLabel((cur) => (cur === name ? null : name));
+  }
+  function handleLabelPointerDown(name: string, e: ReactPointerEvent<SVGElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    const orig = labelOffsets[name] ?? { dx: 0, dy: 0 };
+    setDraggingLabel({ name, startSx: p.x, startSy: p.y, origDx: orig.dx, origDy: orig.dy });
+  }
+  function handleLabelPointerMove(name: string, e: ReactPointerEvent<SVGElement>) {
+    if (!draggingLabel || draggingLabel.name !== name) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingLabel.startSx, dy = p.y - draggingLabel.startSy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
+    setLabelOffsets((m) => ({ ...m, [name]: { dx: draggingLabel.origDx + dx, dy: draggingLabel.origDy + dy } }));
+  }
+  function handleLabelPointerUp() {
+    setDraggingLabel(null);
+  }
+  function cancelLabelDrag() {
+    if (!draggingLabel) return;
+    setLabelOffsets((m) => ({ ...m, [draggingLabel.name]: { dx: draggingLabel.origDx, dy: draggingLabel.origDy } }));
+    setDraggingLabel(null);
+  }
+  useEffect(() => {
+    if (!draggingLabel) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelLabelDrag(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingLabel]);
 
   function serialize(): string | null {
     if (!svgRef.current) return null;
@@ -126,7 +199,7 @@ export function WorkingPlanView() {
     <div className="space-y-4">
       <Card title="Working Plan details">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Lot / parcel name"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
+          <Field label="Lot / parcel name (auto from Diagram if set)"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
           <Field label="Tribal territory / area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
           <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
@@ -138,7 +211,7 @@ export function WorkingPlanView() {
           <Field label="Date of survey"><Input value={meta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} placeholder="e.g. 15 June 2026" /></Field>
         </div>
         <p className="mt-2 text-xs text-slate-400">
-          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Placed-beacon description mirrors the one entered under Diagrams.
+          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Lot name and placed-beacon description mirror what's entered under Diagrams.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={download}>⬇ Download SVG</Button>
@@ -147,7 +220,11 @@ export function WorkingPlanView() {
       </Card>
 
       <Card title="Working Plan">
-        <div className="mx-auto max-w-3xl">
+        <p className="mb-2 text-xs text-slate-400">
+          Click a beacon letter to select it, then drag to reposition — useful where labels sit close
+          together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
+        </p>
+        <div className="mx-auto max-w-3xl" onClick={() => setSelectedLabel(null)}>
           <WorkingPlan
             ref={svgRef}
             meta={effectiveMeta}
@@ -156,6 +233,12 @@ export function WorkingPlanView() {
             refMarks={refMarks}
             manualAnnotations={diagramAnnotations}
             manualTexts={diagramTexts}
+            labelOffsets={labelOffsets}
+            selectedLabel={selectedLabel}
+            onLabelClick={(name) => handleLabelClick(name)}
+            onLabelPointerDown={handleLabelPointerDown}
+            onLabelPointerMove={handleLabelPointerMove}
+            onLabelPointerUp={handleLabelPointerUp}
           />
         </div>
       </Card>

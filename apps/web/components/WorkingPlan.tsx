@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { ManualAnnotation, ManualText } from "./SgDiagram";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +48,18 @@ interface Props {
    *  scale/position, same as the boundary itself. */
   manualAnnotations?: ManualAnnotation[];
   manualTexts?: ManualText[];
+  /** Per-point label nudge, keyed by point name (client req 2026-08-26,
+   *  Part 29a: "will it be possible to snap/click on the text then...
+   *  manually move it?" — labels near tightly-spaced beacons like D/E/F
+   *  can end up sitting on top of each other). Applied on top of the
+   *  auto-computed label position, so it stays a small correction rather
+   *  than an absolute position that could drift if the figure changes. */
+  labelOffsets?: Record<string, { dx: number; dy: number }>;
+  selectedLabel?: string | null;
+  onLabelClick?: (name: string, e: ReactMouseEvent<SVGElement>) => void;
+  onLabelPointerDown?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
+  onLabelPointerMove?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
+  onLabelPointerUp?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +100,19 @@ const REF_RED = "#dc2626";
 // Component — Botswana Working Plan as a scalable portrait SVG.
 // ---------------------------------------------------------------------------
 export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan(
-  { meta, points, refMarks, manualAnnotations, manualTexts },
+  {
+    meta,
+    points,
+    refMarks,
+    manualAnnotations,
+    manualTexts,
+    labelOffsets,
+    selectedLabel,
+    onLabelClick,
+    onLabelPointerDown,
+    onLabelPointerMove,
+    onLabelPointerUp,
+  },
   ref
 ) {
   const VB_W = 600;
@@ -112,7 +136,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   }
 
   // ---- Figure transform (north-up, fit to drawing panel) ----
-  const draw = { x: 70, y: 130, w: 460, h: 420 };
+  // h shrunk from 420 (client req 2026-08-26, Part 29d "label both sides") —
+  // the newly-added bottom-edge grid labels need clearance below the panel
+  // before the "observed from / checked from" note and the description
+  // blocks start; a full 420 left no room and the two collided.
+  const draw = { x: 70, y: 130, w: 460, h: 390 };
   const pad = 56;
   const es = points.map((p) => p.east);
   const ns = points.map((p) => p.north);
@@ -144,6 +172,12 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     (v) => toY(v) >= draw.y - 2 && toY(v) <= draw.y + draw.h + 2
   );
   const fmtGrid = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+  // "X-2732200" / "Y+91000" (client req 2026-08-26, Part 29c) — axis letter
+  // directly against the signed value, sign always shown (so a positive
+  // value still gets an explicit "+", matching fmtGrid's own bare minus for
+  // negatives). Y = easting (vertical gridlines), X = northing (horizontal
+  // gridlines) — the same convention as the printed diagram's Y/X table.
+  const fmtAxis = (axis: "X" | "Y", v: number) => `${axis}${v >= 0 ? "+" : ""}${fmtGrid(v)}`;
 
   // ---- Inset (locality, not to scale) ----
   const inset = { x: 26, y: VB_H - 130, w: 150, h: 104 };
@@ -209,23 +243,41 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           <line key={`nv${i}`} x1={draw.x} y1={toY(v)} x2={draw.x + draw.w} y2={toY(v)} />
         ))}
       </g>
-      {/* E labels along the top (vertical text) */}
+      {/* Grid axis labels — both edges, "X"/"Y"-prefixed signed format
+          (client req 2026-08-26, Part 29c/29d: "Label both sides") — a
+          coordinate near one edge of the sheet used to have no nearby
+          label at all if that edge wasn't the labelled one. */}
       <g fill={GRID_BLUE} fontSize={8}>
         {eLines.map((v, i) => (
           <text
-            key={`el${i}`}
+            key={`elt${i}`}
             x={toX(v)}
             y={draw.y - 4}
             textAnchor="start"
             transform={`rotate(-90 ${toX(v)} ${draw.y - 4})`}
           >
-            {fmtGrid(v)}
+            {fmtAxis("Y", v)}
           </text>
         ))}
-        {/* N labels along the left side */}
+        {eLines.map((v, i) => (
+          <text
+            key={`elb${i}`}
+            x={toX(v)}
+            y={draw.y + draw.h + 4}
+            textAnchor="start"
+            transform={`rotate(90 ${toX(v)} ${draw.y + draw.h + 4})`}
+          >
+            {fmtAxis("Y", v)}
+          </text>
+        ))}
         {nLines.map((v, i) => (
-          <text key={`nl${i}`} x={draw.x - 4} y={toY(v) + 3} textAnchor="end">
-            {fmtGrid(v)}
+          <text key={`nll${i}`} x={draw.x - 4} y={toY(v) + 3} textAnchor="end">
+            {fmtAxis("X", v)}
+          </text>
+        ))}
+        {nLines.map((v, i) => (
+          <text key={`nlr${i}`} x={draw.x + draw.w + 4} y={toY(v) + 3} textAnchor="start">
+            {fmtAxis("X", v)}
           </text>
         ))}
       </g>
@@ -235,19 +287,43 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
 
       {/* Side distances are intentionally NOT shown on the working plan (client request). */}
 
-      {/* Beacons: open circles + bold labels placed outside the figure */}
+      {/* Beacons: open circles + bold, DRAGGABLE labels placed outside the
+          figure (client req 2026-08-26, Part 29a: "snap/click on the text
+          then... manually move it" — tightly-spaced beacons like D/E/F can
+          end up with labels sitting on top of each other). Click to
+          select, then drag; a selected label gets a dashed handle box. */}
       {points.map((p, i) => {
         const bx = toX(p.east), by = toY(p.north);
         const dx = bx - cx, dy = by - cy;
         const len = Math.hypot(dx, dy) || 1;
-        const lx = bx + (dx / len) * 16;
-        const ly = by + (dy / len) * 16;
+        const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0 };
+        const lx = bx + (dx / len) * 16 + off.dx;
+        const ly = by + (dy / len) * 16 + off.dy;
+        const isSel = !!p.name && selectedLabel === p.name;
         return (
           <g key={`b${i}`}>
             <circle cx={bx} cy={by} r={2.8} fill="white" stroke="black" strokeWidth={1.1} />
-            <text x={lx} y={ly + 3} textAnchor="middle" fontSize={10} fontWeight="bold">
+            <text
+              x={lx} y={ly + 3}
+              textAnchor="middle"
+              fontSize={10}
+              fontWeight="bold"
+              fill={isSel ? "#dc2626" : "#000"}
+              style={{ cursor: p.name ? (isSel ? "move" : "pointer") : "default" }}
+              onClick={(e) => { e.stopPropagation(); if (p.name) onLabelClick?.(p.name, e); }}
+              onPointerDown={(e) => { if (isSel && p.name) { e.stopPropagation(); onLabelPointerDown?.(p.name, e); } }}
+              onPointerMove={(e) => { if (p.name) onLabelPointerMove?.(p.name, e); }}
+              onPointerUp={(e) => { if (p.name) onLabelPointerUp?.(p.name, e); }}
+            >
               {p.name}
             </text>
+            {isSel && (
+              <rect
+                x={lx - 10} y={ly - 8} width={20} height={14}
+                fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                style={{ pointerEvents: "none" }}
+              />
+            )}
           </g>
         );
       })}
@@ -275,7 +351,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       })}
 
       {/* ---------- Note under figure ---------- */}
-      <text x={VB_W / 2} y={draw.y + draw.h + 22} textAnchor="middle" fontSize={9.5} fill="#111">
+      <text x={VB_W / 2} y={draw.y + draw.h + 50} textAnchor="middle" fontSize={9.5} fill="#111">
         All beacons observed from {meta.observedFrom} and checked from {meta.checkedFrom}
       </text>
 
