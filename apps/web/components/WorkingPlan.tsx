@@ -48,18 +48,21 @@ interface Props {
    *  scale/position, same as the boundary itself. */
   manualAnnotations?: ManualAnnotation[];
   manualTexts?: ManualText[];
-  /** Per-point label nudge, keyed by point name (client req 2026-08-26,
-   *  Part 29a: "will it be possible to snap/click on the text then...
-   *  manually move it?" — labels near tightly-spaced beacons like D/E/F
-   *  can end up sitting on top of each other). Applied on top of the
-   *  auto-computed label position, so it stays a small correction rather
-   *  than an absolute position that could drift if the figure changes. */
-  labelOffsets?: Record<string, { dx: number; dy: number }>;
+  /** Per-point label nudge + size, keyed by point name (client req
+   *  2026-08-26, Part 29a: "will it be possible to snap/click on the text
+   *  then... manually move it?", extended same day: "I want to be able to
+   *  move and resize text" — labels near tightly-spaced beacons like D/E/F
+   *  can end up sitting on top of each other). dx/dy is applied on top of
+   *  the auto-computed label position, and scale on top of the base font
+   *  size, so both stay small corrections rather than absolute values that
+   *  could drift if the figure changes. */
+  labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
   selectedLabel?: string | null;
   onLabelClick?: (name: string, e: ReactMouseEvent<SVGElement>) => void;
   onLabelPointerDown?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelPointerMove?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelPointerUp?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
+  onLabelResize?: (name: string, delta: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +115,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onLabelPointerDown,
     onLabelPointerMove,
     onLabelPointerUp,
+    onLabelResize,
   },
   ref
 ) {
@@ -260,12 +264,18 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           </text>
         ))}
         {eLines.map((v, i) => (
+          // Same rotate(-90) as the top labels (client req 2026-08-26:
+          // "rotate the Y-Axis to face the same direction with the one at
+          // the top" — rotate(90) read mirrored/upside-down against the top
+          // ones). anchor="end" (not "start") is what keeps the text
+          // extending downward, away from the drawing, under this shared
+          // rotation instead of back up into it.
           <text
             key={`elb${i}`}
             x={toX(v)}
             y={draw.y + draw.h + 4}
-            textAnchor="start"
-            transform={`rotate(90 ${toX(v)} ${draw.y + draw.h + 4})`}
+            textAnchor="end"
+            transform={`rotate(-90 ${toX(v)} ${draw.y + draw.h + 4})`}
           >
             {fmtAxis("Y", v)}
           </text>
@@ -296,17 +306,20 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const bx = toX(p.east), by = toY(p.north);
         const dx = bx - cx, dy = by - cy;
         const len = Math.hypot(dx, dy) || 1;
-        const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0 };
+        const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0, scale: 1 };
+        const scale = off.scale ?? 1;
+        const fs = 10 * scale;
         const lx = bx + (dx / len) * 16 + off.dx;
         const ly = by + (dy / len) * 16 + off.dy;
         const isSel = !!p.name && selectedLabel === p.name;
+        const boxW = 10 * scale, boxH = 7 * scale;
         return (
           <g key={`b${i}`}>
             <circle cx={bx} cy={by} r={2.8} fill="white" stroke="black" strokeWidth={1.1} />
             <text
               x={lx} y={ly + 3}
               textAnchor="middle"
-              fontSize={10}
+              fontSize={fs}
               fontWeight="bold"
               fill={isSel ? "#dc2626" : "#000"}
               style={{ cursor: p.name ? (isSel ? "move" : "pointer") : "default" }}
@@ -318,11 +331,25 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
               {p.name}
             </text>
             {isSel && (
-              <rect
-                x={lx - 10} y={ly - 8} width={20} height={14}
-                fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
-                style={{ pointerEvents: "none" }}
-              />
+              <>
+                <rect
+                  x={lx - boxW} y={ly - boxH} width={boxW * 2} height={boxH * 2}
+                  fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                  style={{ pointerEvents: "none" }}
+                />
+                {/* Resize handles (client req 2026-08-26: "I want to be able
+                    to move and resize text") — small +/- buttons next to the
+                    selection box, since a drag-handle would be hard to grab
+                    reliably on text this small. */}
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); if (p.name) onLabelResize?.(p.name, 0.1); }}>
+                  <circle cx={lx + boxW + 8} cy={ly - 6} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={lx + boxW + 8} y={ly - 3} textAnchor="middle" fontSize={9} fill="#dc2626">+</text>
+                </g>
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); if (p.name) onLabelResize?.(p.name, -0.1); }}>
+                  <circle cx={lx + boxW + 8} cy={ly + 8} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={lx + boxW + 8} y={ly + 11} textAnchor="middle" fontSize={9} fill="#dc2626">−</text>
+                </g>
+              </>
             )}
           </g>
         );

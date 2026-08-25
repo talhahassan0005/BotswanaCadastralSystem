@@ -38,11 +38,11 @@ export function WorkingPlanView() {
   // config. workingPlanInput used to BE the meta object directly; it's now
   // {meta, labelOffsets}, so accept the old bare shape too for projects
   // saved before Part 29a.
-  const savedRaw = workingPlanInput as { meta?: Partial<WorkingPlanMeta>; labelOffsets?: Record<string, { dx: number; dy: number }> } | Partial<WorkingPlanMeta> | null;
+  const savedRaw = workingPlanInput as { meta?: Partial<WorkingPlanMeta>; labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }> } | Partial<WorkingPlanMeta> | null;
   const isWrappedSave = !!savedRaw && typeof savedRaw === "object" && "meta" in savedRaw;
   const saved = (isWrappedSave ? (savedRaw as { meta?: Partial<WorkingPlanMeta> }).meta : (savedRaw as Partial<WorkingPlanMeta> | null)) ?? null;
-  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number }>>(
-    (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number }> }).labelOffsets : null) ?? {}
+  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number; scale?: number }>>(
+    (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }> }).labelOffsets : null) ?? {}
   );
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   // In-progress drag of a beacon label (client req 2026-08-26, Part 29a:
@@ -125,15 +125,24 @@ export function WorkingPlanView() {
     const p = toSvgPoint(e);
     const dx = p.x - draggingLabel.startSx, dy = p.y - draggingLabel.startSy;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
-    setLabelOffsets((m) => ({ ...m, [name]: { dx: draggingLabel.origDx + dx, dy: draggingLabel.origDy + dy } }));
+    // Spread the existing entry first so a drag never wipes out that
+    // label's own resize (scale).
+    setLabelOffsets((m) => ({ ...m, [name]: { ...m[name], dx: draggingLabel.origDx + dx, dy: draggingLabel.origDy + dy } }));
   }
   function handleLabelPointerUp() {
     setDraggingLabel(null);
   }
   function cancelLabelDrag() {
     if (!draggingLabel) return;
-    setLabelOffsets((m) => ({ ...m, [draggingLabel.name]: { dx: draggingLabel.origDx, dy: draggingLabel.origDy } }));
+    setLabelOffsets((m) => ({ ...m, [draggingLabel.name]: { ...m[draggingLabel.name], dx: draggingLabel.origDx, dy: draggingLabel.origDy } }));
     setDraggingLabel(null);
+  }
+  function handleLabelResize(name: string, delta: number) {
+    setLabelOffsets((m) => {
+      const cur = m[name] ?? { dx: 0, dy: 0, scale: 1 };
+      const scale = Math.max(0.5, Math.min(3, (cur.scale ?? 1) + delta));
+      return { ...m, [name]: { ...cur, scale } };
+    });
   }
   useEffect(() => {
     if (!draggingLabel) return;
@@ -221,8 +230,8 @@ export function WorkingPlanView() {
 
       <Card title="Working Plan">
         <p className="mb-2 text-xs text-slate-400">
-          Click a beacon letter to select it, then drag to reposition — useful where labels sit close
-          together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
+          Click a beacon letter to select it, then drag to reposition, or use the +/− buttons to resize it
+          — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
         </p>
         <div className="mx-auto max-w-3xl" onClick={() => setSelectedLabel(null)}>
           <WorkingPlan
@@ -239,6 +248,7 @@ export function WorkingPlanView() {
             onLabelPointerDown={handleLabelPointerDown}
             onLabelPointerMove={handleLabelPointerMove}
             onLabelPointerUp={handleLabelPointerUp}
+            onLabelResize={handleLabelResize}
           />
         </div>
       </Card>
