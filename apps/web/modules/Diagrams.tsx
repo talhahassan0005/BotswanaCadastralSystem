@@ -156,7 +156,7 @@ export function Diagrams() {
   // `closed`/`kind` are applied at render time, not stored in the form state.
   const [meta, setMeta] = useState<Omit<DiagramMeta, "closed" | "kind">>(di.meta ?? {
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 14182 CHARLESHILL",
-    parent: "A PORTION OF CADASTRE 243",
+    parent: "",
     location: "CHARLESHILL",
     tribalArea: "GHANZI TRIBAL AREA",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "G. G. SESINYI",
