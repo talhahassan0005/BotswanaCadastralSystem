@@ -60,6 +60,7 @@ export function WorkingPlanView() {
   const dragMovedRef = useRef(false);
   const [meta, setMeta] = useState<WorkingPlanMeta>({
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 2773 TLOKWENG",
+    parent: "",
     tribalArea: "BATLOKWA TRIBAL TERRITORY",
     scale: 750,
     coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
@@ -79,6 +80,10 @@ export function WorkingPlanView() {
   // the actual lot name, e.g. "LOT 4231 GABANE" — not the generic project name).
   const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
   const diagramLotName = ((diagramInput as { meta?: { lotName?: string } } | null)?.meta?.lotName) || "";
+  // "Parent / portion" (client req 2026-08-26: "we want to Add that there")
+  // — reused from the Diagrams module's own field, same as lotName above,
+  // not re-collected here.
+  const diagramParent = ((diagramInput as { meta?: { parent?: string } } | null)?.meta?.parent) || "";
   const diagramAnnotations =
     (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
   const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
@@ -87,6 +92,7 @@ export function WorkingPlanView() {
     surveyor: config.surveyor || meta.surveyor || "",
     placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
     lotName: diagramLotName || meta.lotName,
+    parent: diagramParent || meta.parent,
   };
   const set = (k: keyof WorkingPlanMeta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));

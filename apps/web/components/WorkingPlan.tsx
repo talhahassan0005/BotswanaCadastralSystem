@@ -21,6 +21,10 @@ export interface WorkingPlanSide {
 
 export interface WorkingPlanMeta {
   lotName: string;            // "LOT 2773 TLOKWENG"
+  /** "(A PORTION OF CADASTRE 243)" — mirrors the Diagrams module's own
+   *  "Parent / portion" field (client req 2026-08-26: "we want to Add
+   *  that there"), printed right under the lot name like the SG diagram. */
+  parent?: string;
   tribalArea: string;         // "BATLOKWA TRIBAL TERRITORY"
   scale: number;              // 750
   coordinateSystem: string;   // "Lo 25"
@@ -144,7 +148,12 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // the newly-added bottom-edge grid labels need clearance below the panel
   // before the "observed from / checked from" note and the description
   // blocks start; a full 420 left no room and the two collided.
-  const draw = { x: 70, y: 130, w: 460, h: 390 };
+  // The optional "(A PORTION OF ...)" line pushes everything below the title
+  // down by one line's worth of space, same as the SG diagram does for its
+  // own parent line.
+  const hasParent = !!meta.parent?.trim();
+  const titleExtra = hasParent ? 20 : 0;
+  const draw = { x: 70, y: 130 + titleExtra, w: 460, h: 390 - titleExtra };
   const pad = 56;
   const es = points.map((p) => p.east);
   const ns = points.map((p) => p.north);
@@ -225,8 +234,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       <g textAnchor="middle" fontWeight="bold">
         <text x={VB_W / 2} y={40} fontSize={14} textDecoration="underline">WORKING PLAN OF</text>
         <text x={VB_W / 2} y={62} fontSize={14} textDecoration="underline">{meta.lotName}</text>
-        <text x={VB_W / 2} y={84} fontSize={12} textDecoration="underline">{meta.tribalArea}</text>
-        <text x={VB_W / 2} y={104} fontSize={12} textDecoration="underline">1:{meta.scale}</text>
+        {hasParent && (
+          <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">({meta.parent})</text>
+        )}
+        <text x={VB_W / 2} y={84 + titleExtra} fontSize={12} textDecoration="underline">{meta.tribalArea}</text>
+        <text x={VB_W / 2} y={104 + titleExtra} fontSize={12} textDecoration="underline">1:{meta.scale}</text>
       </g>
 
       {/* ---------- North arrow (top-right) — "T N" below the arrow ---------- */}
