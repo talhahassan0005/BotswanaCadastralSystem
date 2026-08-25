@@ -1,6 +1,7 @@
 /** Surveyor-defined point type: every imported point defaults to a plot beacon;
- *  the user re-tags working points and reference marks for the coordinate list. */
-export type PointType = "beacon" | "wp" | "ref";
+ *  the user re-tags working points, reference marks, and government trig
+ *  stations for the coordinate list (client req 2026-08-26, Part 31a). */
+export type PointType = "beacon" | "wp" | "ref" | "trig";
 
 export interface ParsedRow {
   index: number;
@@ -12,6 +13,14 @@ export interface ParsedRow {
   status: "valid" | "check" | "error";
   issues: string[];
   pointType?: PointType;
+  /** Physical marker description, e.g. "12mm Iron Peg" / "Standard Concrete
+   *  Pillar" (client req 2026-08-26, Part 31b "Coordinate List" report) —
+   *  per-point, separate from the diagram's single summary Beacon
+   *  Description line. */
+  description?: string;
+  /** Survey record number for this specific point, if known (Part 31b's
+   *  "SR NO" column) — "-" is printed when unset. */
+  srNo?: string;
 }
 
 export interface ImportResult {

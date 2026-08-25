@@ -49,16 +49,17 @@ export function DataImport() {
     }
   }
 
-  // Re-tag a point's type (Beacon / Working point / Reference mark) for the
-  // coordinate list. Every point imports as a beacon; the surveyor changes the rest.
-  function setRowType(index: number, pointType: "beacon" | "wp" | "ref") {
+  // Re-tag a point's type (Beacon / Working point / Reference mark / Trig
+  // station, Part 31a) for the coordinate list. Every point imports as a
+  // beacon; the surveyor changes the rest.
+  function setRowType(index: number, pointType: "beacon" | "wp" | "ref" | "trig") {
     if (!importResult) return;
     setImportResult({
       ...importResult,
       rows: importResult.rows.map((r) => (r.index === index ? { ...r, pointType } : r)),
     });
   }
-  const typeCount = (t: "beacon" | "wp" | "ref") =>
+  const typeCount = (t: "beacon" | "wp" | "ref" | "trig") =>
     importResult ? importResult.rows.filter((r) => (r.pointType ?? "beacon") === t).length : 0;
 
   return (
@@ -154,12 +155,13 @@ export function DataImport() {
                     <td className="px-4 py-3">
                       <select
                         value={r.pointType ?? "beacon"}
-                        onChange={(e) => setRowType(r.index, e.target.value as "beacon" | "wp" | "ref")}
+                        onChange={(e) => setRowType(r.index, e.target.value as "beacon" | "wp" | "ref" | "trig")}
                         className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-brand focus:outline-none"
                       >
                         <option value="beacon">Beacon</option>
                         <option value="wp">Working pt</option>
                         <option value="ref">Ref mark</option>
+                        <option value="trig">Trig Station</option>
                       </select>
                     </td>
                     <td className="px-4 py-3">{r.east?.toLocaleString() ?? "—"}</td>
@@ -182,7 +184,7 @@ export function DataImport() {
             <Chip>{importResult.validCount} valid rows</Chip>
             <Chip>{importResult.warningCount} warning</Chip>
             <Chip>{importResult.errorCount} error</Chip>
-            <Chip>{typeCount("beacon")} beacon · {typeCount("wp")} WP · {typeCount("ref")} ref</Chip>
+            <Chip>{typeCount("beacon")} beacon · {typeCount("wp")} WP · {typeCount("ref")} ref · {typeCount("trig")} trig</Chip>
             <Chip>CRS: {config.coordinateSystem}</Chip>
             <div className="ml-auto">
               <Button onClick={() => setActiveTab("cogo")}>Proceed to {cogoTabLabel(config.discipline)} →</Button>
