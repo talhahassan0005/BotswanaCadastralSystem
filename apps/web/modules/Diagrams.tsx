@@ -5,7 +5,18 @@ import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import type { CogoResult, ParcelDoc } from "@/lib/types";
-import { SgDiagram, type DiagramKind, type DiagramMeta, type DiagramTransform, type ManualAnnotation, type ManualText } from "@/components/SgDiagram";
+import {
+  SgDiagram,
+  areaText,
+  fmtCoord,
+  fmtDist,
+  toDotted,
+  type DiagramKind,
+  type DiagramMeta,
+  type DiagramTransform,
+  type ManualAnnotation,
+  type ManualText,
+} from "@/components/SgDiagram";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -565,7 +576,44 @@ export function Diagrams() {
    *  app's existing DXF writer (client req 2026-08-22) — each boundary point
    *  as a labelled POINT, the boundary itself as a closed LWPOLYLINE, and
    *  any off-boundary reference beacons as their own layer. */
+  /** Beside the beacon labels/boundary, also write the SIDES/DIRECTIONS,
+   *  CO-ORDINATES, beacon description and area declaration as plain TEXT
+   *  entities next to the plot (client req 2026-08-26: "dxf main properly
+   *  complete details ke sath download nahi ho rahi hai" — a bare outline
+   *  read as missing data next to the full printed sheet, even though the
+   *  points/labels were already there). This is deliberately NOT a replica
+   *  of the printed A4 sheet's fixed-mm layout: that layout and the
+   *  boundary's real-world survey coordinates have no common scale, so
+   *  mixing them in one DXF space would make one or the other unreadable.
+   *  Instead the same schedule the sheet prints is written as notes at a
+   *  text height scaled to the plot's own extent, positioned right below
+   *  it — readable at zoom-to-extents like any other CAD annotation. */
   function downloadDxf() {
+    const es = points.map((p) => p.east);
+    const ns = points.map((p) => p.north);
+    const notes: ImportedDrawing["texts"] = [];
+    if (points.length) {
+      const spanE = Math.max(...es) - Math.min(...es);
+      const spanN = Math.max(...ns) - Math.min(...ns);
+      const th = Math.max(Math.max(spanE, spanN) * 0.018, 0.3);
+      const lineH = th * 1.6;
+      const noteX = Math.min(...es);
+      let y = Math.min(...ns) - lineH * 2;
+      const row = (text: string) => {
+        if (text) notes.push({ x: noteX, y, text, height: th, layer: "NOTES" });
+        y -= lineH;
+      };
+      row(meta.lotName || "");
+      row("");
+      row("SIDE      DISTANCE      DIRECTION");
+      for (const s of sides) row(`${(s.from ?? "") + (s.to ?? "")}      ${fmtDist(s.distance)}      ${toDotted(s.bearing_dms)}`);
+      row("");
+      row("PT      Y (EAST)      X (NORTH)");
+      for (const p of points) row(`${p.name ?? ""}      ${fmtCoord(p.east)}      ${fmtCoord(p.north)}`);
+      row("");
+      row(meta.beaconDescription || "");
+      if (fig) row(`Figure ${points.map((p) => p.name ?? "?").join(" ")} represents about ${areaText(fig.area_ha).toLowerCase()}.`);
+    }
     const drawing: ImportedDrawing = {
       points: [
         ...points.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "BEACONS" })),
@@ -575,7 +623,7 @@ export function Diagrams() {
         points.length >= 2
           ? [{ pts: points.map((p) => ({ x: p.east, y: p.north })), closed: fig?.type === "closed", layer: "BOUNDARY" }]
           : [],
-      texts: [],
+      texts: notes,
     };
     const dxf = writeDxf(drawing);
     const blob = new Blob([dxf], { type: "application/dxf" });
