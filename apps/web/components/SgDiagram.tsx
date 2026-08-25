@@ -648,8 +648,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // so keeping the block near the top reads correctly regardless of
         // how tall the neighboring coordinate table gets.
         const dsmBoxTop = ty + headH;
-        const dsmApprovedY = dsmBoxTop +(90);
-        const dosY1 = dsmBoxTop+530 ;
+        const dsmApprovedY = dsmBoxTop + 25;
+        // A full blank line's worth of gap after "Approved" (client req
+        // 2026-08-26: "approved ur director of and Mapping inke darmayan
+        // space add karni hai") — anchored off dsmApprovedY itself, not a
+        // second fixed offset from dsmBoxTop, so the gap stays correct no
+        // matter where "Approved" ends up sitting.
+        const dosY1 = dsmApprovedY + FS_DOS * 2.2;
         const dosY2 = dosY1 + FS_DOS * 1.3;
         const dosLineY = dosY2 + FS_DOS * 1.1;
         return (
