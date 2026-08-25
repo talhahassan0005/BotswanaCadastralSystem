@@ -226,7 +226,7 @@ export function Diagrams() {
   const [texts, setTexts] = useState<ManualText[]>(di.texts ?? []);
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
-  const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string } | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
   const [draggingText, setDraggingText] = useState<{
     id: string;
     startSvg: { x: number; y: number };
@@ -275,7 +275,7 @@ export function Diagrams() {
   function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
     if (addingText) {
       const p = toSvgPoint(e);
-      setTextPrompt({ id: null, x: p.x, y: p.y, value: "" });
+      setTextPrompt({ id: null, x: p.x, y: p.y, value: "", angle: 0 });
       setAddingText(false);
       return;
     }
@@ -320,17 +320,18 @@ export function Diagrams() {
     const tt = texts.find((x) => x.id === id);
     if (!tt) return;
     const p = transformRef.current?.toScreen(tt.east, tt.north) ?? { x: 0, y: 0 };
-    setTextPrompt({ id, x: p.x, y: p.y, value: tt.text });
+    setTextPrompt({ id, x: p.x, y: p.y, value: tt.text, angle: tt.angle ?? 0 });
   }
   function commitTextPrompt() {
     if (!textPrompt) return;
     const value = textPrompt.value.trim();
     if (value) {
       const w = transformRef.current?.toWorld(textPrompt.x, textPrompt.y) ?? { east: 0, north: 0 };
+      const angle = normalizeDeg(textPrompt.angle) || undefined;
       if (textPrompt.id) {
-        setTexts((arr) => arr.map((tt) => (tt.id === textPrompt.id ? { ...tt, text: value } : tt)));
+        setTexts((arr) => arr.map((tt) => (tt.id === textPrompt.id ? { ...tt, text: value, angle } : tt)));
       } else {
-        setTexts((arr) => [...arr, { id: `txt-${Date.now()}`, east: w.east, north: w.north, text: value }]);
+        setTexts((arr) => [...arr, { id: `txt-${Date.now()}`, east: w.east, north: w.north, text: value, angle }]);
       }
     }
     setTextPrompt(null);
@@ -1063,6 +1064,17 @@ export function Diagrams() {
                   placeholder="Note text…"
                   className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1"
                 />
+                <label className="mb-1.5 flex items-center gap-1.5">
+                  <span className="text-slate-500">Angle</span>
+                  <input
+                    type="number"
+                    value={textPrompt.angle}
+                    onChange={(e) => setTextPrompt((g) => (g ? { ...g, angle: Number(e.target.value) || 0 } : g))}
+                    onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
+                    className="w-16 rounded border border-slate-200 px-1.5 py-1"
+                  />
+                  <span className="text-slate-400">degrees, clockwise</span>
+                </label>
                 <button type="button" onClick={commitTextPrompt} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">
                   {textPrompt.id ? "Save" : "Add"}
                 </button>

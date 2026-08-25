@@ -104,6 +104,7 @@ export interface ManualText {
   east: number;
   north: number;
   text: string;
+  angle?: number; // rotation in degrees, clockwise (client req 2026-08-26); 0/undefined = horizontal
 }
 
 /** Live conversion between this diagram's on-page pixel space and the real
@@ -799,23 +800,33 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <circle cx={pendingAnnotationPoint.x} cy={pendingAnnotationPoint.y} r={5} fill="black" />
       )}
       {/* Free-text notes the surveyor placed directly on the diagram
-          (client req 2026-08-24). A selected note is underlined and drag-
-          movable (no length/angle to stretch or rotate — it's one point). */}
+          (client req 2026-08-24), rotatable (client req 2026-08-26) via an
+          Angle field in the Add/Edit Text panel. A selected note shows a
+          small grip handle at its anchor instead of an underline (client
+          req 2026-08-26: "remove the underlining feature" — it read as
+          part of the text's own styling, not a selection indicator). */}
       {(manualTexts ?? []).map((t) => {
         const isSel = selectedTextId === t.id;
+        const x = toX(t.east), y = toY(t.north);
         return (
-          <text
-            key={t.id}
-            x={toX(t.east)} y={toY(t.north)}
-            fontSize={FS_BEACON_HEAD}
-            textDecoration={isSel ? "underline" : undefined}
-            onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
-            onDoubleClick={(e) => { e.stopPropagation(); onTextDoubleClick?.(t.id); }}
-            onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } }}
-            style={{ cursor: isSel ? "move" : "pointer" }}
-          >
-            {t.text}
-          </text>
+          <g key={t.id} transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}>
+            <text
+              x={x} y={y}
+              fontSize={FS_BEACON_HEAD}
+              onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
+              onDoubleClick={(e) => { e.stopPropagation(); onTextDoubleClick?.(t.id); }}
+              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } }}
+              style={{ cursor: isSel ? "move" : "pointer" }}
+            >
+              {t.text}
+            </text>
+            {isSel && (
+              <circle
+                cx={x} cy={y - FS_BEACON_HEAD * 0.35} r={5} fill="white" stroke="black" strokeWidth={1.2}
+                style={{ pointerEvents: "none" }}
+              />
+            )}
+          </g>
         );
       })}
       {/* Extra points: shown as marks only (dot + label) — NOT part of the traverse

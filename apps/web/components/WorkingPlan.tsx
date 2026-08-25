@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
+import type { ManualAnnotation, ManualText } from "./SgDiagram";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +41,13 @@ interface Props {
    *  the Cadastral work station, but shown here in the locality inset since
    *  this is where reference marks are actually used/referenced. */
   refMarks?: WorkingPlanPoint[];
+  /** The same hand-drawn extension lines and text notes added under
+   *  Diagrams (client req 2026-08-26: "I want to see these edits also
+   *  appearing at the working plan") — read-only here, anchored in the same
+   *  real east/north coordinates and converted through this view's own
+   *  scale/position, same as the boundary itself. */
+  manualAnnotations?: ManualAnnotation[];
+  manualTexts?: ManualText[];
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +88,7 @@ const REF_RED = "#dc2626";
 // Component — Botswana Working Plan as a scalable portrait SVG.
 // ---------------------------------------------------------------------------
 export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan(
-  { meta, points, refMarks },
+  { meta, points, refMarks, manualAnnotations, manualTexts },
   ref
 ) {
   const VB_W = 600;
@@ -241,6 +249,28 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
               {p.name}
             </text>
           </g>
+        );
+      })}
+
+      {/* ---------- Manual extension lines + text notes from Diagrams (read-only) ---------- */}
+      {(manualAnnotations ?? []).map((a) => (
+        <line
+          key={a.id}
+          x1={toX(a.e1)} y1={toY(a.n1)} x2={toX(a.e2)} y2={toY(a.n2)}
+          stroke="black" strokeWidth={1} strokeDasharray="6 4"
+        />
+      ))}
+      {(manualTexts ?? []).map((t) => {
+        const x = toX(t.east), y = toY(t.north);
+        return (
+          <text
+            key={t.id}
+            x={x} y={y}
+            fontSize={10}
+            transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}
+          >
+            {t.text}
+          </text>
         );
       })}
 

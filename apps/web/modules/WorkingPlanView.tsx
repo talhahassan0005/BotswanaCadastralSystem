@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta } from "@/components/WorkingPlan";
+import type { ManualAnnotation, ManualText } from "@/components/SgDiagram";
 
 /**
  * Working Plan (Module D / M3) — a cadastral working plan in the WP-Model.pdf
@@ -53,6 +54,9 @@ export function WorkingPlanView() {
   // Auto-captured values: the Land Surveyor comes from the project surveyor, and
   // the placed-beacon description mirrors the one entered under Diagrams.
   const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
+  const diagramAnnotations =
+    (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
+  const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
   const effectiveMeta: WorkingPlanMeta = {
     ...meta,
     surveyor: config.surveyor || meta.surveyor || "",
@@ -144,7 +148,15 @@ export function WorkingPlanView() {
 
       <Card title="Working Plan">
         <div className="mx-auto max-w-3xl">
-          <WorkingPlan ref={svgRef} meta={effectiveMeta} points={points} sides={sides} refMarks={refMarks} />
+          <WorkingPlan
+            ref={svgRef}
+            meta={effectiveMeta}
+            points={points}
+            sides={sides}
+            refMarks={refMarks}
+            manualAnnotations={diagramAnnotations}
+            manualTexts={diagramTexts}
+          />
         </div>
       </Card>
     </div>
