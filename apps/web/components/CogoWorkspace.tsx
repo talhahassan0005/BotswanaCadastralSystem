@@ -929,7 +929,6 @@ export function CogoWorkspace({
         parentDiagram: "",
         beaconDescription: "ALL: 12mm iron peg",
         areaHa: areaM2 / 10000,
-        sourceRef: "",
         boreholeNo: "",
         boreholeE: 0,
         boreholeN: 0,

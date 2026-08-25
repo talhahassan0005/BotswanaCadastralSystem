@@ -170,7 +170,6 @@ export function Diagrams() {
     parentDiagram: "",
     beaconDescription: defaultBeaconDescription(fig?.points ?? []),
     areaHa: fig?.area_ha ?? 0,
-    sourceRef: "",
     boreholeNo: "",
     boreholeE: 0,
     boreholeN: 0,
@@ -851,9 +850,11 @@ export function Diagrams() {
                     </>
                   )}
                   {(kind === "compiled" || kind === "framed") && (
-                    <Field label={kind === "framed" ? "Framed from (General Plan No.)" : "Compiled from (source document)"}>
-                      <Input value={meta.sourceRef ?? ""} onChange={set("sourceRef")} />
-                    </Field>
+                    <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                      {kind === "framed"
+                        ? 'The certification line reads "Framed from G.P. [General Plan No.] in [date] by me" — fill in the General Plan No. below, under Registration.'
+                        : 'The certification line reads "Compiled from Sr. [S.R No.], Dsm. [D.S.M No.] in [date] by me" — fill in the S.R No. and D.S.M No. below, under Registration.'}
+                    </p>
                   )}
                   <Field label="Situate at (location)"><Input value={meta.location} onChange={onLocation} placeholder="e.g. CHARLESHILL" /></Field>
                   <Field label="Tribal / administrative area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>

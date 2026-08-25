@@ -41,7 +41,6 @@ export interface DiagramMeta {
   areaHa: number;
   closed: boolean;
   kind?: DiagramKind;        // template variant (defaults to "surveyed")
-  sourceRef?: string;        // Compiled-from / Framed-from source document(s)
   boreholeNo?: string;       // borehole identifier (borehole template)
   boreholeE?: number;        // surveyed borehole Easting (0 = use centroid)
   boreholeN?: number;        // surveyed borehole Northing
@@ -57,13 +56,19 @@ export interface DiagramMeta {
   annexName?: string;        // optional name printed above "Registrar of Deeds"
 }
 
-/** Certification line wording — differs per diagram type per SG convention. */
+/** Certification line wording — differs per diagram type per SG convention.
+ *  Compiled/Framed cite the same D.S.M No./S.R No./General Plan No. already
+ *  entered in the Registration card (client req 2026-08-26, reference
+ *  example: "Compiled from Sr. 435/2017, Dsm. 657/2017 in May 2025 by me")
+ *  instead of a separate free-text field that duplicated the same numbers. */
 export function certificationLine(meta: DiagramMeta): string {
   switch (meta.kind) {
-    case "compiled":
-      return `Compiled${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me,`;
+    case "compiled": {
+      const refs = [meta.srNo ? `Sr. ${meta.srNo}` : "", meta.dsmNo ? `Dsm. ${meta.dsmNo}` : ""].filter(Boolean).join(", ");
+      return `Compiled${refs ? ` from ${refs}` : ""} in ${meta.surveyedDate} by me,`;
+    }
     case "framed":
-      return `Framed${meta.sourceRef ? ` from ${meta.sourceRef}` : ""} in ${meta.surveyedDate} by me,`;
+      return `Framed${meta.gpNo ? ` from G.P. ${meta.gpNo}` : ""} in ${meta.surveyedDate} by me,`;
     default:
       return `Surveyed in ${meta.surveyedDate} by me,`;
   }
