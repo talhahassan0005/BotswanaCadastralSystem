@@ -441,12 +441,12 @@ export function computeDiagramLayout(
   // column geometry (client req 2026-08-22/2026-08-26) — moved here so the
   // DXF export draws the exact same open-bottom box the SVG does. ====
   const dsmBoxTop = ty + headH;
-  const dsmApprovedY = dsmBoxTop + 25;
+  const dsmApprovedY = dsmBoxTop + 35;
   // +430 is a deliberate, client-tested gap between "Approved" and
   // "Director of Surveys" (client req 2026-08-26) — this is NOT the
   // earlier-suspected stray concurrent-session edit; it's the client's own
   // manual adjustment, made permanent here so it stops being reverted.
-  const dosY1 = dsmApprovedY + 430 + FS_DOS * 2.2;
+  const dosY1 = dsmApprovedY + 400 + FS_DOS * 2.2;
   const dosY2 = dosY1 + FS_DOS * 1.3;
   const dosLineY = dosY2 + FS_DOS * 1.1;
 

@@ -18,7 +18,6 @@ import {
   type ManualText,
 } from "@/components/SgDiagram";
 import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem } from "@/lib/diagramLayout";
-import { clampWords } from "@/lib/wrapSvgText";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -688,18 +687,36 @@ export function Diagrams() {
         const p = w(x, y);
         notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
       };
-      // Belt-and-suspenders on top of the width factor above: the two long
-      // fixed annexure-table headers ("This diagram is annexed to" / "The
-      // immediate parent diagram is") were the specific strings bleeding
-      // across columns — unlike every value field around them, they were
-      // never width-checked at all, since the on-screen SVG's actual
-      // (real, per-character) font metrics happened to fit them even
-      // though the flat 0.62-per-character estimate used elsewhere in this
-      // template wouldn't. A generous 0.95 factor here is deliberately
-      // pessimistic — enough margin that no plausible CAD default text
-      // style renders these wider than their own column, regardless of
-      // exactly how wide the viewer's font turns out to be.
-      const dxfLabelFit = (s: string, maxWidth: number, fontSize: number) => clampWords(s, maxWidth, fontSize, Infinity, 0.95);
+      // Guessed character-width factors (0.62, then 0.95) kept turning out
+      // wrong in one direction or the other — client re-confirmed
+      // ("still... responsive nahi hai") that text was still bleeding
+      // across columns even after declaring an explicit Arial DXF style.
+      // Stop guessing: measure the ACTUAL rendered width of the same
+      // "Arial" font this DXF now declares, via the browser's own Canvas
+      // text-metrics API, and truncate precisely to what really fits —
+      // this can only be as wrong as the assumption that the viewer's
+      // Arial substitute renders close to the browser's Arial, which is
+      // by far the safest assumption available.
+      let measureCtx: CanvasRenderingContext2D | null | undefined;
+      const measureTextWidth = (s: string, fontSizeUnits: number): number => {
+        if (measureCtx === undefined) {
+          measureCtx = document.createElement("canvas").getContext("2d");
+        }
+        if (!measureCtx) return s.length * fontSizeUnits * 0.6; // no canvas available — rough fallback
+        measureCtx.font = `${fontSizeUnits}px Arial, sans-serif`;
+        return measureCtx.measureText(s).width;
+      };
+      const dxfLabelFit = (s: string, maxWidth: number, fontSize: number): string => {
+        if (!s || measureTextWidth(s, fontSize) <= maxWidth) return s;
+        let lo = 0, hi = s.length;
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2);
+          const candidate = `${s.slice(0, mid).trimEnd()}…`;
+          if (measureTextWidth(candidate, fontSize) <= maxWidth) lo = mid;
+          else hi = mid - 1;
+        }
+        return lo <= 0 ? "…" : `${s.slice(0, lo).trimEnd()}…`;
+      };
 
       // `points`/`sides` here are the RAW (un-relettered) props — the same
       // ones SgDiagram itself receives — so computeDiagramLayout relabels
@@ -719,7 +736,7 @@ export function Diagrams() {
         arrowX, arrowY,
         bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY,
         figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
-        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit, leftColW,
+        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit, leftColW, rightColW,
         annTop, annBottom, annC1, annC2,
         gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
         gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
@@ -821,44 +838,55 @@ export function Diagrams() {
       // surveyor name/"Land Surveyor" column beside it).
       text(tx + 4, certY1, dxfLabelFit(cert, leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(tx + 4, deductionsY, dxfLabelFit("DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(VB_W - 700, certY1, surveyorFit, FS_BEACON_HEAD);
+      text(VB_W - 700, certY1, dxfLabelFit(surveyorFit, rightColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(VB_W - 700, deductionsY, "Land Surveyor", FS_BEACON_HEAD);
 
       // ===================== Bottom registration (deeds/annexure) table =====================
+      // Every value/label below is re-fit with the same precise Arial
+      // measurement, not just the two that were previously reported —
+      // client re-confirmed the earlier guessed-factor clamp still wasn't
+      // enough, so this pass covers every text in the table, not only the
+      // specific strings caught in a screenshot so far.
       rect(tx, annTop, tw, annBottom - annTop);
       line(annC1, annTop, annC1, annBottom);
       line(annC2, annTop, annC2, annBottom);
 
       const annCol1LabelW = annC1 - tx - 20;
       const annCol2LabelW = annC2 - annC1 - 20;
+      const annCol1ValueW = annC1 - (tx + 10) - 10;
+      const annexedDateW = annC1 - 140 - (tx + 10) - 20;
+      const inFavourW = 140 - 10;
       text(tx + 10, annTop + 40, dxfLabelFit("This diagram is annexed to", annCol1LabelW, FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(tx + 10, annTop + 90, annexedTo, FS_BEACON_HEAD);
-      text(tx + 10, annTop + 140, annexedDate, FS_BEACON_HEAD);
-      text(annC1 - 140, annTop + 140, "in favour", FS_BEACON_HEAD);
-      text(tx + 10, annTop + 190, annexedFavour, FS_BEACON_HEAD);
+      text(tx + 10, annTop + 90, dxfLabelFit(annexedTo, annCol1ValueW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(tx + 10, annTop + 140, dxfLabelFit(annexedDate, annexedDateW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC1 - 140, annTop + 140, dxfLabelFit("in favour", inFavourW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(tx + 10, annTop + 190, dxfLabelFit(annexedFavour, annCol1ValueW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       annexNameLines.forEach((ln, i) => {
         const y = annBottom - 46 - (annexNameLines.length - 1 - i) * ANNEX_NAME_LH;
         text((tx + annC1) / 2, y, ln, FS_BEACON_HEAD, "middle");
       });
       text((tx + annC1) / 2, annBottom - 14, "Registrar of Deeds", FS_BEACON_HEAD, "middle");
 
+      const annC2ToC1W = annC2 - (annC1 + 50) - 10;
       text(annC1 + 10, annTop + 40, dxfLabelFit("The immediate parent diagram is", annCol2LabelW, FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(annC2 - 14, annTop + 90, "Annexed", FS_BEACON_HEAD, "end");
+      text(annC2 - 14, annTop + 90, dxfLabelFit("Annexed", annCol2LabelW, FS_BEACON_HEAD), FS_BEACON_HEAD, "end");
       text(annC1 + 10, annTop + 140, "to", FS_BEACON_HEAD);
-      text(annC1 + 50, annTop + 140, parentDiagramNo, FS_BEACON_HEAD);
+      text(annC1 + 50, annTop + 140, dxfLabelFit(parentDiagramNo, annC2ToC1W, FS_BEACON_HEAD), FS_BEACON_HEAD);
 
-      text(annC2 + 12, annTop + 40, "General Plan No.", FS_BEACON_HEAD);
-      text(gpNoX, annTop + 40, gpNo, FS_BEACON_HEAD);
-      text(annC2 + 12, annTop + 90, "S.R No.", FS_BEACON_HEAD);
-      text(srNoX, annTop + 90, srNo, FS_BEACON_HEAD);
-      text(annC2 + 12, annTop + 140, "D.S.M File:", FS_BEACON_HEAD);
-      text(dsmFileX, annTop + 140, dsmFile, FS_BEACON_HEAD);
-      text(annC2 + 12, annTop + 190, "Comp.", FS_BEACON_HEAD);
-      text(compX, annTop + 190, comp, FS_BEACON_HEAD);
-      text(annC2 + 12, annTop + 240, "Degree Square:", FS_BEACON_HEAD);
-      text(degreeSquareX, annTop + 240, degreeSquare, FS_BEACON_HEAD);
-      text(annC2 + 12, annTop + 290, "LIR No:", FS_BEACON_HEAD);
-      text(lirNoX, annTop + 290, lirNo, FS_BEACON_HEAD);
+      const annC2LabelW = (x: number) => x - (annC2 + 12) - 4;
+      const annC2ValueW = (x: number) => tableRight - x - 10;
+      text(annC2 + 12, annTop + 40, dxfLabelFit("General Plan No.", annC2LabelW(gpNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(gpNoX, annTop + 40, dxfLabelFit(gpNo, annC2ValueW(gpNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 90, dxfLabelFit("S.R No.", annC2LabelW(srNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(srNoX, annTop + 90, dxfLabelFit(srNo, annC2ValueW(srNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 140, dxfLabelFit("D.S.M File:", annC2LabelW(dsmFileX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(dsmFileX, annTop + 140, dxfLabelFit(dsmFile, annC2ValueW(dsmFileX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 190, dxfLabelFit("Comp.", annC2LabelW(compX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(compX, annTop + 190, dxfLabelFit(comp, annC2ValueW(compX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 240, dxfLabelFit("Degree Square:", annC2LabelW(degreeSquareX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(degreeSquareX, annTop + 240, dxfLabelFit(degreeSquare, annC2ValueW(degreeSquareX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 290, dxfLabelFit("LIR No:", annC2LabelW(lirNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(lirNoX, annTop + 290, dxfLabelFit(lirNo, annC2ValueW(lirNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
     }
 
     const drawing: ImportedDrawing = {
