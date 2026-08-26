@@ -351,6 +351,14 @@ export function computeDiagramLayout(
     tw - 80,
     FS_BEACON_HEAD
   );
+  // A little extra breathing room between each of this block's sub-sections
+  // (client req 2026-08-26: "cale ke niche thori space add karo... sub ke
+  // thori thori" — a bit of space below "CALLED", between the lines after
+  // it, and below those too) — three transition points get it: after the
+  // "...LAND CALLED" line, after the underlined lot name, and after the
+  // "(A PORTION OF...)" ancestry line(s), each right before the next block
+  // starts.
+  const LEGAL_EXTRA_GAP = 25;
   // Reserve room at the bottom of the middle zone for the legal-description
   // block (however many lines each free-text piece wraps to) + the
   // certificate/surveyor lines, so the figure box above it never overlaps
@@ -363,7 +371,8 @@ export function computeDiagramLayout(
       2 + // certification + deductions lines
       3) * // spare margin, matching the original fixed-block breathing room
       LEGAL_LH +
-    60;
+    60 +
+    LEGAL_EXTRA_GAP * 3;
   const legalY0 = annTop - legalBlockH;
 
   // Beacon Description (dynamic line count) + locality name sit right
@@ -433,7 +442,11 @@ export function computeDiagramLayout(
   // DXF export draws the exact same open-bottom box the SVG does. ====
   const dsmBoxTop = ty + headH;
   const dsmApprovedY = dsmBoxTop + 25;
-  const dosY1 = dsmApprovedY + FS_DOS * 2.2;
+  // +430 is a deliberate, client-tested gap between "Approved" and
+  // "Director of Surveys" (client req 2026-08-26) — this is NOT the
+  // earlier-suspected stray concurrent-session edit; it's the client's own
+  // manual adjustment, made permanent here so it stops being reverted.
+  const dosY1 = dsmApprovedY + 430 + FS_DOS * 2.2;
   const dosY2 = dosY1 + FS_DOS * 1.3;
   const dosLineY = dosY2 + FS_DOS * 1.1;
 
@@ -443,10 +456,10 @@ export function computeDiagramLayout(
 
   // ===================== Legal description + certificate/surveyor
   // (client req 2026-08-22) — exact same line positions as the SVG. =====
-  const landCalledY0 = legalY0 + figureLines.length * LEGAL_LH;
-  const parentY0 = landCalledY0 + landCalledLines.length * LEGAL_LH;
+  const landCalledY0 = legalY0 + figureLines.length * LEGAL_LH + LEGAL_EXTRA_GAP;
+  const parentY0 = landCalledY0 + landCalledLines.length * LEGAL_LH + LEGAL_EXTRA_GAP;
   const parentTotalLines = parentLineGroups.reduce((a, g) => a + g.length, 0);
-  const situateY0 = parentY0 + parentTotalLines * LEGAL_LH;
+  const situateY0 = parentY0 + parentTotalLines * LEGAL_LH + LEGAL_EXTRA_GAP;
   const deductionsY = annTop - 20;
   const certY1 = deductionsY - FS_CERT * 1.15;
   const leftColW = VB_W - 700 - (tx + 4) - 20;

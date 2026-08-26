@@ -675,24 +675,18 @@ export function Diagrams() {
           layer: "SHEET",
         });
       };
-      // A real CAD viewer's default text style renders each character
-      // noticeably wider than the browser did when this template's column
-      // positions/word-wrap were computed against it (client req
-      // 2026-08-26, Part 34 follow-up: "font ... responsive nahi hai" —
-      // content was all there, but bleeding into the next column once
-      // opened in a CAD app). Compressing every DXF text horizontally by
-      // this factor compensates without touching the shared layout math
-      // that both this export and the on-screen diagram rely on. 0.7 turned
-      // out not to be aggressive enough (re-confirmed via screenshot: the
-      // annexure table's row-1 labels were still bleeding across all three
-      // columns) — dropped further. This only narrows characters, it never
-      // shrinks the font HEIGHT, so it doesn't trade away the legibility
-      // the client separately asked to increase (Part 23).
-      const DXF_TEXT_WIDTH_FACTOR = 0.5;
+      // Squeezing every character's width (a flat DXF-group-41 scale
+      // factor, tried in two rounds at 0.7 then 0.5) fixed the column
+      // overlap but visibly distorted the font itself — client req
+      // 2026-08-26: "font pehlye jesa hi kardo" (make the font like it was
+      // before). Reverted to the font's normal, unscaled proportions; the
+      // overlap is instead handled below by actually truncating the
+      // specific fixed strings that were too long for their column,
+      // leaving every character's own shape untouched.
       const text = (x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") => {
         if (!s) return;
         const p = w(x, y);
-        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor, widthFactor: DXF_TEXT_WIDTH_FACTOR });
+        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
       };
       // Belt-and-suspenders on top of the width factor above: the two long
       // fixed annexure-table headers ("This diagram is annexed to" / "The
