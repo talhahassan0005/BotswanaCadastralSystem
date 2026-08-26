@@ -231,6 +231,19 @@ export function writeDxf(d: ImportedDrawing): string {
     e(0, "LAYER"); e(2, lay); e(70, 0); e(62, 7); e(6, "CONTINUOUS");
   }
   e(0, "ENDTAB");
+  // A text STYLE explicitly naming Arial (client req 2026-08-26: "use the
+  // arial font family for this DXF document") — without this, a TEXT
+  // entity has no font of its own and every viewer falls back to its own
+  // default text style, commonly a much WIDER technical/monospace drafting
+  // font (e.g. txt.shx) than the proportional sans-serif (Calibri/Arial
+  // stack) the on-screen diagram is built against. That mismatch was the
+  // real root of the repeated column-overlap reports — no amount of
+  // guessing at a compensating width factor fixes a font substitution the
+  // DXF itself never specified. Every TEXT entity below references this
+  // style by name (group 7).
+  e(0, "TABLE"); e(2, "STYLE"); e(70, 1);
+  e(0, "STYLE"); e(2, "Arial"); e(70, 0); e(40, 0); e(41, 1.0); e(50, 0); e(71, 0); e(42, 1.0); e(3, "arial.ttf"); e(4, "");
+  e(0, "ENDTAB");
   e(0, "ENDSEC");
 
   e(0, "SECTION");
@@ -238,7 +251,7 @@ export function writeDxf(d: ImportedDrawing): string {
   for (const p of d.points) {
     e(0, "POINT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "POINTS")); e(10, p.x); e(20, p.y); e(30, 0);
     if (p.label) {
-      e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(1, p.label);
+      e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(7, "Arial"); e(1, p.label);
     }
   }
   for (const l of d.polylines) {
@@ -249,7 +262,7 @@ export function writeDxf(d: ImportedDrawing): string {
     e(0, "SEQEND"); e(5, nextHandle());
   }
   for (const t of d.texts) {
-    e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height);
+    e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(7, "Arial");
     if (t.widthFactor != null) e(41, t.widthFactor);
     e(1, t.text);
     // Horizontal justification (72: 1=center, 2=right) requires a second
