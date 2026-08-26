@@ -18,6 +18,7 @@ import {
   type ManualText,
 } from "@/components/SgDiagram";
 import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem } from "@/lib/diagramLayout";
+import { clampWords } from "@/lib/wrapSvgText";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -681,13 +682,30 @@ export function Diagrams() {
       // content was all there, but bleeding into the next column once
       // opened in a CAD app). Compressing every DXF text horizontally by
       // this factor compensates without touching the shared layout math
-      // that both this export and the on-screen diagram rely on.
-      const DXF_TEXT_WIDTH_FACTOR = 0.7;
+      // that both this export and the on-screen diagram rely on. 0.7 turned
+      // out not to be aggressive enough (re-confirmed via screenshot: the
+      // annexure table's row-1 labels were still bleeding across all three
+      // columns) — dropped further. This only narrows characters, it never
+      // shrinks the font HEIGHT, so it doesn't trade away the legibility
+      // the client separately asked to increase (Part 23).
+      const DXF_TEXT_WIDTH_FACTOR = 0.5;
       const text = (x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") => {
         if (!s) return;
         const p = w(x, y);
         notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor, widthFactor: DXF_TEXT_WIDTH_FACTOR });
       };
+      // Belt-and-suspenders on top of the width factor above: the two long
+      // fixed annexure-table headers ("This diagram is annexed to" / "The
+      // immediate parent diagram is") were the specific strings bleeding
+      // across columns — unlike every value field around them, they were
+      // never width-checked at all, since the on-screen SVG's actual
+      // (real, per-character) font metrics happened to fit them even
+      // though the flat 0.62-per-character estimate used elsewhere in this
+      // template wouldn't. A generous 0.95 factor here is deliberately
+      // pessimistic — enough margin that no plausible CAD default text
+      // style renders these wider than their own column, regardless of
+      // exactly how wide the viewer's font turns out to be.
+      const dxfLabelFit = (s: string, maxWidth: number, fontSize: number) => clampWords(s, maxWidth, fontSize, Infinity, 0.95);
 
       // `points`/`sides` here are the RAW (un-relettered) props — the same
       // ones SgDiagram itself receives — so computeDiagramLayout relabels
@@ -707,7 +725,7 @@ export function Diagrams() {
         arrowX, arrowY,
         bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY,
         figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
-        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit,
+        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit, leftColW,
         annTop, annBottom, annC1, annC2,
         gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
         gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
@@ -800,8 +818,15 @@ export function Diagrams() {
       situateLines.forEach((ln, i) => text(VB_W / 2, situateY0 + i * LEGAL_LH, ln, FS_BEACON_HEAD, "middle"));
 
       // ===================== Certification/deductions (left) + surveyor (right) =====================
-      text(tx + 4, certY1, cert, FS_BEACON_HEAD);
-      text(tx + 4, deductionsY, "DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", FS_BEACON_HEAD);
+      // `cert`/`surveyorFit` are already clamped to `leftColW`/`rightColW` in
+      // the shared layout, but that clamp assumes the SVG's own 0.62
+      // per-character estimate — re-fit here with the same wide-CAD-font
+      // margin as the annexure labels above, and clamp the previously
+      // unchecked "DEDUCTIONS..." line the same way (client req 2026-08-26,
+      // re-confirmed via screenshot: this row was bleeding into the
+      // surveyor name/"Land Surveyor" column beside it).
+      text(tx + 4, certY1, dxfLabelFit(cert, leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(tx + 4, deductionsY, dxfLabelFit("DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(VB_W - 700, certY1, surveyorFit, FS_BEACON_HEAD);
       text(VB_W - 700, deductionsY, "Land Surveyor", FS_BEACON_HEAD);
 
@@ -810,7 +835,9 @@ export function Diagrams() {
       line(annC1, annTop, annC1, annBottom);
       line(annC2, annTop, annC2, annBottom);
 
-      text(tx + 10, annTop + 40, "This diagram is annexed to", FS_BEACON_HEAD);
+      const annCol1LabelW = annC1 - tx - 20;
+      const annCol2LabelW = annC2 - annC1 - 20;
+      text(tx + 10, annTop + 40, dxfLabelFit("This diagram is annexed to", annCol1LabelW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(tx + 10, annTop + 90, annexedTo, FS_BEACON_HEAD);
       text(tx + 10, annTop + 140, annexedDate, FS_BEACON_HEAD);
       text(annC1 - 140, annTop + 140, "in favour", FS_BEACON_HEAD);
@@ -821,7 +848,7 @@ export function Diagrams() {
       });
       text((tx + annC1) / 2, annBottom - 14, "Registrar of Deeds", FS_BEACON_HEAD, "middle");
 
-      text(annC1 + 10, annTop + 40, "The immediate parent diagram is", FS_BEACON_HEAD);
+      text(annC1 + 10, annTop + 40, dxfLabelFit("The immediate parent diagram is", annCol2LabelW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(annC2 - 14, annTop + 90, "Annexed", FS_BEACON_HEAD, "end");
       text(annC1 + 10, annTop + 140, "to", FS_BEACON_HEAD);
       text(annC1 + 50, annTop + 140, parentDiagramNo, FS_BEACON_HEAD);
