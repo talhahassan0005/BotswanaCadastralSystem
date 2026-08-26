@@ -16,8 +16,17 @@ export interface ImportedDrawing {
    *  template with centred/right-aligned labels (e.g. table headers, right-
    *  aligned distance values) lands in the same place as the SVG/print
    *  version instead of always starting from its own left edge (client req
-   *  2026-08-26, Part 34). */
-  texts: { x: number; y: number; text: string; height: number; layer?: string; anchor?: "middle" | "end" }[];
+   *  2026-08-26, Part 34).
+   *
+   *  `widthFactor` (DXF group 41, default 1.0 when unset) horizontally
+   *  scales the text — a real CAD viewer's default text style (e.g. AutoCAD
+   *  "Standard"/txt.shx) renders each character noticeably WIDER than the
+   *  browser's own font did when a template's column positions/word-wrap
+   *  were computed against it, so text that fit cleanly on screen can bleed
+   *  into the next column once opened in a CAD app (client req 2026-08-26,
+   *  Part 34 follow-up: "font ... responsive nahi hai" — the content was
+   *  all there, but overlapping). Compressing it back down compensates. */
+  texts: { x: number; y: number; text: string; height: number; layer?: string; anchor?: "middle" | "end"; widthFactor?: number }[];
 }
 
 /** Sanitise a layer name for DXF (no spaces / reserved chars). */
@@ -116,7 +125,8 @@ export function parseDxf(text: string): ImportedDrawing {
         const s = c.find(([k]) => k === 1)?.[1] ?? "";
         const justify = num(c, 72);
         const anchor = justify === 1 ? "middle" : justify === 2 ? "end" : undefined;
-        if (x != null && y != null) out.texts.push({ x, y, text: cleanText(s), height: h ?? 10, layer: lay, anchor });
+        const widthFactor = num(c, 41);
+        if (x != null && y != null) out.texts.push({ x, y, text: cleanText(s), height: h ?? 10, layer: lay, anchor, widthFactor });
         break;
       }
       case "CIRCLE": {
@@ -239,7 +249,9 @@ export function writeDxf(d: ImportedDrawing): string {
     e(0, "SEQEND"); e(5, nextHandle());
   }
   for (const t of d.texts) {
-    e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(1, t.text);
+    e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height);
+    if (t.widthFactor != null) e(41, t.widthFactor);
+    e(1, t.text);
     // Horizontal justification (72: 1=center, 2=right) requires a second
     // alignment point (11/21/31) per the DXF spec — set equal to the first
     // since we're not using DXF's "fit"/"aligned" modes, just plain

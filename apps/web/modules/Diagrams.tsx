@@ -617,10 +617,19 @@ export function Diagrams() {
           layer: "SHEET",
         });
       };
+      // A real CAD viewer's default text style renders each character
+      // noticeably wider than the browser did when this template's column
+      // positions/word-wrap were computed against it (client req
+      // 2026-08-26, Part 34 follow-up: "font ... responsive nahi hai" —
+      // content was all there, but bleeding into the next column once
+      // opened in a CAD app). Compressing every DXF text horizontally by
+      // this factor compensates without touching the shared layout math
+      // that both this export and the on-screen diagram rely on.
+      const DXF_TEXT_WIDTH_FACTOR = 0.7;
       const text = (x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") => {
         if (!s) return;
         const p = w(x, y);
-        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
+        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor, widthFactor: DXF_TEXT_WIDTH_FACTOR });
       };
 
       // `points`/`sides` here are the RAW (un-relettered) props — the same
