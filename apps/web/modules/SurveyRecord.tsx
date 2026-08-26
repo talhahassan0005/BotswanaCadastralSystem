@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { buildConsistencyLines, buildCoordinateListLines, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
+import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
 import type { ParsedRow, PointType } from "@/lib/types";
 
 type DocId = "submission" | "report" | "consistency" | "coordinates" | "comparison";
@@ -142,8 +142,12 @@ export function SurveyRecord() {
   const coordSysShort = config.coordinateSystem.replace(" Botswana", "").replace(/(\d+)/, "$1°");
   const coordListSubtitle = `Coordinate List of ${coordSysShort} (Metres)`;
   const coordListRows = importResult?.rows ?? [];
+  // Sort beacons ascending/descending by name within each of the 4 sections
+  // (client req 2026-08-26, Part 31c) — "none" leaves rows in their
+  // original import order, matching the report's prior (unsorted) behaviour.
+  const [coordSortDir, setCoordSortDir] = useState<"asc" | "desc" | null>(null);
   const coordListLines = coordListRows.some((r) => r.east != null && r.north != null)
-    ? buildCoordinateListLines(coordListRows, coordListTitle, coordListSubtitle)
+    ? buildCoordinateListLines(coordListRows, coordListTitle, coordListSubtitle, coordSortDir)
     : null;
   function setPointMeta(index: number, patch: Partial<Pick<ParsedRow, "description" | "srNo">>) {
     if (!importResult) return;
@@ -308,7 +312,34 @@ export function SurveyRecord() {
           )}
           {doc === "coordinates" && (
             <div className="space-y-3">
-              <h1 className="text-base font-bold text-slate-800">Coordinate List</h1>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-base font-bold text-slate-800">Coordinate List</h1>
+                {coordListLines && (
+                  <div className="flex items-center gap-1 text-xs">
+                    <span className="mr-1 text-slate-400">Sort beacons:</span>
+                    {(
+                      [
+                        ["none", "Original"],
+                        ["asc", "A → Z"],
+                        ["desc", "Z → A"],
+                      ] as const
+                    ).map(([v, label]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setCoordSortDir(v === "none" ? null : v)}
+                        className={`rounded-md border px-2 py-1 font-semibold ${
+                          (coordSortDir ?? "none") === v
+                            ? "border-brand bg-brand text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {!coordListLines ? (
                 <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
                   Import points under Data Import first — this groups every point by its Type (Govt Trig Station,
@@ -317,7 +348,11 @@ export function SurveyRecord() {
               ) : (
                 <>
                   {COORD_LIST_GROUPS.map((g) => {
-                    const rows = coordListRows.filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === (g.key as PointType));
+                    let rows = coordListRows.filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === (g.key as PointType));
+                    if (coordSortDir) {
+                      rows = [...rows].sort((a, b) => comparePointNames(a.beaconId ?? "", b.beaconId ?? ""));
+                      if (coordSortDir === "desc") rows.reverse();
+                    }
                     if (!rows.length) return null;
                     return (
                       <div key={g.key}>

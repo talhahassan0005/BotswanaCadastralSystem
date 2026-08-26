@@ -48,14 +48,36 @@ export const COORD_LIST_GROUPS: { key: PointType; label: string }[] = [
   { key: "beacon", label: "Beacons" },
 ];
 
+/** "AB2" < "AB10" (not "AB10" < "AB2") — point names are frequently a mix of
+ *  letters and numbers, so a natural sort (client req 2026-08-26, Part 31c:
+ *  "allow sorting beacons ascending or decending") reads the way a surveyor
+ *  actually expects, not a plain lexical string sort. */
+export function comparePointNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 /** "Coordinate List" report (Part 31b) — every project point grouped into 4
  *  labelled sections by its Part 31a Type, in a fixed order (Trig, Ref, WP,
  *  Beacons); a type with no points omits its section entirely. Column
  *  widths are computed from the actual data so names/descriptions of any
- *  length still line up. */
-export function buildCoordinateListLines(rows: ParsedRow[], titleLine: string, subtitleLine: string): string[] {
+ *  length still line up. `sortDir` (Part 31c) sorts each section's own rows
+ *  by point name — the 4-section grouping/order itself never changes,
+ *  sorting is scoped within each section, matching the client's "sorting
+ *  beacons" wording (a Trig Station shouldn't end up filed under Beacons
+ *  just because its name sorts later). */
+export function buildCoordinateListLines(
+  rows: ParsedRow[],
+  titleLine: string,
+  subtitleLine: string,
+  sortDir?: "asc" | "desc" | null
+): string[] {
   const valid = rows.filter((r) => r.east != null && r.north != null);
-  const byType = (t: PointType) => valid.filter((r) => (r.pointType ?? "beacon") === t);
+  const byType = (t: PointType) => {
+    const grows = valid.filter((r) => (r.pointType ?? "beacon") === t);
+    if (!sortDir) return grows;
+    const sorted = [...grows].sort((a, b) => comparePointNames(a.beaconId ?? "", b.beaconId ?? ""));
+    return sortDir === "desc" ? sorted.reverse() : sorted;
+  };
   const cell = (r: ParsedRow) => ({
     point: r.beaconId ?? "",
     e: (r.east as number).toFixed(2),
