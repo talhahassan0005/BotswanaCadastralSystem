@@ -17,6 +17,7 @@ import {
   type ManualAnnotation,
   type ManualText,
 } from "@/components/SgDiagram";
+import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem } from "@/lib/diagramLayout";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -572,34 +573,25 @@ export function Diagrams() {
     URL.revokeObjectURL(url);
   }
 
-  /** Export the surveyed geometry (not the print layout) as DXF, reusing the
-   *  app's existing DXF writer (client req 2026-08-22) — each boundary point
-   *  as a labelled POINT, the boundary itself as a closed LWPOLYLINE, and
-   *  any off-boundary reference beacons as their own layer. */
-  /** Replicates the printed sheet's frame border, top data table (grid
-   *  lines + headers + rows), north arrow, and title/area text as real DXF
-   *  geometry (client req 2026-08-26: "I want the dxf to come exactly the
-   *  way it is in the system" — a text-only schedule wasn't enough).
+  /** Replicates the FULL printed sheet — frame border, top data table
+   *  (headers/dividers/rows/CONSTANTS row exactly per Part 27's open-bottom
+   *  style), the D.S.M No./Approved/Director of Surveys box, beacon
+   *  description, locality name, north arrow, the legal-description block,
+   *  the certificate paragraph + surveyor signature line, and the bottom
+   *  registration (annexure) table — as real DXF geometry (client req
+   *  2026-08-26, Part 34: "the DXF export must be visually identical in
+   *  structure to what Parts 19/23/25/26/27 already specify... a bare data
+   *  dump" was the complaint, and the two-implementations root cause).
    *
-   *  The printed sheet's layout lives in fixed page-mm coordinates totally
-   *  unrelated to the boundary's real east/north scale, so this can't just
-   *  copy SgDiagram's numbers verbatim — instead every page-mm point (each
-   *  grid line's endpoints, each label's anchor) is run through the SAME
-   *  toWorld() transform the diagram itself exposes via onTransform, which
-   *  is exactly the map SgDiagram uses to place the boundary on the page,
-   *  just inverted. That guarantees the table/frame/north-arrow land at
-   *  the correct real-world size and position relative to the boundary —
-   *  the two are never fighting over a shared coordinate space, they're
-   *  both already expressed in it.
-   *
-   *  The column widths/row-height math below is intentionally identical to
-   *  SgDiagram's own top-table formulas (Part 23 mm figures, the
-   *  beacon-count-aware row growth from the "font must not shrink" fix) —
-   *  if either changes, keep them in sync so the DXF actually matches what
-   *  prints. Deliberately scoped to the frame + top table + north arrow +
-   *  title/area text, not the bottom deeds/annexure table or the D.S.M/
-   *  Approved signature block — those are pure lodging boilerplate with no
-   *  survey data in them, unlike everything included here. */
+   *  Every position/line/wrapped-text-block below comes from
+   *  `computeDiagramLayout()` — the SAME function SgDiagram.tsx calls to
+   *  draw the on-screen/print SVG — so this can no longer drift from what
+   *  actually prints; it isn't a second, hand-tuned formula set anymore.
+   *  Each computed page-unit point still gets run through the live
+   *  toWorld() transform SgDiagram exposes via onTransform (the exact
+   *  inverse of how it places the boundary on the page), which is what
+   *  lets a page-mm layout and the boundary's real east/north survey scale
+   *  share one DXF drawing without either being wrong. */
   function downloadDxf() {
     const notes: ImportedDrawing["texts"] = [];
     const sheetLines: ImportedDrawing["polylines"] = [];
@@ -617,108 +609,169 @@ export function Diagrams() {
         const a = w(x1, y1), b = w(x2, y2);
         sheetLines.push({ pts: [{ x: a.east, y: a.north }, { x: b.east, y: b.north }], closed: false, layer: "SHEET" });
       };
-      const text = (x: number, y: number, s: string, heightUnits: number) => {
+      const rect = (x: number, y: number, rw: number, rh: number) => {
+        const p1 = w(x, y), p2 = w(x + rw, y), p3 = w(x + rw, y + rh), p4 = w(x, y + rh);
+        sheetLines.push({
+          pts: [{ x: p1.east, y: p1.north }, { x: p2.east, y: p2.north }, { x: p3.east, y: p3.north }, { x: p4.east, y: p4.north }],
+          closed: true,
+          layer: "SHEET",
+        });
+      };
+      const text = (x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") => {
         if (!s) return;
         const p = w(x, y);
-        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET" });
-      };
-      const sideLbl = (from: string | null, to: string | null) => {
-        const f = from ?? "", tt = to ?? "";
-        return f.length <= 1 && tt.length <= 1 ? `${f}${tt}` : `${f}-${tt}`;
-      };
-      const fmtSys = (cs: string) => {
-        const m = cs.match(/Lo\s*(\d+)/i);
-        return m ? `LO. ${m[1]}°` : cs;
+        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
       };
 
-      // ---- Same page-mm geometry as SgDiagram's frame + top table ----
-      const MM = 10;
-      const FRAME_X = 24.8 * MM, FRAME_Y = 12.2 * MM, FRAME_W = 160.4 * MM, FRAME_H = 272.9 * MM;
-      const tx = FRAME_X, tw = FRAME_W, ty = FRAME_Y;
-      const headH = 14.0 * MM;
-      const dataTop = ty + headH;
-      const n = Math.max(points.length, sides.length, 1);
-      const FS = 28; // matches FS_TABLE_SUB
-      const rowH = Math.max((51.0 * MM - headH) / n, FS / 0.55);
-      const tableBottom = ty + headH + rowH * n;
-      const maxSideLabelChars = Math.max(2, ...sides.map((s) => sideLbl(s.from, s.to).length));
-      const sideValExtra = Math.min(200, Math.max(0, maxSideLabelChars * FS * 0.62 + 16 - 7.9 * MM));
-      const xSideVal = tx + 7.9 * MM + sideValExtra;
-      const xMetR = xSideVal + 25.6 * MM;
-      const xDir = xMetR, xDirR = xDir + 27.9 * MM;
-      const xPt = xDirR, xPtR = xPt + 6.6 * MM;
-      const xY = xPtR, xYR = xY + 25.5 * MM;
-      const xX = xYR, xXR = xX + 27.0 * MM;
-      const xDsm = xXR - 40;
-      const tableRight = tx + tw;
-      const hRow1 = ty + headH * 0.26, hRow2 = ty + headH * 0.56;
+      // `points`/`sides` here are the RAW (un-relettered) props — the same
+      // ones SgDiagram itself receives — so computeDiagramLayout relabels
+      // the boundary A, B, C... exactly the way the printed sheet does
+      // (Part 23). Destructured field names that would otherwise shadow
+      // this component's own `points`/`sides`/`fig` are aliased.
+      const L = computeDiagramLayout(fullMeta, points, sides, extraPoints);
+      const {
+        points: letteredPoints, sides: letteredSides,
+        VB_W,
+        FRAME_X, FRAME_Y, FRAME_W, FRAME_H,
+        FS_TABLE_HEAD, FS_TABLE_SUB, FS_CONSTANTS, FS_BEACON_HEAD, FS_LEGAL, FS_LANDCALLED,
+        tx, tw, ty, tableRight, headH, dataTop, tableBottom, n, dataFS, rowH,
+        xSideVal, xMetR, xDir, xDirR, xPt, xY, xYR, xX, xXR, xDsm,
+        hRow1, hRow2, hRow3, xYDividerTop, xXDividerTop,
+        dsmApprovedY, dosY1, dosY2, dosLineY,
+        arrowX, arrowY,
+        bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY,
+        figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
+        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit,
+        annTop, annBottom, annC1, annC2,
+        gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
+        gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
+        annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,
+      } = L;
 
-      // Outer frame border.
+      // ===================== Outer frame border =====================
       line(tx, ty, tableRight, ty);
       line(tableRight, ty, tableRight, ty + FRAME_H);
       line(tableRight, ty + FRAME_H, tx, ty + FRAME_H);
       line(tx, ty + FRAME_H, tx, ty);
 
-      // Table dividers + header underline.
+      // ===================== Top data table (Part 27: open-bottom) =====================
       line(xSideVal, dataTop, xSideVal, tableBottom);
       line(xMetR, ty, xMetR, tableBottom);
       line(xDirR, ty, xDirR, tableBottom);
-      line(xY, ty, xY, tableBottom);
-      line(xX, ty, xX, tableBottom);
+      line(xY, xYDividerTop, xY, tableBottom);
+      line(xX, xXDividerTop, xX, tableBottom);
       line(xDsm, ty, xDsm, tableBottom);
-      line(tx, dataTop, xDsm, dataTop);
+      line(tx, ty + headH, xDsm, ty + headH);
 
-      // Header text.
-      text((tx + xMetR) / 2, hRow1, "SIDES", FS);
-      text((xDir + xDirR) / 2, hRow1, "DIRECTIONS", FS);
-      text((xPt + xXR) / 2, hRow1, "CO-ORDINATES", FS);
-      text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS);
-      text((tx + xMetR) / 2, hRow2, "METRES", FS - 5);
-      text(xPt + (xY - xPt) / 2, hRow2, "Y", FS - 5);
-      text((xY + xXR) / 2, hRow2, `System ${fmtSys(meta.coordinateSystem)}`, FS - 8);
-      text(xX + (xXR - xX) / 2, hRow2, "X", FS - 5);
-      text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS);
+      text((tx + xMetR) / 2, hRow1, "SIDES", FS_TABLE_HEAD, "middle");
+      text((xDir + xDirR) / 2, hRow1, "DIRECTIONS", FS_TABLE_HEAD, "middle");
+      text((xPt + xXR) / 2, hRow1, "CO-ORDINATES", FS_TABLE_HEAD, "middle");
+      text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
+      text((tx + xMetR) / 2, hRow2, "METRES", FS_TABLE_SUB, "middle");
+      text(xPt + (xY - xPt) / 2, hRow2, "Y", FS_TABLE_SUB, "middle");
+      text((xY + xXR) / 2, hRow2, `System ${fmtSystem(meta.coordinateSystem)}`, FS_TABLE_SUB, "middle");
+      text(xX + (xXR - xX) / 2, hRow2, "X", FS_TABLE_SUB, "middle");
+      text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
+      text((xDir + xDirR) / 2, hRow3, "CONSTANTS", FS_CONSTANTS, "middle");
+      text(xY + 8, hRow3, "+    0,00", FS_CONSTANTS);
+      text(xX + 8, hRow3, "+    0,00", FS_CONSTANTS);
 
-      // Data rows.
       for (let i = 0; i < n; i++) {
-        const s = sides[i];
-        const p = points[i];
+        const s = letteredSides[i];
+        const p = letteredPoints[i];
         const y = dataTop + i * rowH + rowH * 0.7;
         if (s) {
-          text(tx + 10, y, sideLbl(s.from, s.to), FS);
-          text(xMetR - 200, y, fmtDist(s.distance), FS);
-          text(xDir + 12, y, toDotted(s.bearing_dms), FS);
+          text(tx + 10, y, sideLabel(s.from, s.to), dataFS);
+          text(xMetR - 8, y, tDist(s.distance), dataFS, "end");
+          text(xDir + 12, y, toDotted(s.bearing_dms), dataFS);
         }
         if (p) {
-          text(xPt + 8, y, p.name ?? "", FS);
-          text(xY + 8, y, fmtCoord(p.east), FS);
-          text(xX + 8, y, fmtCoord(p.north), FS);
+          text(xPt + 8, y, p.name ?? "", dataFS);
+          text(xY + 8, y, tCoord(p.east), dataFS);
+          text(xX + 8, y, tCoord(p.north), dataFS);
         }
       }
 
-      // North arrow (simple line + triangle, positioned left of the figure area).
-      const naX = tx + 90, naY = tableBottom + 400;
-      line(naX, naY + 54, naX, naY - 170);
-      line(naX, naY - 170, naX - 14, naY - 55);
-      line(naX - 14, naY - 55, naX + 4, naY - 30);
-      line(naX + 4, naY - 30, naX, naY - 170);
-      text(naX - 20, naY + 90, "T", FS);
-      text(naX + 8, naY + 90, "N", FS);
+      // ===================== Beacon description + locality =====================
+      text(tx + 4, bdHeadingY, "BEACON DESCRIPTION", FS_BEACON_HEAD);
+      beaconLines.forEach((ln, i) => text(tx + 4, bdLinesY0 + i * BD_LH, ln, FS_BEACON_HEAD));
+      text(tx + tw / 2, localityY, meta.location || "", FS_BEACON_HEAD, "middle");
 
-      // Title / legal description / area declaration (single-line, not
-      // word-wrapped like the printed sheet — a CAD import doesn't need
-      // the sheet's line-wrap, just the text itself).
-      let titleY = ty - 60;
-      const title = (s: string, h = FS + 6) => { if (s) { text(tx + tw / 2, titleY, s, h); titleY -= h * 1.6; } };
-      const figureLetters = points.map((p) => p.name ?? "?").join(" ");
-      if (fig) title(`THE FIGURE ${figureLetters} REPRESENTS ${areaText(fig.area_ha)} OF LAND CALLED`);
-      title(meta.lotName || "", FS + 8);
-      if (meta.parent) title(`(${meta.parent})`);
-      title(`SITUATE AT ${meta.location || ""} IN THE ${meta.tribalArea || ""}`);
+      // ===================== D.S.M No. / Approved / Director of Surveys box =====================
+      line(xDsm, tableBottom, xDsm, Math.max(tableBottom, dosLineY));
+      text(xDsm + 16, dsmApprovedY, "Approved", FS_BEACON_HEAD);
+      text(xDsm + 16, dosY1, "Director of Surveys", FS_BEACON_HEAD);
+      text(xDsm + 16, dosY2, "and Mapping", FS_BEACON_HEAD);
+      line(xDsm + 16, dosLineY, tableRight - 16, dosLineY);
 
-      // Beacon description, bottom-left under the table.
-      text(tx + 4, tableBottom + 60, "BEACON DESCRIPTION", FS);
-      text(tx + 4, tableBottom + 60 + FS * 1.6, meta.beaconDescription || "", FS);
+      // ===================== North arrow (same outline style/size as the SVG) =====================
+      line(arrowX, arrowY - 170, arrowX, arrowY + 54);
+      {
+        const p1 = w(arrowX, arrowY - 170), p2 = w(arrowX - 14, arrowY - 55), p3 = w(arrowX + 4, arrowY - 30);
+        sheetLines.push({
+          pts: [{ x: p1.east, y: p1.north }, { x: p2.east, y: p2.north }, { x: p3.east, y: p3.north }],
+          closed: true,
+          layer: "SHEET",
+        });
+      }
+      text(arrowX - 6, arrowY + 24, "T", FS_BEACON_HEAD, "end");
+      text(arrowX + 6, arrowY + 24, "N", FS_BEACON_HEAD);
+
+      if (meta.scale > 0) {
+        text(VB_W / 2, legalY0 - 40, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
+      }
+
+      // ===================== Legal description =====================
+      figureLines.forEach((ln, i) => text(VB_W / 2, legalY0 + i * LEGAL_LH, ln, FS_LEGAL, "middle"));
+      landCalledLines.forEach((ln, i) => text(VB_W / 2, landCalledY0 + i * LEGAL_LH, ln, FS_LANDCALLED, "middle"));
+      let parentLine = 0;
+      parentLineGroups.forEach((group) => {
+        group.forEach((ln) => {
+          text(VB_W / 2, parentY0 + parentLine * LEGAL_LH, ln, FS_LEGAL, "middle");
+          parentLine += 1;
+        });
+      });
+      situateLines.forEach((ln, i) => text(VB_W / 2, situateY0 + i * LEGAL_LH, ln, FS_BEACON_HEAD, "middle"));
+
+      // ===================== Certification/deductions (left) + surveyor (right) =====================
+      text(tx + 4, certY1, cert, FS_BEACON_HEAD);
+      text(tx + 4, deductionsY, "DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", FS_BEACON_HEAD);
+      text(VB_W - 700, certY1, surveyorFit, FS_BEACON_HEAD);
+      text(VB_W - 700, deductionsY, "Land Surveyor", FS_BEACON_HEAD);
+
+      // ===================== Bottom registration (deeds/annexure) table =====================
+      rect(tx, annTop, tw, annBottom - annTop);
+      line(annC1, annTop, annC1, annBottom);
+      line(annC2, annTop, annC2, annBottom);
+
+      text(tx + 10, annTop + 40, "This diagram is annexed to", FS_BEACON_HEAD);
+      text(tx + 10, annTop + 90, annexedTo, FS_BEACON_HEAD);
+      text(tx + 10, annTop + 140, annexedDate, FS_BEACON_HEAD);
+      text(annC1 - 140, annTop + 140, "in favour", FS_BEACON_HEAD);
+      text(tx + 10, annTop + 190, annexedFavour, FS_BEACON_HEAD);
+      annexNameLines.forEach((ln, i) => {
+        const y = annBottom - 46 - (annexNameLines.length - 1 - i) * ANNEX_NAME_LH;
+        text((tx + annC1) / 2, y, ln, FS_BEACON_HEAD, "middle");
+      });
+      text((tx + annC1) / 2, annBottom - 14, "Registrar of Deeds", FS_BEACON_HEAD, "middle");
+
+      text(annC1 + 10, annTop + 40, "The immediate parent diagram is", FS_BEACON_HEAD);
+      text(annC2 - 14, annTop + 90, "Annexed", FS_BEACON_HEAD, "end");
+      text(annC1 + 10, annTop + 140, "to", FS_BEACON_HEAD);
+      text(annC1 + 50, annTop + 140, parentDiagramNo, FS_BEACON_HEAD);
+
+      text(annC2 + 12, annTop + 40, "General Plan No.", FS_BEACON_HEAD);
+      text(gpNoX, annTop + 40, gpNo, FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 90, "S.R No.", FS_BEACON_HEAD);
+      text(srNoX, annTop + 90, srNo, FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 140, "D.S.M File:", FS_BEACON_HEAD);
+      text(dsmFileX, annTop + 140, dsmFile, FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 190, "Comp.", FS_BEACON_HEAD);
+      text(compX, annTop + 190, comp, FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 240, "Degree Square:", FS_BEACON_HEAD);
+      text(degreeSquareX, annTop + 240, degreeSquare, FS_BEACON_HEAD);
+      text(annC2 + 12, annTop + 290, "LIR No:", FS_BEACON_HEAD);
+      text(lirNoX, annTop + 290, lirNo, FS_BEACON_HEAD);
     }
 
     const drawing: ImportedDrawing = {

@@ -11,7 +11,13 @@
 export interface ImportedDrawing {
   points: { x: number; y: number; label?: string; layer?: string }[];
   polylines: { pts: { x: number; y: number }[]; closed: boolean; layer?: string }[];
-  texts: { x: number; y: number; text: string; height: number; layer?: string }[];
+  /** `anchor` mirrors SVG's text-anchor ("start" is DXF's default left
+   *  justification, so it's left unset there) — needed so a DXF export of a
+   *  template with centred/right-aligned labels (e.g. table headers, right-
+   *  aligned distance values) lands in the same place as the SVG/print
+   *  version instead of always starting from its own left edge (client req
+   *  2026-08-26, Part 34). */
+  texts: { x: number; y: number; text: string; height: number; layer?: string; anchor?: "middle" | "end" }[];
 }
 
 /** Sanitise a layer name for DXF (no spaces / reserved chars). */
@@ -108,7 +114,9 @@ export function parseDxf(text: string): ImportedDrawing {
       case "MTEXT": {
         const x = num(c, 10), y = num(c, 20), h = num(c, 40);
         const s = c.find(([k]) => k === 1)?.[1] ?? "";
-        if (x != null && y != null) out.texts.push({ x, y, text: cleanText(s), height: h ?? 10, layer: lay });
+        const justify = num(c, 72);
+        const anchor = justify === 1 ? "middle" : justify === 2 ? "end" : undefined;
+        if (x != null && y != null) out.texts.push({ x, y, text: cleanText(s), height: h ?? 10, layer: lay, anchor });
         break;
       }
       case "CIRCLE": {
@@ -232,6 +240,15 @@ export function writeDxf(d: ImportedDrawing): string {
   }
   for (const t of d.texts) {
     e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(1, t.text);
+    // Horizontal justification (72: 1=center, 2=right) requires a second
+    // alignment point (11/21/31) per the DXF spec — set equal to the first
+    // since we're not using DXF's "fit"/"aligned" modes, just plain
+    // centre/right anchoring to match the SVG's text-anchor (client req
+    // 2026-08-26, Part 34).
+    if (t.anchor === "middle" || t.anchor === "end") {
+      e(72, t.anchor === "middle" ? 1 : 2);
+      e(11, t.x); e(21, t.y); e(31, 0);
+    }
   }
   e(0, "ENDSEC");
   e(0, "EOF");
