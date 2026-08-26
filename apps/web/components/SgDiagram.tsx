@@ -654,7 +654,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // space add karni hai") — anchored off dsmApprovedY itself, not a
         // second fixed offset from dsmBoxTop, so the gap stays correct no
         // matter where "Approved" ends up sitting.
-        const dosY1 = dsmApprovedY + FS_DOS * 2.2;
+        const dosY1 = dsmApprovedY+(430) + FS_DOS * 2.2;
         const dosY2 = dosY1 + FS_DOS * 1.3;
         const dosLineY = dosY2 + FS_DOS * 1.1;
         return (
