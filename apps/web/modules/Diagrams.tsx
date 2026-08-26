@@ -687,45 +687,42 @@ export function Diagrams() {
         const p = w(x, y);
         notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
       };
-      // Guessed character-width factors (0.62, then 0.95) kept turning out
-      // wrong in one direction or the other — client re-confirmed
-      // ("still... responsive nahi hai") that text was still bleeding
-      // across columns even after declaring an explicit Arial DXF style.
-      // Stop guessing: measure the ACTUAL rendered width of the same
-      // "Arial" font this DXF now declares, via the browser's own Canvas
-      // text-metrics API, and truncate precisely to what really fits —
-      // this can only be as wrong as the assumption that the viewer's
-      // Arial substitute renders close to the browser's Arial, which is
-      // by far the safest assumption available.
+      // Three rounds of assuming the viewer renders something close to a
+      // proportional font (Arial, measured precisely via Canvas, then with
+      // a 15% margin) all failed on the exact same three strings — client
+      // re-confirmed the identical columns are still bleeding every time.
+      // That pattern means the assumption itself is wrong, not the margin:
+      // a lightweight/generic DXF viewer commonly ignores the file's own
+      // STYLE/font declaration entirely and falls back to a fixed built-in
+      // rendering that's far closer to MONOSPACE than to Arial's actual
+      // (much narrower, per-letter) proportions. Measuring real Arial only
+      // ever makes the estimate MORE generous than that, never safer.
+      // Fitting now takes the WORSE (wider) of a real-Arial measurement and
+      // a near-monospace estimate, so it's protected whichever way a given
+      // viewer actually renders — guaranteed-safe was made the priority
+      // over minimal truncation after this many repeated failures.
       let measureCtx: CanvasRenderingContext2D | null | undefined;
-      const measureTextWidth = (s: string, fontSizeUnits: number): number => {
+      const measureArialWidth = (s: string, fontSizeUnits: number): number => {
         if (measureCtx === undefined) {
           measureCtx = document.createElement("canvas").getContext("2d");
         }
-        if (!measureCtx) return s.length * fontSizeUnits * 0.6; // no canvas available — rough fallback
+        if (!measureCtx) return 0;
         measureCtx.font = `${fontSizeUnits}px Arial, sans-serif`;
         return measureCtx.measureText(s).width;
       };
-      // A real DXF viewer isn't guaranteed to actually have Arial installed
-      // and may fall back to something else entirely, wider than what the
-      // browser's own Arial measures here (client req 2026-08-26,
-      // re-confirmed via screenshot: still bleeding even measured against
-      // real Arial metrics). A modest safety margin on the threshold — not
-      // a per-character squeeze on the rendered text itself, which is what
-      // visibly distorted the font in an earlier round — keeps this
-      // resilient to that substitution without trading away legibility.
+      const MONOSPACE_CHAR_WIDTH = 0.85; // near worst-case per-character width, as a fraction of font height
+      const measureTextWidth = (s: string, fontSizeUnits: number): number =>
+        Math.max(measureArialWidth(s, fontSizeUnits), s.length * fontSizeUnits * MONOSPACE_CHAR_WIDTH);
       // "..." (plain ASCII) rather than the "…" glyph: a real DXF viewer
       // reading this file's text as its own single-byte codepage (R12 has
       // no Unicode declaration) turned a literal "…" into "â€¦" mojibake.
-      const DXF_FIT_MARGIN = 0.85;
       const dxfLabelFit = (s: string, maxWidth: number, fontSize: number): string => {
-        const safeWidth = maxWidth * DXF_FIT_MARGIN;
-        if (!s || measureTextWidth(s, fontSize) <= safeWidth) return s;
+        if (!s || measureTextWidth(s, fontSize) <= maxWidth) return s;
         let lo = 0, hi = s.length;
         while (lo < hi) {
           const mid = Math.ceil((lo + hi) / 2);
           const candidate = `${s.slice(0, mid).trimEnd()}...`;
-          if (measureTextWidth(candidate, fontSize) <= safeWidth) lo = mid;
+          if (measureTextWidth(candidate, fontSize) <= maxWidth) lo = mid;
           else hi = mid - 1;
         }
         return lo <= 0 ? "..." : `${s.slice(0, lo).trimEnd()}...`;
