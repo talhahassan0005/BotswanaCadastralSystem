@@ -34,6 +34,27 @@ function dxfLayer(name: string | undefined): string {
   return (name || "0").replace(/[^A-Za-z0-9_\-]/g, "_");
 }
 
+/** R12/AC1009 DXF's TEXT strings are single-byte codepage text (traditionally
+ *  Windows-1252/ANSI) with no Unicode declaration at all — a real non-ASCII
+ *  character (the "…" ellipsis this app's own truncation logic writes, or a
+ *  "°" degree sign) survives fine in a browser or in an app that happens to
+ *  treat the file as UTF-8, but a viewer that reads it as its expected
+ *  single-byte codepage instead renders the classic 2-3-character mojibake
+ *  (client req 2026-08-26, re-confirmed via screenshot: "…" showing up as
+ *  "â€¦"). Rather than gamble on which viewers guess UTF-8 correctly,
+ *  replace the couple of non-ASCII characters this template can actually
+ *  produce with what AutoCAD's own text stream has always used for them —
+ *  "%%d" is AutoCAD's traditional in-text control code for a degree symbol,
+ *  present since long before Unicode text entities existed — and fall back
+ *  to a plain ASCII "..." for anything else non-ASCII so no DXF TEXT value
+ *  this app writes can ever depend on the reader's codepage guess. */
+function asciiSafeDxfText(s: string): string {
+  return s
+    .replace(/°/g, "%%d")
+    .replace(/…/g, "...")
+    .replace(/[^\x00-\x7F]/g, "?");
+}
+
 /** Strip MTEXT inline formatting (\A1; , {\fArial;...}, \P …) to plain text. */
 function cleanText(s: string): string {
   return s
@@ -251,7 +272,7 @@ export function writeDxf(d: ImportedDrawing): string {
   for (const p of d.points) {
     e(0, "POINT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "POINTS")); e(10, p.x); e(20, p.y); e(30, 0);
     if (p.label) {
-      e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(7, "Arial"); e(1, p.label);
+      e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(p.layer ?? "LABELS")); e(10, p.x); e(20, p.y); e(30, 0); e(40, 1.5); e(7, "Arial"); e(1, asciiSafeDxfText(p.label));
     }
   }
   for (const l of d.polylines) {
@@ -264,7 +285,7 @@ export function writeDxf(d: ImportedDrawing): string {
   for (const t of d.texts) {
     e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(7, "Arial");
     if (t.widthFactor != null) e(41, t.widthFactor);
-    e(1, t.text);
+    e(1, asciiSafeDxfText(t.text));
     // Horizontal justification (72: 1=center, 2=right) requires a second
     // alignment point (11/21/31) per the DXF spec — set equal to the first
     // since we're not using DXF's "fit"/"aligned" modes, just plain

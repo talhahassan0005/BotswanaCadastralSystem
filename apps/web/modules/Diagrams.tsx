@@ -706,16 +706,29 @@ export function Diagrams() {
         measureCtx.font = `${fontSizeUnits}px Arial, sans-serif`;
         return measureCtx.measureText(s).width;
       };
+      // A real DXF viewer isn't guaranteed to actually have Arial installed
+      // and may fall back to something else entirely, wider than what the
+      // browser's own Arial measures here (client req 2026-08-26,
+      // re-confirmed via screenshot: still bleeding even measured against
+      // real Arial metrics). A modest safety margin on the threshold — not
+      // a per-character squeeze on the rendered text itself, which is what
+      // visibly distorted the font in an earlier round — keeps this
+      // resilient to that substitution without trading away legibility.
+      // "..." (plain ASCII) rather than the "…" glyph: a real DXF viewer
+      // reading this file's text as its own single-byte codepage (R12 has
+      // no Unicode declaration) turned a literal "…" into "â€¦" mojibake.
+      const DXF_FIT_MARGIN = 0.85;
       const dxfLabelFit = (s: string, maxWidth: number, fontSize: number): string => {
-        if (!s || measureTextWidth(s, fontSize) <= maxWidth) return s;
+        const safeWidth = maxWidth * DXF_FIT_MARGIN;
+        if (!s || measureTextWidth(s, fontSize) <= safeWidth) return s;
         let lo = 0, hi = s.length;
         while (lo < hi) {
           const mid = Math.ceil((lo + hi) / 2);
-          const candidate = `${s.slice(0, mid).trimEnd()}…`;
-          if (measureTextWidth(candidate, fontSize) <= maxWidth) lo = mid;
+          const candidate = `${s.slice(0, mid).trimEnd()}...`;
+          if (measureTextWidth(candidate, fontSize) <= safeWidth) lo = mid;
           else hi = mid - 1;
         }
-        return lo <= 0 ? "…" : `${s.slice(0, lo).trimEnd()}…`;
+        return lo <= 0 ? "..." : `${s.slice(0, lo).trimEnd()}...`;
       };
 
       // `points`/`sides` here are the RAW (un-relettered) props — the same
