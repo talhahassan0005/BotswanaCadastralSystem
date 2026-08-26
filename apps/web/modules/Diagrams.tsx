@@ -190,6 +190,63 @@ export function Diagrams() {
       })),
     [fig]
   );
+  // ===================== Part 37: auto-detect shared boundary sides =====
+  // When several plots are computed together in one COGO layout (Part 33 —
+  // e.g. a subdivision's 100/101/102... sharing boundary points) and the
+  // diagram is generated for just one of them, any side of THIS plot that's
+  // also an edge of another plot from that same layout gets Part 24's
+  // dashed-extension-line treatment automatically — no manual drawing
+  // needed, and (unlike Part 24's lines, which have no known neighbour)
+  // labelled with that neighbour's own plot number, since that's known
+  // here. Part 24's manual tool remains the only option for a side that
+  // borders something with no COGO data at all (an unsurveyed neighbour).
+  // `loadedPlotNumber` only resolves when this diagram's lot name matches
+  // an actual saved cogoPlots entry — a Parcels-tab pick or a quick canvas
+  // "Generate Diagram" (neither backed by a numbered, saved plot) correctly
+  // finds nothing here and this whole feature is a no-op for them.
+  const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
+  const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+    Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
+  const loadedPlotNumber = useMemo(
+    () => cogoPlots.find((p) => p.number.trim().toUpperCase() === meta.lotName.trim().toUpperCase())?.number ?? null,
+    [cogoPlots, meta.lotName]
+  );
+  const autoShared = useMemo(() => {
+    const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
+    if (!loadedPlotNumber || points.length < 3) return empty;
+    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
+    if (!others.length) return empty;
+    const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
+    const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
+    const anns: ManualAnnotation[] = [];
+    const labels: ManualText[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      const neighbor = others.find((o) =>
+        o.fig.points.some((oa, j) => {
+          const ob = o.fig.points[(j + 1) % o.fig.points.length];
+          return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
+        })
+      );
+      if (!neighbor) continue;
+      // A short stub perpendicular to the shared side's midpoint, pointing
+      // outward (away from this plot's own centroid) — same idea as a
+      // surveyor's own hand-drawn extension line (Part 24), just placed
+      // automatically since the geometry is already known here.
+      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+      const dE = b.east - a.east, dN = b.north - a.north;
+      const segLen = Math.hypot(dE, dN) || 1;
+      let pE = -dN / segLen, pN = dE / segLen;
+      if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+      const stub = Math.min(15, Math.max(2, segLen * 0.25));
+      const e2 = mE + pE * stub, n2 = mN + pN * stub;
+      const id = `auto-adj-${i}-${neighbor.number}`;
+      anns.push({ id, e1: mE, n1: mN, e2, n2 });
+      labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number });
+    }
+    return { annotations: anns, texts: labels };
+  }, [loadedPlotNumber, cogoPlots, points]);
+
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
   // Part 24) — the client clarified these are added by hand by the
   // surveyor (no survey data to compute them from), superseding the
@@ -1133,7 +1190,7 @@ export function Diagrams() {
                 points={points}
                 sides={sides}
                 extraPoints={extraPoints}
-                manualAnnotations={annotations}
+                manualAnnotations={[...annotations, ...autoShared.annotations]}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}
                 drawMode={drawingAnnotation || addingText}
@@ -1142,7 +1199,7 @@ export function Diagrams() {
                 onAnnotationHandleDown={handleAnnotationHandleDown}
                 onCanvasMouseMove={handleCanvasMouseMove}
                 onCanvasMouseUp={handleCanvasMouseUp}
-                manualTexts={texts}
+                manualTexts={[...texts, ...autoShared.texts]}
                 selectedTextId={selectedTextId}
                 onTextClick={handleTextClick}
                 onTextDoubleClick={handleTextDoubleClick}

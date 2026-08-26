@@ -103,6 +103,13 @@ export function CogoWorkspace({
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
+  /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
+   *  36) — deliberately a SEPARATE ref from `pan` above: `pan` doubles as
+   *  every tool's own click/drag tracking (vertex placement, box-select,
+   *  grip drags, ...), so routing the middle button through it risked a
+   *  mid-draw click landing wherever the pan happened to end. This ref
+   *  exists only to move the view; it never feeds any tool's click logic. */
+  const middlePan = useRef<{ vbx: number; vby: number; cx: number; cy: number } | null>(null);
   const framedCount = useRef(0);
 
   // Imported points, keyed so drafting edits (delete) can hide one without
@@ -1281,6 +1288,12 @@ export function CogoWorkspace({
     const [vbx, vby] = eventToVb(ev);
     const [e, n] = toWorld(vbx, vby);
     setCursor({ e, n });
+    if (middlePan.current) {
+      const dx = (vbx - middlePan.current.vbx) / view.zoom;
+      const dy = (vby - middlePan.current.vby) / view.zoom;
+      setView((v) => ({ ...v, cx: middlePan.current!.cx - dx, cy: middlePan.current!.cy + dy }));
+      return;
+    }
     if (gripDrag) {
       const [wx, wy] = toWorld(vbx, vby);
       const { orig, mode, lineId } = gripDrag;
@@ -1322,6 +1335,15 @@ export function CogoWorkspace({
   function onPointerDown(ev: RPointerEvent<SVGSVGElement>) {
     svgRef.current?.setPointerCapture(ev.pointerId);
     const [vbx, vby] = eventToVb(ev);
+    // Middle-button press-and-hold pan (client req 2026-08-26, Part 36) —
+    // works no matter which tool is active, and returns immediately so it
+    // never reaches any tool's own click/vertex-placement logic below
+    // (a mid-draw polygon must not lose or misplace a vertex to a pan).
+    if (ev.button === 1) {
+      ev.preventDefault();
+      middlePan.current = { vbx, vby, cx: view.cx, cy: view.cy };
+      return;
+    }
     pan.current = { vbx, vby, cx: view.cx, cy: view.cy, moved: 0 };
     if (draftTool === "select-box" || draftTool === "zoom-window") setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
     else if (draftTool === "select-lasso") setLassoPath([{ x: vbx, y: vby }]);
@@ -1344,6 +1366,10 @@ export function CogoWorkspace({
   }
 
   function onPointerUp(ev: RPointerEvent<SVGSVGElement>) {
+    if (middlePan.current) {
+      middlePan.current = null;
+      return;
+    }
     if (gripDrag) {
       // The dragged line was already committed live on every pointermove
       // above — releasing just ends the drag session at wherever it landed
@@ -1917,9 +1943,14 @@ export function CogoWorkspace({
             className="w-full touch-none bg-slate-50"
             style={{
               cursor:
-                diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
-                draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window" ||
-                draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-line" || draftTool === "delete-parcel"
+                // Middle-button pan (Part 36) overrides every other tool's
+                // own cursor — held-and-drag panning must give clear
+                // grabbing feedback no matter what's currently active.
+                middlePan.current
+                  ? "grabbing"
+                  : diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
+                    draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window" ||
+                    draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-line" || draftTool === "delete-parcel"
                   ? "crosshair"
                   : pan.current
                   ? "grabbing"
@@ -1929,8 +1960,11 @@ export function CogoWorkspace({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onDoubleClick={onDoubleClick}
-            onPointerLeave={() => (pan.current = null)}
+            onPointerLeave={() => { pan.current = null; middlePan.current = null; }}
             onWheel={onWheel}
+            // Suppresses the browser's own middle-click "autoscroll" UI,
+            // which would otherwise fight with our own hold-and-drag pan.
+            onAuxClick={(ev) => { if (ev.button === 1) ev.preventDefault(); }}
           >
             {polygons.map((p) => {
               const isTableSel = (tablesOpen && tableTab === "polygons" && tableSelected.has(p.id)) || canvasSelection.has(p.id);
