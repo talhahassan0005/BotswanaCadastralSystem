@@ -466,11 +466,19 @@ export function CogoWorkspace({
       return d.slice(0, -1);
     });
   }
+  /** Escape or the Cancel button. With vertices already placed, this only
+   *  discards the in-progress shape and stays in the same draw tool — the
+   *  client's "many plots back-to-back" workflow (Part 35) needs Escape to
+   *  be usable as a plain mis-click recovery mid-shape without kicking the
+   *  user out of Polygon/Line/Polyline/Curve mode entirely. With nothing
+   *  drawn yet, there's no in-progress shape to discard, so this is read as
+   *  a deliberate "stop drawing" instead and exits to Select. */
   function cancelDraft() {
     const newIds = new Set(draft.filter((d) => d.newId).map((d) => d.newId!));
     if (newIds.size) setExtra((e) => e.filter((p) => !newIds.has(p.id)));
+    const hadVertices = draft.length > 0;
     setDraft([]);
-    setDraftTool("select");
+    if (!hadVertices) setDraftTool("select");
     setOffsetLineId(null);
     setOffsetInput(null);
   }
@@ -989,8 +997,13 @@ export function CogoWorkspace({
         window.alert(e.message ?? String(e));
       }
     }
+    // Stay in the same draw tool after Finish (client req 2026-08-26, Part
+    // 35: "many plots back-to-back" — with potentially 200 plots in one
+    // layout, forcing a re-click on the toolbar icon after every single one
+    // was impractical). Only the in-progress vertices reset; the tool
+    // itself only deactivates via activateDrawTool (switching tools) or
+    // cancelDraft with nothing drawn yet (a deliberate "stop drawing").
     setDraft([]);
-    setDraftTool("select");
   }
   function finishDraft() {
     finishDraftWith(draft);
@@ -1870,7 +1883,8 @@ export function CogoWorkspace({
                   ? "No point there — click nearer an existing point. To create a brand-new one, use Add Point instead."
                   : <>
                       {draft.length} vertex(es) placed — click an existing point to add the next vertex, then double-click, press Enter, or Finish to complete
-                      {draftTool === "polygon" ? " (closes back to the first point)" : ""}. Undo removes the last vertex, Escape cancels.
+                      {draftTool === "polygon" ? " (closes back to the first point)" : ""}, ready to start the next one right away. Undo removes
+                      the last vertex; Escape cancels this shape (or stops drawing entirely if nothing's placed yet).
                     </>}
               </span>
               <button type="button" onClick={removeLastDraftVertex} disabled={!draft.length} title="Undo — removes only the last placed vertex (Ctrl+Z)" className="ml-auto rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800 disabled:opacity-40">
