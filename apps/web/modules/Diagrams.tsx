@@ -799,8 +799,8 @@ export function Diagrams() {
 
       // ===================== Beacon description + locality =====================
       text(tx + 4, bdHeadingY, "BEACON DESCRIPTION", FS_BEACON_HEAD);
-      beaconLines.forEach((ln, i) => text(tx + 4, bdLinesY0 + i * BD_LH, ln, FS_BEACON_HEAD));
-      text(tx + tw / 2, localityY, meta.location || "", FS_BEACON_HEAD, "middle");
+      beaconLines.forEach((ln, i) => text(tx + 4, bdLinesY0 + i * BD_LH, dxfLabelFit(ln, tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD));
+      text(tx + tw / 2, localityY, dxfLabelFit(meta.location || "", tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle");
 
       // ===================== D.S.M No. / Approved / Director of Surveys box =====================
       line(xDsm, tableBottom, xDsm, Math.max(tableBottom, dosLineY));
@@ -827,16 +827,28 @@ export function Diagrams() {
       }
 
       // ===================== Legal description =====================
-      figureLines.forEach((ln, i) => text(VB_W / 2, legalY0 + i * LEGAL_LH, ln, FS_LEGAL, "middle"));
-      landCalledLines.forEach((ln, i) => text(VB_W / 2, landCalledY0 + i * LEGAL_LH, ln, FS_LANDCALLED, "middle"));
+      // Every line here was already word-wrapped once, in the shared layout,
+      // to fit `tw - 80` at the SVG's own (proportional, ~0.62-per-
+      // character) width estimate — a client screenshot showed one of these
+      // ("THE FIGURE...REPRESENTS...HECTARES OF LAND") running past the
+      // frame's own left/right borders once opened in their viewer, the
+      // same worst-case-font mismatch already fixed for the annexure table.
+      // Re-fitting each line here (not re-wrapping, which would change how
+      // many lines the block uses and desync every Y-position below it that
+      // assumes that original count) keeps the line count — and therefore
+      // every position after it — identical to the SVG, while guaranteeing
+      // no single line can still poke past the sheet's edges.
+      const legalMaxW = tw - 80;
+      figureLines.forEach((ln, i) => text(VB_W / 2, legalY0 + i * LEGAL_LH, dxfLabelFit(ln, legalMaxW, FS_LEGAL), FS_LEGAL, "middle"));
+      landCalledLines.forEach((ln, i) => text(VB_W / 2, landCalledY0 + i * LEGAL_LH, dxfLabelFit(ln, legalMaxW, FS_LANDCALLED), FS_LANDCALLED, "middle"));
       let parentLine = 0;
       parentLineGroups.forEach((group) => {
         group.forEach((ln) => {
-          text(VB_W / 2, parentY0 + parentLine * LEGAL_LH, ln, FS_LEGAL, "middle");
+          text(VB_W / 2, parentY0 + parentLine * LEGAL_LH, dxfLabelFit(ln, legalMaxW, FS_LEGAL), FS_LEGAL, "middle");
           parentLine += 1;
         });
       });
-      situateLines.forEach((ln, i) => text(VB_W / 2, situateY0 + i * LEGAL_LH, ln, FS_BEACON_HEAD, "middle"));
+      situateLines.forEach((ln, i) => text(VB_W / 2, situateY0 + i * LEGAL_LH, dxfLabelFit(ln, legalMaxW, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle"));
 
       // ===================== Certification/deductions (left) + surveyor (right) =====================
       // `cert`/`surveyorFit` are already clamped to `leftColW`/`rightColW` in
