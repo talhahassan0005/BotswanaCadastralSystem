@@ -19,6 +19,16 @@ export interface WorkingPlanSide {
   distance: number;
 }
 
+/** One plot/erf included on a multi-plot Working Plan sheet (client req
+ *  2026-08-26, Part 33a: "Working plan should allow to add and work on
+ *  multiple plots from COGO... like shown"). `points` come straight from
+ *  that plot's own `CogoPlot.fig.points` — points shared with a neighbouring
+ *  plot (same name) are deduped by the component so they draw once. */
+export interface WorkingPlanPlot {
+  number: string;
+  points: WorkingPlanPoint[];
+}
+
 export interface WorkingPlanMeta {
   lotName: string;            // "LOT 2773 TLOKWENG"
   /** "(A PORTION OF CADASTRE 243)" — mirrors the Diagrams module's own
@@ -33,14 +43,33 @@ export interface WorkingPlanMeta {
   referenceMarkDescription: string;   // "All Reference Marks: 20mm Iron Peg in Concrete"
   workingStationDescription: string;  // "WP1: 12mm Iron Peg"
   placedBeaconDescription: string;    // "ALL: 12mm Iron Peg"
+  /** "FOUND BEACONS:" description (client req 2026-08-26, Part 33e) — a
+   *  subdivision survey typically has both newly-placed beacons and
+   *  pre-existing found ones, each needing its own description. */
+  foundBeaconDescription?: string;
   surveyor?: string;                  // Land Surveyor — auto from the project surveyor
   dateOfSurvey?: string;              // "Date of survey" — entered manually
+  /** Multi-plot title block only (client req 2026-08-26, Part 33b):
+   *  "PORTIONS OF LOT [parentLotNumber] [locality]" — the lot these
+   *  included plots were subdivided from, distinct from `parent`'s
+   *  "(A PORTION OF CADASTRE ...)" ancestry line used in single-plot mode. */
+  parentLotNumber?: string;
+  /** "[LOCALITY]" in both the "LOTS ..." and "PORTIONS OF LOT ..." lines —
+   *  mirrors the Diagrams module's "Situate at (location)" field. */
+  locality?: string;
 }
 
 interface Props {
   meta: WorkingPlanMeta;
   points: WorkingPlanPoint[];
   sides: WorkingPlanSide[];
+  /** Multiple plots on one sheet (client req 2026-08-26, Part 33a) — when
+   *  given (non-empty), this REPLACES `points` as the source of the drawing:
+   *  each entry draws as its own closed polygon with its number centred
+   *  inside it, and points sharing a name across plots are drawn once.
+   *  Omitted/empty keeps the existing single-figure behaviour using `points`
+   *  as one implicit unnamed plot. */
+  plots?: WorkingPlanPlot[];
   /** Reference-mark points (client req 2026-08-20, Part 12b) — excluded from
    *  the Cadastral work station, but shown here in the locality inset since
    *  this is where reference marks are actually used/referenced. */
@@ -73,6 +102,61 @@ interface Props {
 // Helpers
 // ---------------------------------------------------------------------------
 const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
+
+/** Points that appear in more than one plot (same name = a shared boundary
+ *  beacon between adjoining subdivisions) are kept once — first plot to use
+ *  the name wins (client req 2026-08-26, Part 33a). */
+function dedupePoints(plots: WorkingPlanPlot[]): WorkingPlanPoint[] {
+  const named = new Map<string, WorkingPlanPoint>();
+  const anon: WorkingPlanPoint[] = [];
+  for (const plot of plots) {
+    for (const p of plot.points) {
+      if (p.name) {
+        if (!named.has(p.name)) named.set(p.name, p);
+      } else {
+        anon.push(p);
+      }
+    }
+  }
+  return [...named.values(), ...anon];
+}
+
+/** Area-weighted polygon centroid (shoelace formula) — falls back to the
+ *  plain vertex average for a degenerate/zero-area polygon (client req
+ *  2026-08-26, Part 33c: each plot number "labeled centered inside its own
+ *  polygon" — a vertex average alone can land outside an L-shaped plot). */
+function polygonCentroid(pts: { x: number; y: number }[]): { x: number; y: number } {
+  if (pts.length < 3) {
+    return { x: avg(pts.map((p) => p.x)), y: avg(pts.map((p) => p.y)) };
+  }
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p0 = pts[i], p1 = pts[(i + 1) % pts.length];
+    const cross = p0.x * p1.y - p1.x * p0.y;
+    a += cross;
+    cx += (p0.x + p1.x) * cross;
+    cy += (p0.y + p1.y) * cross;
+  }
+  a *= 0.5;
+  if (Math.abs(a) < 1e-9) {
+    return { x: avg(pts.map((p) => p.x)), y: avg(pts.map((p) => p.y)) };
+  }
+  return { x: cx / (6 * a), y: cy / (6 * a) };
+}
+
+/** "LOTS 37455-37458" for a contiguous numeric run, "LOTS 37455, 37460" for
+ *  a non-contiguous or non-numeric set (client req 2026-08-26, Part 33b). */
+function formatLotRange(numbers: string[]): string {
+  const trimmed = numbers.map((n) => n.trim()).filter(Boolean);
+  const allNumeric = trimmed.length > 0 && trimmed.every((n) => /^\d+$/.test(n));
+  if (allNumeric) {
+    const sorted = [...trimmed.map(Number)].sort((a, b) => a - b);
+    const contiguous = sorted.every((v, i) => i === 0 || v === sorted[i - 1] + 1);
+    if (contiguous && sorted.length > 1) return `${sorted[0]}-${sorted[sorted.length - 1]}`;
+    return sorted.join(", ");
+  }
+  return trimmed.join(", ");
+}
 
 /** Pick a "nice" grid step so 3–6 gridlines span the given range. */
 function niceStep(span: number): number {
@@ -110,6 +194,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   {
     meta,
     points,
+    plots,
     refMarks,
     manualAnnotations,
     manualTexts,
@@ -126,8 +211,15 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const VB_W = 600;
   const VB_H = 800;
 
+  // Multi-plot mode (client req 2026-08-26, Part 33a) — `plots` replaces the
+  // single implicit figure when the caller has added one or more plots from
+  // the Cadastral work station.
+  const useMultiPlot = !!plots && plots.length > 0;
+  const activePlots: WorkingPlanPlot[] = useMultiPlot ? plots! : [{ number: meta.lotName, points }];
+  const allPoints = dedupePoints(activePlots);
+
   // ---- Empty / degenerate state ----
-  if (points.length < 3) {
+  if (allPoints.length < 3) {
     return (
       <svg
         ref={ref}
@@ -152,11 +244,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // down by one line's worth of space, same as the SG diagram does for its
   // own parent line.
   const hasParent = !!meta.parent?.trim();
-  const titleExtra = hasParent ? 20 : 0;
+  // Multi-plot mode's title is always 5 lines too (WORKING PLAN OF / LOTS.../
+  // PORTIONS OF LOT.../TRIBAL AREA/SCALE), same shift as single-plot-with-parent.
+  const titleExtra = hasParent || useMultiPlot ? 20 : 0;
   const draw = { x: 70, y: 130 + titleExtra, w: 460, h: 390 - titleExtra };
   const pad = 56;
-  const es = points.map((p) => p.east);
-  const ns = points.map((p) => p.north);
+  const es = allPoints.map((p) => p.east);
+  const ns = allPoints.map((p) => p.north);
   const minE = Math.min(...es), maxE = Math.max(...es);
   const minN = Math.min(...ns), maxN = Math.max(...ns);
   const spanE = Math.max(maxE - minE, 1e-6);
@@ -172,7 +266,18 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const cE = avg(es), cN = avg(ns);
   const cx = toX(cE), cy = toY(cN);
 
-  const polyPoints = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
+  // Each plot draws as its own closed polygon; a plot number gets labeled at
+  // its own area-weighted centroid (client req 2026-08-26, Part 33a/33c).
+  const plotPolygons = activePlots.map((plot) => {
+    const screenPts = plot.points.map((p) => ({ x: toX(p.east), y: toY(p.north) }));
+    const centroid = polygonCentroid(screenPts);
+    return {
+      number: plot.number,
+      poly: screenPts.map((p) => `${p.x},${p.y}`).join(" "),
+      labelX: centroid.x,
+      labelY: centroid.y,
+    };
+  });
 
   // ---- Coordinate grid (blue, nice intervals across the figure bounds) ----
   const stepE = niceStep(spanE);
@@ -202,7 +307,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const iOffY = inset.y + (inset.h - iDrawH) / 2;
   const iX = (e: number) => iOffX + (e - minE) * iFit;
   const iY = (n: number) => iOffY + (maxN - n) * iFit;
-  const insetPoly = points.map((p) => `${iX(p.east)},${iY(p.north)}`).join(" ");
+  const insetPolygons = activePlots.map((plot) =>
+    plot.points.map((p) => `${iX(p.east)},${iY(p.north)}`).join(" ")
+  );
   // Real reference-mark points (client req 2026-08-20, Part 12b) — clamped to
   // stay inside the inset box since it's an explicitly "not to scale" locality
   // diagram and a ref mark's true coordinates are usually outside the tight
@@ -214,7 +321,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   }));
 
   // ---- Bottom description blocks ----
-  const descTop = VB_H - 200;
+  // Nudged up 5px from VB_H-200 to fit the new FOUND BEACONS subsection
+  // (client req 2026-08-26, Part 33e) above the inset/cert boxes below.
+  const descTop = VB_H - 205;
   // ---- Certification box (bottom-right, narrower to match the template) ----
   const cert = { x: 300, y: VB_H - 130, w: 260, h: 104 };
 
@@ -233,9 +342,27 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       {/* ---------- Title block (top-centre) ---------- */}
       <g textAnchor="middle" fontWeight="bold">
         <text x={VB_W / 2} y={40} fontSize={14} textDecoration="underline">WORKING PLAN OF</text>
-        <text x={VB_W / 2} y={62} fontSize={14} textDecoration="underline">{meta.lotName}</text>
-        {hasParent && (
-          <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">({meta.parent})</text>
+        {useMultiPlot ? (
+          <>
+            {/* Multi-plot title (client req 2026-08-26, Part 33b):
+                LOTS [first]-[last] [LOCALITY]
+                PORTIONS OF LOT [parent lot] [LOCALITY]
+                [TRIBAL TERRITORY]
+                [SCALE] */}
+            <text x={VB_W / 2} y={62} fontSize={13} textDecoration="underline">
+              LOTS {formatLotRange(activePlots.map((p) => p.number))} {meta.locality || ""}
+            </text>
+            <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">
+              PORTIONS OF LOT {meta.parentLotNumber || ""} {meta.locality || ""}
+            </text>
+          </>
+        ) : (
+          <>
+            <text x={VB_W / 2} y={62} fontSize={14} textDecoration="underline">{meta.lotName}</text>
+            {hasParent && (
+              <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">({meta.parent})</text>
+            )}
+          </>
         )}
         <text x={VB_W / 2} y={84 + titleExtra} fontSize={12} textDecoration="underline">{meta.tribalArea}</text>
         <text x={VB_W / 2} y={104 + titleExtra} fontSize={12} textDecoration="underline">1:{meta.scale}</text>
@@ -304,17 +431,31 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         ))}
       </g>
 
-      {/* ---------- Figure ---------- */}
-      <polygon points={polyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
+      {/* ---------- Figure — one polygon per included plot ---------- */}
+      {plotPolygons.map((pp, i) => (
+        <polygon key={`fig${i}`} points={pp.poly} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
+      ))}
 
       {/* Side distances are intentionally NOT shown on the working plan (client request). */}
+
+      {/* Each plot's number, centred inside its own polygon (client req
+          2026-08-26, Part 33c) — only in multi-plot mode; a single-plot sheet
+          already names the lot in the title. */}
+      {useMultiPlot &&
+        plotPolygons.map((pp, i) => (
+          <text key={`pn${i}`} x={pp.labelX} y={pp.labelY} textAnchor="middle" fontSize={12} fontWeight="bold">
+            {pp.number}
+          </text>
+        ))}
 
       {/* Beacons: open circles + bold, DRAGGABLE labels placed outside the
           figure (client req 2026-08-26, Part 29a: "snap/click on the text
           then... manually move it" — tightly-spaced beacons like D/E/F can
           end up with labels sitting on top of each other). Click to
-          select, then drag; a selected label gets a dashed handle box. */}
-      {points.map((p, i) => {
+          select, then drag; a selected label gets a dashed handle box.
+          Uses `allPoints` (deduped across plots) so a point shared between
+          two adjoining plots gets exactly one dot + one label (Part 33a). */}
+      {allPoints.map((p, i) => {
         const bx = toX(p.east), by = toY(p.north);
         const dx = bx - cx, dy = by - cy;
         const len = Math.hypot(dx, dy) || 1;
@@ -405,14 +546,19 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={26} y={descTop + 56}>{meta.workingStationDescription}</text>
       </g>
 
-      {/* ---------- Right column: beacon description (left-aligned, like the template) ---------- */}
+      {/* ---------- Right column: beacon description (left-aligned, like the template) ----------
+          "PLACED BEACONS:" / "FOUND BEACONS:" split (client req 2026-08-26,
+          Part 33e) — a subdivision survey typically has both newly-placed
+          and pre-existing found beacons, each needing its own description. */}
       <g fontSize={8.5}>
         <text x={340} y={descTop} fontSize={10} fontWeight="bold" textDecoration="underline">
           BEACON DESCRIPTION
         </text>
-        <text x={340} y={descTop + 16} fontWeight="bold">PLACED BEACONS</text>
+        <text x={340} y={descTop + 16} fontWeight="bold">PLACED BEACONS:</text>
         <text x={340} y={descTop + 28}>{meta.placedBeaconDescription}</text>
-        <text x={340} y={descTop + 44} fontSize={8}>System {meta.coordinateSystem}</text>
+        <text x={340} y={descTop + 44} fontWeight="bold">FOUND BEACONS:</text>
+        <text x={340} y={descTop + 56}>{meta.foundBeaconDescription || ""}</text>
+        <text x={340} y={descTop + 70} fontSize={8}>System {meta.coordinateSystem}</text>
       </g>
 
       {/* ---------- Inset locality box (green border, not to scale) ---------- */}
@@ -421,7 +567,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={inset.x + inset.w / 2} y={inset.y - 4} textAnchor="middle" fontSize={7.5} fill={INSET_GREEN}>
           INSET NOT TO SCALE
         </text>
-        <polygon points={insetPoly} fill="none" stroke="black" strokeWidth={1} strokeLinejoin="round" />
+        {insetPolygons.map((poly, i) => (
+          <polygon key={`ip${i}`} points={poly} fill="none" stroke="black" strokeWidth={1} strokeLinejoin="round" />
+        ))}
         {refDots.map((d, i) => (
           <g key={`rm${i}`}>
             <circle cx={d.x} cy={d.y} r={2.2} fill={REF_RED} />
@@ -442,6 +590,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <line x1={cert.x + 70} y1={cert.y + 74} x2={cert.x + cert.w - 12} y2={cert.y + 74} stroke="black" strokeWidth={0.4} />
         <text x={cert.x + 8} y={cert.y + 92}>Land Surveyor:</text>
         <text x={cert.x + cert.w - 12} y={cert.y + 92} textAnchor="end" fontWeight="bold">{meta.surveyor || ""}</text>
+        {/* Underlined signature line (client req 2026-08-26, Part 33f), same
+            treatment as the "Date of survey" line above. */}
+        <line x1={cert.x + 70} y1={cert.y + 94} x2={cert.x + cert.w - 12} y2={cert.y + 94} stroke="black" strokeWidth={0.4} />
       </g>
     </svg>
   );
