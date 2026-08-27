@@ -4,7 +4,11 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { dedupePoints, type Plot } from "@/lib/plots";
+import { dedupePoints, findBlockCorners, findOuterBoundary, sameWorldPoint, type Plot } from "@/lib/plots";
+import { comparePointNames } from "@/lib/reportFormats";
+import { fmtSystem } from "@/lib/diagramLayout";
+import { inverse } from "@/lib/server/geometry";
+import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
 
 const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -92,41 +96,79 @@ export function GeneralPlanView() {
     setGeneralPlanInput(meta);
   }, [meta, setGeneralPlanInput]);
 
-  // Pagination: sheet 0 = layout; following sheets = coordinate chunks.
+  // Pagination: layout sheet(s) first, then coordinate-schedule continuation
+  // sheets. Large layouts split across multiple numbered layout sheets
+  // (client req 2026-08-27, §2d/Part 4 "multi-sheet splitting") — a fixed
+  // per-sheet plot cap rather than a true geographic split (the app has no
+  // notion of a physical cut line through the drawing), each sheet
+  // independently fitted/scaled to its own subset of plots.
+  const PLOTS_PER_SHEET = 40;
+  const sortedPlots = useMemo(
+    () => [...cogoPlots].sort((a, b) => comparePointNames(a.number, b.number)),
+    [cogoPlots]
+  );
+  const layoutGroups = useMemo(() => {
+    if (!sortedPlots.length) return [[] as typeof sortedPlots];
+    const groups: (typeof sortedPlots)[] = [];
+    for (let i = 0; i < sortedPlots.length; i += PLOTS_PER_SHEET) groups.push(sortedPlots.slice(i, i + PLOTS_PER_SHEET));
+    return groups;
+  }, [sortedPlots]);
+  const layoutSheetCount = layoutGroups.length;
+
   const coordChunks = useMemo(() => {
     const chunks: GpBeacon[][] = [];
     for (let i = 0; i < usedBeacons.length; i += COORDS_PER_SHEET) chunks.push(usedBeacons.slice(i, i + COORDS_PER_SHEET));
     return chunks;
   }, [usedBeacons]);
-  const sheetCount = 1 + Math.max(coordChunks.length, 0);
+  const sheetCount = layoutSheetCount + Math.max(coordChunks.length, 0);
 
-  // ---- figure transform for the layout sheet ----
+  // ---- figure transform, shared geometry constants ----
   // (client req 2026-08-27: General Plan must always show the template itself,
   // with no gating screen — this renders a blank sheet with an empty
   // layout/schedule until at least one plot has been numbered in COGO.)
-  const xs = usedBeacons.map((b) => b.east);
-  const ys = usedBeacons.map((b) => b.north);
-  const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
-  const minY = ys.length ? Math.min(...ys) : 0, maxY = ys.length ? Math.max(...ys) : 0;
-  const spanX = maxX - minX || 1, spanY = maxY - minY || 1;
-  const FX0 = 30, FY0 = 90, FX1 = 660, FY1 = H - 30;
+  // FY1 pulled up from H-30 to H-150 (client req 2026-08-27, §2h) — frees a
+  // strip along the bottom of the first sheet for the outer-boundary
+  // traverse table + total area, matching the reference sheet's bottom band.
+  const FX0 = 30, FY0 = 90, FX1 = 660, FY1 = H - 150;
   const pad = 30;
-  const s = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
-  const ox = FX0 + ((FX1 - FX0) - s * spanX) / 2;
-  const oyOff = ((FY1 - FY0) - s * spanY) / 2;
-  const sx = (e: number) => ox + (e - minX) * s;
-  const sy = (n: number) => FY1 - oyOff - (n - minY) * s;
-  // Inverse of sx/sy — screen (viewBox) point back to real east/north, for
-  // placing/dragging labels the same way the boundary itself is fixed to
-  // real survey coordinates rather than raw pixels (client req 2026-08-27,
-  // same reasoning as Diagrams.tsx's `transformRef`).
-  const screenToWorld = (px: number, py: number) => ({
-    east: (px - ox) / s + minX,
-    north: minY + (FY1 - oyOff - py) / s,
-  });
+  /** Fit-to-box transform for one sheet's own subset of beacons — each
+   *  layout sheet is scaled independently to its own plots (client req
+   *  2026-08-27: real geographic alignment across sheets isn't available
+   *  without a cut-line concept, so each sheet is instead kept legible on
+   *  its own, same as the reference's per-sheet layout). */
+  function computeTransform(beacons: GpBeacon[]) {
+    const xs = beacons.map((b) => b.east);
+    const ys = beacons.map((b) => b.north);
+    const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
+    const minY = ys.length ? Math.min(...ys) : 0, maxY = ys.length ? Math.max(...ys) : 0;
+    const spanX = maxX - minX || 1, spanY = maxY - minY || 1;
+    const s = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
+    const ox = FX0 + ((FX1 - FX0) - s * spanX) / 2;
+    const oyOff = ((FY1 - FY0) - s * spanY) / 2;
+    const sx = (e: number) => ox + (e - minX) * s;
+    const sy = (n: number) => FY1 - oyOff - (n - minY) * s;
+    // Inverse of sx/sy — screen (viewBox) point back to real east/north, for
+    // placing/dragging labels the same way the boundary itself is fixed to
+    // real survey coordinates rather than raw pixels (client req 2026-08-27,
+    // same reasoning as Diagrams.tsx's `transformRef`).
+    const screenToWorld = (px: number, py: number) => ({ east: (px - ox) / s + minX, north: minY + (FY1 - oyOff - py) / s });
+    const bounds = { minX, maxX, minY, maxY };
+    return { sx, sy, screenToWorld, bounds };
+  }
+  /** Sheet currently on screen, clamped to a valid layout-sheet index —
+   *  drives which sheet's own transform the interaction handlers (click to
+   *  place/edit a label) use, since only one sheet is visible at a time. */
+  const activeGroupIdx = Math.min(sheet, layoutSheetCount - 1);
+  const activeUsedBeacons = useMemo<GpBeacon[]>(
+    () =>
+      dedupePoints(layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points })))
+        .filter((p): p is { name: string; east: number; north: number } => !!p.name)
+        .map((p) => ({ id: p.name, east: p.east, north: p.north })),
+    [layoutGroups, activeGroupIdx]
+  );
+  const { sx, sy, screenToWorld } = computeTransform(activeUsedBeacons);
 
-  const schedule = cogoPlots.map((p, i) => ({ p, i }));
-  const totalHa = cogoPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
+  const grandTotalHa = cogoPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
 
   // ===================== Road-width / boundary-label annotation tool ======
   // Plain click-to-place free text (spec Part 4), reusing SgDiagram's
@@ -149,7 +191,7 @@ export function GeneralPlanView() {
   }, [textPrompt, addingRoadLabel]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
-    const svg = refs.current[0];
+    const svg = refs.current[activeGroupIdx];
     const ctm = svg?.getScreenCTM();
     if (!svg || !ctm) return { x: 0, y: 0 };
     const pt = svg.createSVGPoint();
@@ -238,12 +280,9 @@ export function GeneralPlanView() {
   // outer boundary of the whole layout — gets a suggested label at its
   // midpoint, unless the user already placed/edited one there (same id) or
   // explicitly dismissed it. Same shared-edge detection as Diagrams.tsx's
-  // Part 37 auto-adjacency (`ADJACENCY_TOL`/`sameWorldPoint`), just inverted:
-  // there it labels a MATCHED edge with the neighbour's number, here it
-  // labels an UNMATCHED edge with the parent cadastre.
-  const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
-  const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
-    Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
+  // Part 37 auto-adjacency (`sameWorldPoint`, promoted to lib/plots.ts),
+  // just inverted: there it labels a MATCHED edge with the neighbour's
+  // number, here it labels an UNMATCHED edge with the parent cadastre.
   const autoBoundaryLabels = useMemo<ManualText[]>(() => {
     const out: ManualText[] = [];
     for (let pi = 0; pi < gpPlots.length; pi++) {
@@ -276,6 +315,33 @@ export function GeneralPlanView() {
     return out;
   }, [gpPlots, meta.dismissedAutoIds, meta.boundaryLabels, meta.parentCadastre]);
   const displayBoundaryLabels = useMemo(() => [...meta.boundaryLabels, ...autoBoundaryLabels], [meta.boundaryLabels, autoBoundaryLabels]);
+
+  // Block corners (client req 2026-08-27, §2g) — points where 3+ distinct
+  // plots' boundaries converge (see findBlockCorners' own comment for why
+  // that's the only usable signal without a Road/Block entity in the data
+  // model). Labelled BC1, BC2… by discovery order (stable across renders
+  // since gpPlots' own order is stable).
+  const blockCorners = useMemo(() => findBlockCorners(gpPlots), [gpPlots]);
+
+  // Bottom traverse table (client req 2026-08-27, §2h) — Sides/Directions/
+  // Co-ordinates for the OUTER boundary of the whole layout (every plot
+  // edge with no matching neighbour, chained into one ring), same source
+  // edges as the REMAINDER OF CADASTRE auto-labels above. Bearing/distance
+  // computed with the same `inverse()` the rest of the app's COGO math uses,
+  // not re-derived — only the table's own compact GP-sheet formatting is
+  // new (computeDiagramLayout's table is a full portrait A4 sheet in a
+  // different coordinate space, not something this landscape sheet's bottom
+  // strip can just embed).
+  const outerBoundary = useMemo(() => findOuterBoundary(gpPlots), [gpPlots]);
+  const outerSides = useMemo(
+    () =>
+      outerBoundary.map((p, i) => {
+        const next = outerBoundary[(i + 1) % outerBoundary.length];
+        const [bearing, distance] = inverse(p, next);
+        return { point: p.name ?? "—", east: p.east, north: p.north, bearing: formatDms(bearing), distance };
+      }),
+    [outerBoundary]
+  );
 
   function serialize(svg: SVGSVGElement | null): string | null {
     if (!svg) return null;
@@ -327,11 +393,15 @@ export function GeneralPlanView() {
   // is a later phase); the numeric lot range is derived straight from the
   // numbered COGO plots when their numbers are numeric.
   const panelX = 690, panelTop = 150;
-  const sheetIndexLines = (() => {
-    const nums = cogoPlots.map((p) => Number(p.number)).filter((n) => Number.isFinite(n));
-    if (!nums.length) return [`SHEET 1: ${cogoPlots.length} plot(s)`];
-    return [`SHEET 1: Lots ${Math.min(...nums)}-${Math.max(...nums)}`];
-  })();
+  // One line per LAYOUT sheet (client req 2026-08-27, multi-sheet split) —
+  // shown identically on every sheet so a reader can find any lot's sheet
+  // from any page, matching the reference's own Sheet Index panel.
+  const sheetIndexLines = layoutGroups.map((g, i) => {
+    if (!g.length) return `SHEET ${i + 1}: 0 plot(s)`;
+    const nums = g.map((p) => Number(p.number)).filter((n) => Number.isFinite(n));
+    if (!nums.length) return `SHEET ${i + 1}: ${g.length} plot(s)`;
+    return `SHEET ${i + 1}: Lots ${Math.min(...nums)}-${Math.max(...nums)}`;
+  });
   const panelRows: { text: string; heading?: boolean }[] = [
     { text: "SHEET INDEX", heading: true },
     ...sheetIndexLines.map((text) => ({ text })),
@@ -354,12 +424,30 @@ export function GeneralPlanView() {
     });
   }
   const panelBottom = panelYs.length ? panelYs[panelYs.length - 1] + 12 : panelTop;
-  const scheduleTop = panelBottom + 16;
-  // Row cap is computed from actual remaining room (not a fixed 30) — the
+
+  // Lot Numbers / Areas table (client req 2026-08-27, §2f): two side-by-side
+  // "LOT NUMBERS | SQ. METRES" column-pairs (matching the reference sheet),
+  // sorted by lot number (via the shared `sortedPlots` computed above,
+  // sliced per sheet by `layoutGroups`), replacing the old single-column
+  // capped schedule — fitting roughly twice as many rows in the same space.
+  const lotTableTop = panelBottom + 16;
+  const lotRowH = 14;
+  // Row cap is computed from actual remaining room (not fixed) — the
   // reference panel above can grow (more splay entries, etc.) and push this
   // down, so a fixed cap could otherwise run the table off the bottom of the
-  // sheet. Reserves ~52px below the last row for the TOTAL/overflow lines.
-  const maxScheduleRows = Math.max(1, Math.min(30, Math.floor((H - 20 - 52 - (scheduleTop + 34)) / 15) + 1));
+  // sheet. Reserves room below for the TOTAL line, and for the Block Corner
+  // Table only when there actually is one (no point shrinking the lot table
+  // to make room for a section that won't render).
+  const bcReserve = blockCorners.length > 0 ? 70 + blockCorners.length * 13 : 30;
+  const rowsPerCol = Math.max(1, Math.floor((H - 20 - bcReserve - (lotTableTop + 34)) / lotRowH) + 1);
+  const maxLotRows = rowsPerCol * 2;
+  const colAx = 690, colBx = 835, sqmOffset = 65;
+  const lotPairHeader = (x: number, y: number) => (
+    <>
+      <text x={x} y={y} fontSize={9.5} fontWeight={700} fill="#475569">LOT No.</text>
+      <text x={x + sqmOffset} y={y} fontSize={9.5} fontWeight={700} fill="#475569">SQ. METRES</text>
+    </>
+  );
   const titleBlock = (no: number, label: string) => (
     <>
       <rect x={6} y={6} width={W - 12} height={H - 12} fill="none" stroke="#0f172a" strokeWidth={1.5} />
@@ -384,125 +472,230 @@ export function GeneralPlanView() {
     </>
   );
 
-  // sheet renderers
-  const layoutSheet = (
-    <svg
-      ref={(el) => { refs.current[0] = el; }}
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full bg-white"
-      style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel ? "crosshair" : "default" }}
-      onClick={handleCanvasClick}
-    >
-      {titleBlock(1, `Layout of ${cogoPlots.length} parcel(s)`)}
-      {/* north arrow */}
-      <g transform={`translate(${FX1 - 20},${FY0 + 16})`}>
-        <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
-        <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
-        <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
-      </g>
-      {/* parcels */}
-      {schedule.map(({ p, i }) => {
-        const pts = p.fig.points;
-        if (pts.length < 3) return null;
-        const d = pts.map((pp) => `${sx(pp.east)},${sy(pp.north)}`).join(" ");
-        const cx = pts.reduce((a, pp) => a + sx(pp.east), 0) / pts.length;
-        const cy = pts.reduce((a, pp) => a + sy(pp.north), 0) / pts.length;
-        const col = PALETTE[i % PALETTE.length];
-        return (
-          <g key={p.number}>
-            <polygon points={d} fill={col} fillOpacity={0.13} stroke={col} strokeWidth={1.4} />
-            <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={700} fill={col}>{p.number}</text>
-          </g>
-        );
-      })}
-      {usedBeacons.map((b) => (
-        <g key={b.id}>
-          <circle cx={sx(b.east)} cy={sy(b.north)} r={2.6} fill="#0f172a" />
-          <text x={sx(b.east) + 4} y={sy(b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
+  // Sheet renderer — one call per layout-sheet group (client req 2026-08-27,
+  // multi-sheet split). Each group computes its own transform/gpPlots/
+  // beacons/blockCorners from just its own plots; the reference panel and
+  // Sheet Index are identical on every sheet; the outer-boundary traverse
+  // table + grand total (whole-layout concepts) render only on sheet 1.
+  function renderLayoutSheet(groupIdx: number) {
+    const groupPlots = layoutGroups[groupIdx];
+    const groupGpPlots: Plot[] = groupPlots.map((p) => ({ number: p.number, points: p.fig.points }));
+    const groupUsedBeacons: GpBeacon[] = dedupePoints(groupGpPlots)
+      .filter((p): p is { name: string; east: number; north: number } => !!p.name)
+      .map((p) => ({ id: p.name, east: p.east, north: p.north }));
+    const t = computeTransform(groupUsedBeacons);
+    const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
+    const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
+    const groupTotalHa = groupPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
+    const groupBlockCorners = blockCorners.filter(
+      (bc) => bc.east >= t.bounds.minX - 0.01 && bc.east <= t.bounds.maxX + 0.01 && bc.north >= t.bounds.minY - 0.01 && bc.north <= t.bounds.maxY + 0.01
+    );
+    const isFirstSheet = groupIdx === 0;
+    // Only labels anchored within this sheet's own drawing bounds — a label
+    // placed on a different sheet's own bounding box would otherwise project
+    // to a nonsense position (or off-sheet) on this one.
+    const inBounds = (tt: ManualText) =>
+      tt.east >= t.bounds.minX - 1 && tt.east <= t.bounds.maxX + 1 && tt.north >= t.bounds.minY - 1 && tt.north <= t.bounds.maxY + 1;
+    const sheetRoadLabels = meta.roadLabels.filter(inBounds);
+    const sheetBoundaryLabels = displayBoundaryLabels.filter(inBounds);
+
+    return (
+      <svg
+        key={groupIdx}
+        ref={(el) => { refs.current[groupIdx] = el; }}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full bg-white"
+        style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel ? "crosshair" : "default" }}
+        onClick={handleCanvasClick}
+      >
+        {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`)}
+        {/* north arrow */}
+        <g transform={`translate(${FX1 - 20},${FY0 + 16})`}>
+          <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
+          <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
+          <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
         </g>
-      ))}
-      {usedBeacons.length === 0 && (
-        <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
-      )}
-      {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
-      {meta.roadLabels.map((tt) => (
-        <text
-          key={tt.id}
-          x={sx(tt.east)}
-          y={sy(tt.north)}
-          textAnchor="middle"
-          fontSize={8.5}
-          fontWeight={600}
-          fill={selectedLabel?.id === tt.id && selectedLabel.kind === "road" ? "#2563eb" : "#0f172a"}
-          transform={tt.angle ? `rotate(${tt.angle} ${sx(tt.east)} ${sy(tt.north)})` : undefined}
-          style={{ cursor: "move" }}
-          onClick={() => handleLabelClick(tt.id, "road")}
-          onDoubleClick={() => handleLabelDoubleClick(tt.id, "road", tt)}
-          onPointerDown={(e) => handleLabelPointerDown(tt.id, "road", e)}
-          onPointerMove={(e) => handleLabelPointerMove(tt.id, "road", e)}
-          onPointerUp={handleLabelPointerUp}
-        >
-          {tt.text}
-        </text>
-      ))}
-      {displayBoundaryLabels.map((tt) => (
-        <text
-          key={tt.id}
-          x={sx(tt.east)}
-          y={sy(tt.north)}
-          textAnchor="middle"
-          fontSize={7.5}
-          fontStyle="italic"
-          fill={selectedLabel?.id === tt.id && selectedLabel.kind === "boundary" ? "#2563eb" : "#64748b"}
-          transform={tt.angle ? `rotate(${tt.angle} ${sx(tt.east)} ${sy(tt.north)})` : undefined}
-          style={{ cursor: "move" }}
-          onClick={() => handleLabelClick(tt.id, "boundary")}
-          onDoubleClick={() => handleLabelDoubleClick(tt.id, "boundary", tt)}
-          onPointerDown={(e) => handleLabelPointerDown(tt.id, "boundary", e)}
-          onPointerMove={(e) => handleLabelPointerMove(tt.id, "boundary", e)}
-          onPointerUp={handleLabelPointerUp}
-        >
-          {tt.text}
-        </text>
-      ))}
-      <text x={(FX0 + FX1) / 2} y={H - 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
-      {/* Sheet Index / Beacon Description / Splay Information / Ped Way */}
-      {panelRows.map((row, i) => (
-        <text
-          key={i}
-          x={panelX}
-          y={panelYs[i]}
-          fontSize={row.heading ? 10 : 8}
-          fontWeight={row.heading ? 700 : 400}
-          fill={row.heading ? "#0f172a" : "#334155"}
-        >
-          {row.text}
-        </text>
-      ))}
-      {/* parcel schedule (right) — starts below the reference panel above,
-          which itself starts below the top-right registration block (client
-          req 2026-08-27). */}
-      <text x={690} y={scheduleTop} fontSize={12} fontWeight={700} fill="#0f172a">PARCEL SCHEDULE</text>
-      <text x={690} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">No.</text>
-      <text x={830} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">Area (m²)</text>
-      <text x={930} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">ha</text>
-      {schedule.slice(0, maxScheduleRows).map(({ p, i }, k) => {
-        const y = scheduleTop + 34 + k * 15;
-        const col = PALETTE[i % PALETTE.length];
-        return (
-          <g key={p.number}>
-            <rect x={690} y={y - 8} width={7} height={7} fill={col} />
-            <text x={702} y={y} fontSize={9.5} fill="#0f172a">{p.number || "(none)"}</text>
-            <text x={830} y={y} fontSize={9.5} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-            <text x={930} y={y} fontSize={9.5} fill="#0f172a">{p.fig.area_ha.toFixed(4)}</text>
+        {/* parcels */}
+        {groupSchedule.map(({ p, i }) => {
+          const pts = p.fig.points;
+          if (pts.length < 3) return null;
+          const d = pts.map((pp) => `${t.sx(pp.east)},${t.sy(pp.north)}`).join(" ");
+          const cx = pts.reduce((a, pp) => a + t.sx(pp.east), 0) / pts.length;
+          const cy = pts.reduce((a, pp) => a + t.sy(pp.north), 0) / pts.length;
+          const col = PALETTE[i % PALETTE.length];
+          return (
+            <g key={p.number}>
+              <polygon points={d} fill={col} fillOpacity={0.13} stroke={col} strokeWidth={1.4} />
+              <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={700} fill={col}>{p.number}</text>
+            </g>
+          );
+        })}
+        {groupUsedBeacons.map((b) => (
+          <g key={b.id}>
+            <circle cx={t.sx(b.east)} cy={t.sy(b.north)} r={2.6} fill="#0f172a" />
+            <text x={t.sx(b.east) + 4} y={t.sy(b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
           </g>
-        );
-      })}
-      <line x1={690} y1={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15} x2={970} y2={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15} stroke="#cbd5e1" />
-      <text x={702} y={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15 + 16} fontSize={10} fontWeight={700}>TOTAL: {totalHa.toFixed(4)} ha</text>
-      {schedule.length > maxScheduleRows && <text x={690} y={scheduleTop + 34 + maxScheduleRows * 15 + 18} fontSize={9} fill="#94a3b8">+{schedule.length - maxScheduleRows} more parcel(s) — see digital schedule</text>}
-    </svg>
-  );
+        ))}
+        {groupUsedBeacons.length === 0 && (
+          <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
+        )}
+        {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
+        {sheetRoadLabels.map((tt) => (
+          <text
+            key={tt.id}
+            x={t.sx(tt.east)}
+            y={t.sy(tt.north)}
+            textAnchor="middle"
+            fontSize={8.5}
+            fontWeight={600}
+            fill={selectedLabel?.id === tt.id && selectedLabel.kind === "road" ? "#2563eb" : "#0f172a"}
+            transform={tt.angle ? `rotate(${tt.angle} ${t.sx(tt.east)} ${t.sy(tt.north)})` : undefined}
+            style={{ cursor: "move" }}
+            onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "road"); }}
+            onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "road", tt); }}
+            onPointerDown={(e) => handleLabelPointerDown(tt.id, "road", e)}
+            onPointerMove={(e) => handleLabelPointerMove(tt.id, "road", e)}
+            onPointerUp={handleLabelPointerUp}
+          >
+            {tt.text}
+          </text>
+        ))}
+        {sheetBoundaryLabels.map((tt) => (
+          <text
+            key={tt.id}
+            x={t.sx(tt.east)}
+            y={t.sy(tt.north)}
+            textAnchor="middle"
+            fontSize={7.5}
+            fontStyle="italic"
+            fill={selectedLabel?.id === tt.id && selectedLabel.kind === "boundary" ? "#2563eb" : "#64748b"}
+            transform={tt.angle ? `rotate(${tt.angle} ${t.sx(tt.east)} ${t.sy(tt.north)})` : undefined}
+            style={{ cursor: "move" }}
+            onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "boundary"); }}
+            onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "boundary", tt); }}
+            onPointerDown={(e) => handleLabelPointerDown(tt.id, "boundary", e)}
+            onPointerMove={(e) => handleLabelPointerMove(tt.id, "boundary", e)}
+            onPointerUp={handleLabelPointerUp}
+          >
+            {tt.text}
+          </text>
+        ))}
+        <text x={(FX0 + FX1) / 2} y={FY1 + 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
+        {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
+        {panelRows.map((row, i) => (
+          <text
+            key={i}
+            x={panelX}
+            y={panelYs[i]}
+            fontSize={row.heading ? 10 : 8}
+            fontWeight={row.heading ? 700 : 400}
+            fill={row.heading ? "#0f172a" : "#334155"}
+          >
+            {row.text}
+          </text>
+        ))}
+        {/* Lot Numbers / Areas table (client req 2026-08-27, §2f) — this
+            sheet's own lots only, two side-by-side "LOT No. | SQ. METRES"
+            column-pairs, sorted by lot number. */}
+        <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT NUMBERS / AREAS</text>
+        {lotPairHeader(colAx, lotTableTop + 16)}
+        {lotPairHeader(colBx, lotTableTop + 16)}
+        {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
+          const y = lotTableTop + 30 + k * lotRowH;
+          return (
+            <g key={p.number}>
+              <text x={colAx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+              <text x={colAx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+            </g>
+          );
+        })}
+        {groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
+          const y = lotTableTop + 30 + k * lotRowH;
+          return (
+            <g key={p.number}>
+              <text x={colBx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+              <text x={colBx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+            </g>
+          );
+        })}
+        <line x1={690} y1={lotTableTop + 30 + rowsPerCol * lotRowH} x2={970} y2={lotTableTop + 30 + rowsPerCol * lotRowH} stroke="#cbd5e1" />
+        <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 16} fontSize={10} fontWeight={700}>
+          {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
+        </text>
+        {groupSortedPlots.length > maxLotRows && (
+          <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 32} fontSize={9} fill="#94a3b8">
+            +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
+          </text>
+        )}
+        {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's own
+            corners only; omitted entirely when none qualify, rather than
+            printing an empty section. */}
+        {groupBlockCorners.length > 0 && (() => {
+          const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+          return (
+            <>
+              <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+              <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES</text>
+              <text x={690} y={bcTop + 28} fontSize={8} fill="#475569">CONSTANTS &nbsp; Y: +0.00 &nbsp; X: +0.00</text>
+              <text x={690} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Point</text>
+              <text x={745} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Y</text>
+              <text x={845} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">X</text>
+              {groupBlockCorners.map((bc, k) => {
+                const y = bcTop + 56 + k * 13;
+                return (
+                  <g key={bc.id}>
+                    <text x={690} y={y} fontSize={8.5} fill="#0f172a">{bc.id}</text>
+                    <text x={745} y={y} fontSize={8.5} fill="#0f172a">{bc.east.toFixed(2)}</text>
+                    <text x={845} y={y} fontSize={8.5} fill="#0f172a">{bc.north.toFixed(2)}</text>
+                  </g>
+                );
+              })}
+            </>
+          );
+        })()}
+        {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
+            layout's outer boundary + grand total, sheet 1 only (it's not a
+            per-sheet concept); other sheets point back to it. */}
+        {isFirstSheet ? (
+          outerSides.length > 0 ? (
+            <>
+              <line x1={30} y1={FY1 + 30} x2={970} y2={FY1 + 30} stroke="#0f172a" strokeWidth={0.6} />
+              <text x={30} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+              <text x={30} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
+              <text x={110} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
+              <text x={230} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
+              <text x={340} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
+              <text x={430} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
+              {outerSides.slice(0, 8).map((s, k) => {
+                const y = FY1 + 72 + k * 12;
+                return (
+                  <g key={k}>
+                    <text x={30} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
+                    <text x={110} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
+                    <text x={230} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                    <text x={340} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
+                    <text x={430} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
+                  </g>
+                );
+              })}
+              {outerSides.length > 8 && (
+                <text x={30} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
+              )}
+              <text x={700} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
+            </>
+          ) : (
+            cogoPlots.length > 0 && (
+              <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">
+                Outer boundary not traced (plots don&apos;t form one simple connected layout) — TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
+              </text>
+            )
+          )
+        ) : (
+          <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
+        )}
+      </svg>
+    );
+  }
 
   const coordSheet = (chunk: GpBeacon[], idx: number) => {
     // 230 (not the old 300) so a full 3-column sheet's rightmost values stay
@@ -512,8 +705,8 @@ export function GeneralPlanView() {
     const cols = Math.min(3, Math.ceil(chunk.length / 16) || 1);
     const perCol = Math.ceil(chunk.length / cols);
     return (
-      <svg key={idx} ref={(el) => { refs.current[idx + 1] = el; }} viewBox={`0 0 ${W} ${H}`} className="w-full bg-white" style={{ border: "1px solid #cbd5e1" }}>
-        {titleBlock(idx + 2, "Beacon coordinate schedule")}
+      <svg key={idx} ref={(el) => { refs.current[layoutSheetCount + idx] = el; }} viewBox={`0 0 ${W} ${H}`} className="w-full bg-white" style={{ border: "1px solid #cbd5e1" }}>
+        {titleBlock(layoutSheetCount + idx + 1, "Beacon coordinate schedule")}
         {Array.from({ length: cols }).map((_, c) => {
           const x0 = 30 + c * colW;
           const part = chunk.slice(c * perCol, (c + 1) * perCol);
@@ -606,28 +799,32 @@ export function GeneralPlanView() {
       </Card>
 
       <Card title={`General Plan — Sheet ${sheet + 1}`}>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Button
-            variant={addingRoadLabel ? "primary" : "ghost"}
-            onClick={() => {
-              setAddingRoadLabel((v) => !v);
-              setSelectedLabel(null);
-            }}
-          >
-            {addingRoadLabel ? "Click where it should go…" : "Add Road Label"}
-          </Button>
-          {selectedLabel && (
-            <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
-          )}
-          <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text.</span>
-        </div>
+        {sheet < layoutSheetCount && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Button
+              variant={addingRoadLabel ? "primary" : "ghost"}
+              onClick={() => {
+                setAddingRoadLabel((v) => !v);
+                setSelectedLabel(null);
+              }}
+            >
+              {addingRoadLabel ? "Click where it should go…" : "Add Road Label"}
+            </Button>
+            {selectedLabel && (
+              <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
+            )}
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text.</span>
+          </div>
+        )}
         {/* Render all sheets (so refs exist for print-all); show only the active one. */}
         <div className="relative mx-auto max-w-5xl">
-          <div style={{ display: sheet === 0 ? "block" : "none" }}>{layoutSheet}</div>
-          {coordChunks.map((chunk, idx) => (
-            <div key={idx} style={{ display: sheet === idx + 1 ? "block" : "none" }}>{coordSheet(chunk, idx)}</div>
+          {layoutGroups.map((_, idx) => (
+            <div key={idx} style={{ display: sheet === idx ? "block" : "none" }}>{renderLayoutSheet(idx)}</div>
           ))}
-          {textPrompt && sheet === 0 && (
+          {coordChunks.map((chunk, idx) => (
+            <div key={idx} style={{ display: sheet === layoutSheetCount + idx ? "block" : "none" }}>{coordSheet(chunk, idx)}</div>
+          ))}
+          {textPrompt && sheet < layoutSheetCount && (
             <div
               className="absolute z-10 w-56 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
               style={{ left: `${(textPrompt.x / W) * 100}%`, top: `${(textPrompt.y / H) * 100}%` }}
