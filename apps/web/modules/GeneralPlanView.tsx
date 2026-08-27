@@ -15,7 +15,7 @@ const H = 707; // A4 landscape ratio
 /** Multi-sheet General Plan (Module D / M3): the whole layout of all parcels on
  *  sheet 1, with the beacon coordinate schedule paginated onto continuation sheets. */
 export function GeneralPlanView() {
-  const { parcelDoc, config, setActiveTab, generalPlanInput, setGeneralPlanInput } = useStore();
+  const { parcelDoc, config, generalPlanInput, setGeneralPlanInput } = useStore();
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
 
@@ -54,23 +54,15 @@ export function GeneralPlanView() {
   }, [usedBeacons]);
   const sheetCount = 1 + Math.max(coordChunks.length, 0);
 
-  if (parcels.length === 0 || usedBeacons.length === 0) {
-    return (
-      <Card>
-        <div className="py-12 text-center text-slate-500">
-          <p className="text-lg">{parcels.length === 0 ? "No parcels yet" : "No beacons for these parcels"}</p>
-          <p className="mt-1 text-sm">A General Plan shows the whole layout of parcels. Build parcels (with beacons) first.</p>
-          <div className="mt-4"><Button onClick={() => setActiveTab("parcels")}>Go to Parcels</Button></div>
-        </div>
-      </Card>
-    );
-  }
-
   // ---- figure transform for the layout sheet ----
+  // (client req 2026-08-27: General Plan must always show the template itself —
+  // no redirect into the separate Parcels workflow — so this renders a blank
+  // sheet with an empty layout/schedule when no parcels exist yet, instead of
+  // gating behind a "go build parcels first" screen.)
   const xs = usedBeacons.map((b) => b.east);
   const ys = usedBeacons.map((b) => b.north);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
+  const minY = ys.length ? Math.min(...ys) : 0, maxY = ys.length ? Math.max(...ys) : 0;
   const spanX = maxX - minX || 1, spanY = maxY - minY || 1;
   const FX0 = 30, FY0 = 90, FX1 = 660, FY1 = H - 30;
   const pad = 30;
@@ -160,6 +152,9 @@ export function GeneralPlanView() {
           <text x={sx(b.east) + 4} y={sy(b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
         </g>
       ))}
+      {usedBeacons.length === 0 && (
+        <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No parcels added yet</text>
+      )}
       <text x={(FX0 + FX1) / 2} y={H - 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
       {/* parcel schedule (right) */}
       <text x={690} y={92} fontSize={12} fontWeight={700} fill="#0f172a">PARCEL SCHEDULE</text>
