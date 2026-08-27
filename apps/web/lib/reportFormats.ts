@@ -68,6 +68,7 @@ export function comparePointNames(a: string, b: string): number {
 export function buildCoordinateListLines(
   rows: ParsedRow[],
   titleLine: string,
+  situateLine: string,
   subtitleLine: string,
   sortDir?: "asc" | "desc" | null
 ): string[] {
@@ -93,7 +94,12 @@ export function buildCoordinateListLines(
   const row = (point: string, e: string, n: string, desc: string, sr: string, page = "") =>
     [point.padEnd(pointW), e.padEnd(eW), n.padEnd(nW), desc.padEnd(descW), sr.padEnd(srW), page].join(gap).trimEnd();
 
-  const lines = [titleLine, "", subtitleLine, "", row(headers.point, headers.e, headers.n, headers.desc, headers.sr, "Page"), ""];
+  const lines = [
+    titleLine, "",
+    ...(situateLine ? [situateLine, ""] : []),
+    subtitleLine, "",
+    row(headers.point, headers.e, headers.n, headers.desc, headers.sr, "Page"), "",
+  ];
   for (const g of COORD_LIST_GROUPS) {
     const grows = byType(g.key);
     if (!grows.length) continue;

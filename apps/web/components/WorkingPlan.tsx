@@ -2,6 +2,7 @@
 
 import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { ManualAnnotation, ManualText } from "./SgDiagram";
+import { dedupePoints } from "@/lib/plots";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,24 +103,6 @@ interface Props {
 // Helpers
 // ---------------------------------------------------------------------------
 const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
-
-/** Points that appear in more than one plot (same name = a shared boundary
- *  beacon between adjoining subdivisions) are kept once — first plot to use
- *  the name wins (client req 2026-08-26, Part 33a). */
-function dedupePoints(plots: WorkingPlanPlot[]): WorkingPlanPoint[] {
-  const named = new Map<string, WorkingPlanPoint>();
-  const anon: WorkingPlanPoint[] = [];
-  for (const plot of plots) {
-    for (const p of plot.points) {
-      if (p.name) {
-        if (!named.has(p.name)) named.set(p.name, p);
-      } else {
-        anon.push(p);
-      }
-    }
-  }
-  return [...named.values(), ...anon];
-}
 
 /** Area-weighted polygon centroid (shoelace formula) — falls back to the
  *  plain vertex average for a degenerate/zero-area polygon (client req

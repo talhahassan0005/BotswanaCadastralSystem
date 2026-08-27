@@ -1,45 +1,91 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { beaconMap, parcelMetrics, ringPoints } from "@/lib/server/parcel";
 import { displayCrs } from "@/lib/crsOptions";
-import type { Beacon, ParcelDoc } from "@/lib/types";
+import { dedupePoints, type Plot } from "@/lib/plots";
+import { type ManualText } from "@/components/SgDiagram";
 
 const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
 const COORDS_PER_SHEET = 48;
 const W = 1000;
 const H = 707; // A4 landscape ratio
 
-/** Multi-sheet General Plan (Module D / M3): the whole layout of all parcels on
- *  sheet 1, with the beacon coordinate schedule paginated onto continuation sheets. */
+/** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
+interface GpBeacon { id: string; east: number; north: number }
+
+/** Multi-sheet General Plan (Module D / M3): the whole layout of every plot
+ *  numbered on the Cadastral/COGO canvas, on sheet 1, with the beacon
+ *  coordinate schedule paginated onto continuation sheets.
+ *
+ *  Sourced from `cogoPlots` (client req 2026-08-27: "after joining all plots
+ *  in code, you just click on General Plan — all polygons appear") — every
+ *  plot ever given a Position/Lot number in COGO shows up here automatically,
+ *  no manual re-selection or re-import, mirroring how Working Plan already
+ *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
+ *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { parcelDoc, config, generalPlanInput, setGeneralPlanInput } = useStore();
+  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput } = useStore();
+
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
 
-  const pd = parcelDoc as ParcelDoc | null;
-  const beacons = useMemo<Beacon[]>(() => pd?.beacons ?? [], [pd]);
-  const parcels = useMemo(() => pd?.parcels ?? [], [pd]);
-  const by = useMemo(() => beaconMap(beacons), [beacons]);
+  const gpPlots = useMemo<Plot[]>(
+    () => cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })),
+    [cogoPlots]
+  );
+  const usedBeacons = useMemo<GpBeacon[]>(
+    () =>
+      dedupePoints(gpPlots)
+        .filter((p): p is { name: string; east: number; north: number } => !!p.name)
+        .map((p) => ({ id: p.name, east: p.east, north: p.north })),
+    [gpPlots]
+  );
 
-  const usedBeacons = useMemo(() => {
-    const ids = new Set(parcels.flatMap((p) => p.beaconIds));
-    const list = beacons.filter((b) => ids.has(b.id));
-    return list.length ? list : beacons;
-  }, [beacons, parcels]);
-
-  const savedGp = (generalPlanInput ?? null) as Partial<{ name: string; location: string; surveyor: string; gpNo: string; scale: number }> | null;
+  const savedGp = (generalPlanInput ?? null) as Partial<{
+    name: string; location: string; surveyor: string; gpNo: string; scale: number;
+    gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
+    beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
+    parentCadastre: string; roadLabels: ManualText[]; boundaryLabels: ManualText[]; dismissedAutoIds: string[];
+  }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
     location: "",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
     gpNo: "",
     scale: 2000,
+    gcNo: "",       // "GC-122" compilation/grid code, small red text top-right
+    dsmNo: "",      // "DSM No: 1244/2026"
+    srNo: "",       // "SR No: 966/2026", bottom-right of the sheet
+    surveyedIn: "", // "Surveyed in February 2026"
+    beaconDescription: "ALL: 12MM IRON PEG",
+    pedWay: "All: 3m",
+    // Per-corner splay distances, e.g. "A,B,B2,B3" -> "5m", with a default
+    // fallback row ("All Others" -> "3m") — client req 2026-08-27, §2e.
+    splayEntries: [{ corner: "All Others", distance: "3m" }] as { corner: string; distance: string }[],
+    // The undivided lot these plots were subdivided from, e.g. "243" — feeds
+    // the auto-suggested "REMAINDER OF CADASTRE 243" boundary labels below.
+    parentCadastre: "",
+    // Manually-placed road-width labels ("ROAD 15m" etc.) — client req
+    // 2026-08-27, spec Part 4. Free text anchored in real east/north so it
+    // stays put across pan/zoom/rescale, same as Diagrams' manual notes.
+    roadLabels: [] as ManualText[],
+    // Boundary labels — both user-placed and user-EDITED auto-suggestions
+    // (an edited auto-suggestion is persisted here under its own auto- id so
+    // the live auto-detection below doesn't also render its own copy).
+    boundaryLabels: [] as ManualText[],
+    // ids of auto-suggested boundary labels the user has explicitly removed
+    // — the suggestion is recomputed from geometry every render, so without
+    // this it would just reappear right after being deleted.
+    dismissedAutoIds: [] as string[],
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
+  const setSplayEntry = (i: number, patch: Partial<{ corner: string; distance: string }>) =>
+    setMeta((m) => ({ ...m, splayEntries: m.splayEntries.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
+  const addSplayEntry = () => setMeta((m) => ({ ...m, splayEntries: [...m.splayEntries, { corner: "", distance: "" }] }));
+  const removeSplayEntry = (i: number) => setMeta((m) => ({ ...m, splayEntries: m.splayEntries.filter((_, j) => j !== i) }));
 
   // Persist the General Plan title-block (G.P. No., scale, etc.) with the project.
   useEffect(() => {
@@ -48,17 +94,16 @@ export function GeneralPlanView() {
 
   // Pagination: sheet 0 = layout; following sheets = coordinate chunks.
   const coordChunks = useMemo(() => {
-    const chunks: Beacon[][] = [];
+    const chunks: GpBeacon[][] = [];
     for (let i = 0; i < usedBeacons.length; i += COORDS_PER_SHEET) chunks.push(usedBeacons.slice(i, i + COORDS_PER_SHEET));
     return chunks;
   }, [usedBeacons]);
   const sheetCount = 1 + Math.max(coordChunks.length, 0);
 
   // ---- figure transform for the layout sheet ----
-  // (client req 2026-08-27: General Plan must always show the template itself —
-  // no redirect into the separate Parcels workflow — so this renders a blank
-  // sheet with an empty layout/schedule when no parcels exist yet, instead of
-  // gating behind a "go build parcels first" screen.)
+  // (client req 2026-08-27: General Plan must always show the template itself,
+  // with no gating screen — this renders a blank sheet with an empty
+  // layout/schedule until at least one plot has been numbered in COGO.)
   const xs = usedBeacons.map((b) => b.east);
   const ys = usedBeacons.map((b) => b.north);
   const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
@@ -71,9 +116,166 @@ export function GeneralPlanView() {
   const oyOff = ((FY1 - FY0) - s * spanY) / 2;
   const sx = (e: number) => ox + (e - minX) * s;
   const sy = (n: number) => FY1 - oyOff - (n - minY) * s;
+  // Inverse of sx/sy — screen (viewBox) point back to real east/north, for
+  // placing/dragging labels the same way the boundary itself is fixed to
+  // real survey coordinates rather than raw pixels (client req 2026-08-27,
+  // same reasoning as Diagrams.tsx's `transformRef`).
+  const screenToWorld = (px: number, py: number) => ({
+    east: (px - ox) / s + minX,
+    north: minY + (FY1 - oyOff - py) / s,
+  });
 
-  const schedule = parcels.map((p, i) => ({ p, i, m: parcelMetrics(p.beaconIds, by) }));
-  const totalHa = schedule.reduce((a, x) => a + x.m.area_ha, 0);
+  const schedule = cogoPlots.map((p, i) => ({ p, i }));
+  const totalHa = cogoPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
+
+  // ===================== Road-width / boundary-label annotation tool ======
+  // Plain click-to-place free text (spec Part 4), reusing SgDiagram's
+  // ManualText type/pattern rather than inventing a new one.
+  const [addingRoadLabel, setAddingRoadLabel] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState<{ id: string; kind: "road" | "boundary" } | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ id: string | null; kind: "road" | "boundary"; x: number; y: number; value: string; angle: number } | null>(null);
+  const [draggingLabel, setDraggingLabel] = useState<{ id: string; kind: "road" | "boundary" } | null>(null);
+  const dragMovedRef = useRef(false);
+
+  useEffect(() => {
+    if (!textPrompt && !addingRoadLabel) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setTextPrompt(null);
+      setAddingRoadLabel(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [textPrompt, addingRoadLabel]);
+
+  function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+    const svg = refs.current[0];
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+  function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
+    if (addingRoadLabel) {
+      const p = toSvgPoint(e);
+      setTextPrompt({ id: null, kind: "road", x: p.x, y: p.y, value: "", angle: 0 });
+      setAddingRoadLabel(false);
+      return;
+    }
+    setSelectedLabel(null);
+  }
+  function labelArray(kind: "road" | "boundary") {
+    return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
+  }
+  function setLabelArray(kind: "road" | "boundary", next: ManualText[]) {
+    setMeta((m) => (kind === "road" ? { ...m, roadLabels: next } : { ...m, boundaryLabels: next }));
+  }
+  function handleLabelClick(id: string, kind: "road" | "boundary") {
+    if (dragMovedRef.current) {
+      dragMovedRef.current = false; // swallow the click that trails a drag
+      return;
+    }
+    setSelectedLabel((cur) => (cur?.id === id && cur.kind === kind ? null : { id, kind }));
+  }
+  function handleLabelDoubleClick(id: string, kind: "road" | "boundary", tt: ManualText) {
+    const p = { x: sx(tt.east), y: sy(tt.north) };
+    setTextPrompt({ id, kind, x: p.x, y: p.y, value: tt.text, angle: tt.angle ?? 0 });
+  }
+  function handleLabelPointerDown(id: string, kind: "road" | "boundary", e: ReactPointerEvent<SVGElement>) {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    setDraggingLabel({ id, kind });
+    setSelectedLabel({ id, kind });
+  }
+  function handleLabelPointerMove(id: string, kind: "road" | "boundary", e: ReactPointerEvent<SVGElement>) {
+    if (!draggingLabel || draggingLabel.id !== id || draggingLabel.kind !== kind) return;
+    dragMovedRef.current = true;
+    const p = toSvgPoint(e);
+    const w = screenToWorld(p.x, p.y);
+    setLabelArray(kind, labelArray(kind).map((tt) => (tt.id === id ? { ...tt, east: w.east, north: w.north } : tt)));
+  }
+  function handleLabelPointerUp() {
+    setDraggingLabel(null);
+  }
+  function commitTextPrompt() {
+    if (!textPrompt) return;
+    const value = textPrompt.value.trim();
+    if (value) {
+      const w = screenToWorld(textPrompt.x, textPrompt.y);
+      const angle = textPrompt.angle || undefined;
+      if (textPrompt.id) {
+        const existing = labelArray(textPrompt.kind);
+        const already = existing.some((tt) => tt.id === textPrompt.id);
+        setLabelArray(
+          textPrompt.kind,
+          already
+            ? existing.map((tt) => (tt.id === textPrompt.id ? { ...tt, text: value, angle } : tt))
+            : [...existing, { id: textPrompt.id, east: w.east, north: w.north, text: value, angle }]
+        );
+      } else {
+        setLabelArray(textPrompt.kind, [...labelArray(textPrompt.kind), { id: `${textPrompt.kind}-${Date.now()}`, east: w.east, north: w.north, text: value, angle }]);
+      }
+    }
+    setTextPrompt(null);
+  }
+  function deleteSelectedLabel() {
+    if (!selectedLabel) return;
+    if (selectedLabel.kind === "boundary" && selectedLabel.id.startsWith("auto-remainder-") && !meta.boundaryLabels.some((tt) => tt.id === selectedLabel.id)) {
+      // An un-edited auto-suggestion isn't actually stored — remember that
+      // it was dismissed instead, or the live detection below just re-adds it.
+      setMeta((m) => ({ ...m, dismissedAutoIds: [...m.dismissedAutoIds, selectedLabel.id] }));
+    } else {
+      setLabelArray(selectedLabel.kind, labelArray(selectedLabel.kind).filter((tt) => tt.id !== selectedLabel.id));
+    }
+    setSelectedLabel(null);
+  }
+
+  // Auto-suggested "REMAINDER OF CADASTRE N" labels (spec Part 4): every
+  // plot edge with no matching edge on any other plot in gpPlots — i.e. the
+  // outer boundary of the whole layout — gets a suggested label at its
+  // midpoint, unless the user already placed/edited one there (same id) or
+  // explicitly dismissed it. Same shared-edge detection as Diagrams.tsx's
+  // Part 37 auto-adjacency (`ADJACENCY_TOL`/`sameWorldPoint`), just inverted:
+  // there it labels a MATCHED edge with the neighbour's number, here it
+  // labels an UNMATCHED edge with the parent cadastre.
+  const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
+  const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+    Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
+  const autoBoundaryLabels = useMemo<ManualText[]>(() => {
+    const out: ManualText[] = [];
+    for (let pi = 0; pi < gpPlots.length; pi++) {
+      const plot = gpPlots[pi];
+      const pts = plot.points;
+      if (pts.length < 3) continue;
+      const cE = pts.reduce((a, p) => a + p.east, 0) / pts.length;
+      const cN = pts.reduce((a, p) => a + p.north, 0) / pts.length;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        const matched = gpPlots.some((other, oi) => {
+          if (oi === pi) return false;
+          return other.points.some((oa, j) => {
+            const ob = other.points[(j + 1) % other.points.length];
+            return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
+          });
+        });
+        if (matched) continue;
+        const id = `auto-remainder-${plot.number}-${i}`;
+        if (meta.dismissedAutoIds.includes(id) || meta.boundaryLabels.some((tt) => tt.id === id)) continue;
+        const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+        const dE = b.east - a.east, dN = b.north - a.north;
+        const segLen = Math.hypot(dE, dN) || 1;
+        let pE = -dN / segLen, pN = dE / segLen;
+        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+        const stub = Math.min(20, Math.max(4, segLen * 0.15));
+        out.push({ id, east: mE + pE * stub, north: mN + pN * stub, text: `REMAINDER OF CADASTRE ${meta.parentCadastre || "—"}` });
+      }
+    }
+    return out;
+  }, [gpPlots, meta.dismissedAutoIds, meta.boundaryLabels, meta.parentCadastre]);
+  const displayBoundaryLabels = useMemo(() => [...meta.boundaryLabels, ...autoBoundaryLabels], [meta.boundaryLabels, autoBoundaryLabels]);
 
   function serialize(svg: SVGSVGElement | null): string | null {
     if (!svg) return null;
@@ -111,20 +313,87 @@ export function GeneralPlanView() {
     w.document.close();
   }
 
+  // Top-right registration block (client req 2026-08-27, matching the GC-122
+  // reference sheet exactly): GC-No, SHEET No, G.P./DSM No, a real
+  // Approved/Director-of-Surveys signature block, and Surveyed-in/surveyor
+  // details — replaces the old bare "Sheet N of M" caption and the informal
+  // Approved box that used to sit at the bottom of the parcel-schedule panel.
+  const regX = 796, regW = 190;
+
+  // Right-side reference panel (client req 2026-08-27, §2e): Sheet Index,
+  // Beacon Description, Splay Information, Ped Way — sits between the
+  // registration block above (ends y=146) and the parcel schedule below.
+  // Sheet Index is a single trivial entry for now (real multi-sheet splitting
+  // is a later phase); the numeric lot range is derived straight from the
+  // numbered COGO plots when their numbers are numeric.
+  const panelX = 690, panelTop = 150;
+  const sheetIndexLines = (() => {
+    const nums = cogoPlots.map((p) => Number(p.number)).filter((n) => Number.isFinite(n));
+    if (!nums.length) return [`SHEET 1: ${cogoPlots.length} plot(s)`];
+    return [`SHEET 1: Lots ${Math.min(...nums)}-${Math.max(...nums)}`];
+  })();
+  const panelRows: { text: string; heading?: boolean }[] = [
+    { text: "SHEET INDEX", heading: true },
+    ...sheetIndexLines.map((text) => ({ text })),
+    { text: "BEACON DESCRIPTION", heading: true },
+    { text: meta.beaconDescription || "—" },
+    { text: "SPLAY INFORMATION", heading: true },
+    ...meta.splayEntries
+      .filter((e) => e.corner.trim() || e.distance.trim())
+      .map((e) => ({ text: `${e.corner || "—"}: ${e.distance || "—"}` })),
+    { text: "PED WAY", heading: true },
+    { text: meta.pedWay || "—" },
+  ];
+  const panelYs: number[] = [];
+  {
+    let y = panelTop;
+    panelRows.forEach((row, i) => {
+      if (row.heading && i > 0) y += 6;
+      panelYs.push(y);
+      y += row.heading ? 14 : 12;
+    });
+  }
+  const panelBottom = panelYs.length ? panelYs[panelYs.length - 1] + 12 : panelTop;
+  const scheduleTop = panelBottom + 16;
+  // Row cap is computed from actual remaining room (not a fixed 30) — the
+  // reference panel above can grow (more splay entries, etc.) and push this
+  // down, so a fixed cap could otherwise run the table off the bottom of the
+  // sheet. Reserves ~52px below the last row for the TOTAL/overflow lines.
+  const maxScheduleRows = Math.max(1, Math.min(30, Math.floor((H - 20 - 52 - (scheduleTop + 34)) / 15) + 1));
   const titleBlock = (no: number, label: string) => (
     <>
       <rect x={6} y={6} width={W - 12} height={H - 12} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">GENERAL PLAN OF {meta.name}</text>
       <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fill="#334155">{label}{meta.location ? ` — ${meta.location}` : ""}</text>
-      <text x={W - 20} y={28} textAnchor="end" fontSize={10} fill="#475569">G.P. No. {meta.gpNo || "—"}</text>
-      <text x={W - 20} y={H - 16} textAnchor="end" fontSize={9} fill="#64748b">Sheet {no} of {sheetCount}</text>
+
+      <text x={regX + regW} y={15} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+      <rect x={regX} y={20} width={regW} height={126} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+      <text x={regX + regW / 2} y={32} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
+      <line x1={regX} y1={37} x2={regX + regW} y2={37} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={48} fontSize={8} fill="#334155">G.P. No: {meta.gpNo || "—"}</text>
+      <text x={regX + 6} y={60} fontSize={8} fill="#334155">DSM No: {meta.dsmNo || "—"}</text>
+      <text x={regX + regW / 2} y={72} textAnchor="middle" fontSize={8.5}>Approved</text>
+      <line x1={regX + 16} y1={90} x2={regX + regW - 14} y2={90} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + regW / 2} y={100} textAnchor="middle" fontSize={7.5} fill="#334155">Director of Surveys and Mapping</text>
+      <line x1={regX} y1={108} x2={regX + regW} y2={108} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={120} fontSize={8} fill="#334155">Surveyed in {meta.surveyedIn || "—"}</text>
+      <text x={regX + 6} y={132} fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+      <text x={regX + regW - 6} y={132} textAnchor="end" fontSize={7} fill="#64748b">By me · Land Surveyor</text>
+
+      <text x={W - 20} y={H - 16} textAnchor="end" fontSize={9} fill="#64748b">SR No: {meta.srNo || "—"}</text>
     </>
   );
 
   // sheet renderers
   const layoutSheet = (
-    <svg ref={(el) => { refs.current[0] = el; }} viewBox={`0 0 ${W} ${H}`} className="w-full bg-white" style={{ border: "1px solid #cbd5e1" }}>
-      {titleBlock(1, `Layout of ${parcels.length} parcel(s)`)}
+    <svg
+      ref={(el) => { refs.current[0] = el; }}
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full bg-white"
+      style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel ? "crosshair" : "default" }}
+      onClick={handleCanvasClick}
+    >
+      {titleBlock(1, `Layout of ${cogoPlots.length} parcel(s)`)}
       {/* north arrow */}
       <g transform={`translate(${FX1 - 20},${FY0 + 16})`}>
         <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
@@ -133,14 +402,14 @@ export function GeneralPlanView() {
       </g>
       {/* parcels */}
       {schedule.map(({ p, i }) => {
-        const pts = ringPoints(p.beaconIds, by);
+        const pts = p.fig.points;
         if (pts.length < 3) return null;
         const d = pts.map((pp) => `${sx(pp.east)},${sy(pp.north)}`).join(" ");
         const cx = pts.reduce((a, pp) => a + sx(pp.east), 0) / pts.length;
         const cy = pts.reduce((a, pp) => a + sy(pp.north), 0) / pts.length;
         const col = PALETTE[i % PALETTE.length];
         return (
-          <g key={p.id}>
+          <g key={p.number}>
             <polygon points={d} fill={col} fillOpacity={0.13} stroke={col} strokeWidth={1.4} />
             <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={700} fill={col}>{p.number}</text>
           </g>
@@ -153,42 +422,93 @@ export function GeneralPlanView() {
         </g>
       ))}
       {usedBeacons.length === 0 && (
-        <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No parcels added yet</text>
+        <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
       )}
+      {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
+      {meta.roadLabels.map((tt) => (
+        <text
+          key={tt.id}
+          x={sx(tt.east)}
+          y={sy(tt.north)}
+          textAnchor="middle"
+          fontSize={8.5}
+          fontWeight={600}
+          fill={selectedLabel?.id === tt.id && selectedLabel.kind === "road" ? "#2563eb" : "#0f172a"}
+          transform={tt.angle ? `rotate(${tt.angle} ${sx(tt.east)} ${sy(tt.north)})` : undefined}
+          style={{ cursor: "move" }}
+          onClick={() => handleLabelClick(tt.id, "road")}
+          onDoubleClick={() => handleLabelDoubleClick(tt.id, "road", tt)}
+          onPointerDown={(e) => handleLabelPointerDown(tt.id, "road", e)}
+          onPointerMove={(e) => handleLabelPointerMove(tt.id, "road", e)}
+          onPointerUp={handleLabelPointerUp}
+        >
+          {tt.text}
+        </text>
+      ))}
+      {displayBoundaryLabels.map((tt) => (
+        <text
+          key={tt.id}
+          x={sx(tt.east)}
+          y={sy(tt.north)}
+          textAnchor="middle"
+          fontSize={7.5}
+          fontStyle="italic"
+          fill={selectedLabel?.id === tt.id && selectedLabel.kind === "boundary" ? "#2563eb" : "#64748b"}
+          transform={tt.angle ? `rotate(${tt.angle} ${sx(tt.east)} ${sy(tt.north)})` : undefined}
+          style={{ cursor: "move" }}
+          onClick={() => handleLabelClick(tt.id, "boundary")}
+          onDoubleClick={() => handleLabelDoubleClick(tt.id, "boundary", tt)}
+          onPointerDown={(e) => handleLabelPointerDown(tt.id, "boundary", e)}
+          onPointerMove={(e) => handleLabelPointerMove(tt.id, "boundary", e)}
+          onPointerUp={handleLabelPointerUp}
+        >
+          {tt.text}
+        </text>
+      ))}
       <text x={(FX0 + FX1) / 2} y={H - 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
-      {/* parcel schedule (right) */}
-      <text x={690} y={92} fontSize={12} fontWeight={700} fill="#0f172a">PARCEL SCHEDULE</text>
-      <text x={690} y={110} fontSize={10} fontWeight={600} fill="#475569">No.</text>
-      <text x={830} y={110} fontSize={10} fontWeight={600} fill="#475569">Area (m²)</text>
-      <text x={930} y={110} fontSize={10} fontWeight={600} fill="#475569">ha</text>
-      {schedule.slice(0, 30).map(({ p, i, m }, k) => {
-        const y = 126 + k * 15;
+      {/* Sheet Index / Beacon Description / Splay Information / Ped Way */}
+      {panelRows.map((row, i) => (
+        <text
+          key={i}
+          x={panelX}
+          y={panelYs[i]}
+          fontSize={row.heading ? 10 : 8}
+          fontWeight={row.heading ? 700 : 400}
+          fill={row.heading ? "#0f172a" : "#334155"}
+        >
+          {row.text}
+        </text>
+      ))}
+      {/* parcel schedule (right) — starts below the reference panel above,
+          which itself starts below the top-right registration block (client
+          req 2026-08-27). */}
+      <text x={690} y={scheduleTop} fontSize={12} fontWeight={700} fill="#0f172a">PARCEL SCHEDULE</text>
+      <text x={690} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">No.</text>
+      <text x={830} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">Area (m²)</text>
+      <text x={930} y={scheduleTop + 18} fontSize={10} fontWeight={600} fill="#475569">ha</text>
+      {schedule.slice(0, maxScheduleRows).map(({ p, i }, k) => {
+        const y = scheduleTop + 34 + k * 15;
         const col = PALETTE[i % PALETTE.length];
         return (
-          <g key={p.id}>
+          <g key={p.number}>
             <rect x={690} y={y - 8} width={7} height={7} fill={col} />
             <text x={702} y={y} fontSize={9.5} fill="#0f172a">{p.number || "(none)"}</text>
-            <text x={830} y={y} fontSize={9.5} fill="#0f172a">{m.area_m2}</text>
-            <text x={930} y={y} fontSize={9.5} fill="#0f172a">{m.area_ha}</text>
+            <text x={830} y={y} fontSize={9.5} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+            <text x={930} y={y} fontSize={9.5} fill="#0f172a">{p.fig.area_ha.toFixed(4)}</text>
           </g>
         );
       })}
-      <line x1={690} y1={126 + Math.min(schedule.length, 30) * 15} x2={970} y2={126 + Math.min(schedule.length, 30) * 15} stroke="#cbd5e1" />
-      <text x={702} y={126 + Math.min(schedule.length, 30) * 15 + 16} fontSize={10} fontWeight={700}>TOTAL: {totalHa.toFixed(4)} ha</text>
-      {schedule.length > 30 && <text x={690} y={126 + 30 * 15 + 34} fontSize={9} fill="#94a3b8">+{schedule.length - 30} more parcel(s) — see digital schedule</text>}
-      {/* surveyor / approval block */}
-      <line x1={690} y1={H - 130} x2={970} y2={H - 130} stroke="#0f172a" strokeWidth={0.6} />
-      <text x={690} y={H - 112} fontSize={10} fill="#334155">Surveyor: {meta.surveyor || "—"}</text>
-      <text x={690} y={H - 96} fontSize={10} fill="#334155">Coordinate system: {displayCrs(config.coordinateSystem)}</text>
-      <rect x={690} y={H - 86} width={280} height={56} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-      <text x={830} y={H - 66} textAnchor="middle" fontSize={9.5}>Approved</text>
-      <line x1={700} y1={H - 46} x2={960} y2={H - 46} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={830} y={H - 36} textAnchor="middle" fontSize={9}>Director of Surveys and Mapping</text>
+      <line x1={690} y1={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15} x2={970} y2={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15} stroke="#cbd5e1" />
+      <text x={702} y={scheduleTop + 34 + Math.min(schedule.length, maxScheduleRows) * 15 + 16} fontSize={10} fontWeight={700}>TOTAL: {totalHa.toFixed(4)} ha</text>
+      {schedule.length > maxScheduleRows && <text x={690} y={scheduleTop + 34 + maxScheduleRows * 15 + 18} fontSize={9} fill="#94a3b8">+{schedule.length - maxScheduleRows} more parcel(s) — see digital schedule</text>}
     </svg>
   );
 
-  const coordSheet = (chunk: Beacon[], idx: number) => {
-    const colW = 300;
+  const coordSheet = (chunk: GpBeacon[], idx: number) => {
+    // 230 (not the old 300) so a full 3-column sheet's rightmost values stay
+    // clear of the registration block at x=796+ — that block now renders on
+    // every sheet via the shared titleBlock(), not just the layout sheet.
+    const colW = 230;
     const cols = Math.min(3, Math.ceil(chunk.length / 16) || 1);
     const perCol = Math.ceil(chunk.length / cols);
     return (
@@ -200,15 +520,15 @@ export function GeneralPlanView() {
           return (
             <g key={c}>
               <text x={x0} y={88} fontSize={10} fontWeight={600} fill="#475569">Beacon</text>
-              <text x={x0 + 90} y={88} fontSize={10} fontWeight={600} fill="#475569">East (Y)</text>
-              <text x={x0 + 190} y={88} fontSize={10} fontWeight={600} fill="#475569">North (X)</text>
+              <text x={x0 + 70} y={88} fontSize={10} fontWeight={600} fill="#475569">East (Y)</text>
+              <text x={x0 + 150} y={88} fontSize={10} fontWeight={600} fill="#475569">North (X)</text>
               {part.map((b, r) => {
                 const y = 104 + r * 13.5;
                 return (
                   <g key={b.id}>
                     <text x={x0} y={y} fontSize={9} fill="#0f172a">{b.id}</text>
-                    <text x={x0 + 90} y={y} fontSize={9} fill="#0f172a">{b.east.toFixed(2)}</text>
-                    <text x={x0 + 190} y={y} fontSize={9} fill="#0f172a">{b.north.toFixed(2)}</text>
+                    <text x={x0 + 70} y={y} fontSize={9} fill="#0f172a">{b.east.toFixed(2)}</text>
+                    <text x={x0 + 150} y={y} fontSize={9} fill="#0f172a">{b.north.toFixed(2)}</text>
                   </g>
                 );
               })}
@@ -229,6 +549,10 @@ export function GeneralPlanView() {
           <Field label="Surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
           <Field label="G.P. No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+          <Field label="GC No. (compilation code)"><Input value={meta.gcNo} onChange={set("gcNo")} placeholder="e.g. 122" /></Field>
+          <Field label="DSM No."><Input value={meta.dsmNo} onChange={set("dsmNo")} placeholder="e.g. 1244/2026" /></Field>
+          <Field label="SR No."><Input value={meta.srNo} onChange={set("srNo")} placeholder="e.g. 966/2026" /></Field>
+          <Field label="Surveyed in"><Input value={meta.surveyedIn} onChange={set("surveyedIn")} placeholder="e.g. February 2026" /></Field>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={download}>⬇ Download sheet SVG</Button>
@@ -241,13 +565,98 @@ export function GeneralPlanView() {
         </div>
       </Card>
 
+      <Card title="Sheet reference panel">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} placeholder="e.g. ALL: 12MM IRON PEG" /></Field>
+          <Field label="Ped way"><Input value={meta.pedWay} onChange={set("pedWay")} placeholder="e.g. All: 3m" /></Field>
+          <Field label="Parent cadastre (for REMAINDER OF CADASTRE labels)"><Input value={meta.parentCadastre} onChange={set("parentCadastre")} placeholder="e.g. 243" /></Field>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Splay information (corner → distance; untick isn't needed, just leave blank rows out)</div>
+          <div className="space-y-1.5">
+            {meta.splayEntries.map((e, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  value={e.corner}
+                  onChange={(ev) => setSplayEntry(i, { corner: ev.target.value })}
+                  placeholder="e.g. A,B,B2,B3 or All Others"
+                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
+                />
+                <input
+                  value={e.distance}
+                  onChange={(ev) => setSplayEntry(i, { distance: ev.target.value })}
+                  placeholder="e.g. 5m"
+                  className="w-24 rounded border border-slate-200 px-2 py-1 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSplayEntry(i)}
+                  className="text-slate-400 hover:text-red-600"
+                  aria-label="Remove splay entry"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addSplayEntry} className="mt-2 text-xs font-medium text-brand underline">
+            + Add corner
+          </button>
+        </div>
+      </Card>
+
       <Card title={`General Plan — Sheet ${sheet + 1}`}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button
+            variant={addingRoadLabel ? "primary" : "ghost"}
+            onClick={() => {
+              setAddingRoadLabel((v) => !v);
+              setSelectedLabel(null);
+            }}
+          >
+            {addingRoadLabel ? "Click where it should go…" : "Add Road Label"}
+          </Button>
+          {selectedLabel && (
+            <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
+          )}
+          <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text.</span>
+        </div>
         {/* Render all sheets (so refs exist for print-all); show only the active one. */}
-        <div className="mx-auto max-w-5xl">
+        <div className="relative mx-auto max-w-5xl">
           <div style={{ display: sheet === 0 ? "block" : "none" }}>{layoutSheet}</div>
           {coordChunks.map((chunk, idx) => (
             <div key={idx} style={{ display: sheet === idx + 1 ? "block" : "none" }}>{coordSheet(chunk, idx)}</div>
           ))}
+          {textPrompt && sheet === 0 && (
+            <div
+              className="absolute z-10 w-56 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+              style={{ left: `${(textPrompt.x / W) * 100}%`, top: `${(textPrompt.y / H) * 100}%` }}
+            >
+              <div className="mb-2 text-xs font-semibold text-brand-dark">{textPrompt.id ? "Edit Label" : "Add Label"}</div>
+              <input
+                autoFocus
+                value={textPrompt.value}
+                onChange={(e) => setTextPrompt((tp) => (tp ? { ...tp, value: e.target.value } : tp))}
+                onKeyDown={(e) => e.key === "Enter" && commitTextPrompt()}
+                placeholder="e.g. ROAD 15m"
+                className="mb-2 w-full rounded border border-slate-200 px-2 py-1 text-sm"
+              />
+              <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+                Angle
+                <input
+                  type="number"
+                  value={textPrompt.angle}
+                  onChange={(e) => setTextPrompt((tp) => (tp ? { ...tp, angle: Number(e.target.value) || 0 } : tp))}
+                  className="w-16 rounded border border-slate-200 px-2 py-1 text-sm"
+                />
+                °
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setTextPrompt(null)}>Cancel</Button>
+                <Button onClick={commitTextPrompt}>{textPrompt.id ? "Save" : "Add"}</Button>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
     </div>

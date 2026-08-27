@@ -36,6 +36,20 @@ const DEFAULT_CHECKLIST: ChecklistItem[] = [
 
 const DEFAULT_TO_BLOCK = "The Director\nDepartment of Surveys and Mapping\nP/Bag 0037\nGaborone";
 
+// Standard survey-method narrative (client req 2026-08-27: "pre write
+// everything as it is, then user can edit content") — most survey reports
+// use near-identical wording, so this seeds the Method field with it fully
+// written out; the surveyor only needs to swap in the bracketed specifics
+// (equipment, working station, tie stations) rather than write it from
+// scratch each time.
+const DEFAULT_METHOD_TEXT = `The survey was carried out by the use of [equipment, e.g. Leica GS-14] system.
+
+The survey was started on working station [WP]. This point was occupied by a HERE FIX method, observations to Stations ([tie stations]) were tied to this point (see working plan or field book). Thereafter, calibration was made using all the observed stations. The base stayed at working station [WP] for the first observation to the plot beacons. The base was then moved to Station [station], in order to carry out double polar observations to the beacons of the plots. The coordinates were computed by the use of the in-built Datum and Map software. This was obtained by matching the known local coordinates and those of WGS84.
+
+The final Transformation parameters calculated using all Known Stations ([tie stations]) were then used to transform WGS84 coordinates to Local Grid. The transformation parameters are attached to the field book.
+
+All double polar and checking data were within acceptable limits.`;
+
 function formatLongDate(d: Date): string {
   return `${d.getDate()} ${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
 }
@@ -87,7 +101,7 @@ export function SurveyRecord() {
   const [purpose, setPurpose] = useState(ri.purpose ?? "");
   const [authority, setAuthority] = useState(ri.authority ?? "");
   const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
-  const [method, setMethod] = useState(ri.method ?? "");
+  const [method, setMethod] = useState(ri.method ?? DEFAULT_METHOD_TEXT);
   const [declaredArea, setDeclaredArea] = useState(ri.declaredArea ?? "");
 
   // Persist every field so the letter/report round-trips with the project
@@ -143,8 +157,11 @@ export function SurveyRecord() {
   }
 
   // --- Coordinate List (Part 31b) ---
-  const rawLotName = dMeta?.lotName || "";
-  const coordListTitle = `Survey of Lot ${rawLotName.replace(/^lot\s+/i, "") || rawLotName || "—"}`;
+  // Lot reference and tribal area now come from the same shared fields as
+  // the Submission Letter/Report and the Diagram module (client req
+  // 2026-08-27), instead of each document re-deriving its own copy.
+  const coordListTitle = `Survey of Lot ${lotNumber}`;
+  const coordListSituate = tribalArea ? `Situate in ${tribalArea}` : "";
   const coordSysShort = config.coordinateSystem.replace(" Botswana", "").replace(/(\d+)/, "$1°");
   const coordListSubtitle = `Coordinate List of ${coordSysShort} (Metres)`;
   const coordListRows = importResult?.rows ?? [];
@@ -153,7 +170,7 @@ export function SurveyRecord() {
   // original import order, matching the report's prior (unsorted) behaviour.
   const [coordSortDir, setCoordSortDir] = useState<"asc" | "desc" | null>(null);
   const coordListLines = coordListRows.some((r) => r.east != null && r.north != null)
-    ? buildCoordinateListLines(coordListRows, coordListTitle, coordListSubtitle, coordSortDir)
+    ? buildCoordinateListLines(coordListRows, coordListTitle, coordListSituate, coordListSubtitle, coordSortDir)
     : null;
   function setPointMeta(index: number, patch: Partial<Pick<ParsedRow, "description" | "srNo">>) {
     if (!importResult) return;
@@ -210,7 +227,7 @@ export function SurveyRecord() {
             </Field>
             <div>
               <div className="mb-1 text-xs font-medium text-slate-500">Enclosed documents (untick or edit any that don't apply)</div>
-              <div className="space-y-1.5">
+              <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-x-6">
                 {checklist.map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <input
@@ -254,7 +271,7 @@ export function SurveyRecord() {
           </div>
           <div className="mt-3 space-y-3">
             <Field label="1. Purpose">
-              <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} placeholder={`Survey of ${lotName}`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+              <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} placeholder={`Survey of Lot ${lotNumber}`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
             <Field label="2. Authority">
               <textarea value={authority} onChange={(e) => setAuthority(e.target.value)} rows={2} placeholder="e.g. Land Board name" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
@@ -263,7 +280,7 @@ export function SurveyRecord() {
               <textarea value={calcBasis} onChange={(e) => setCalcBasis(e.target.value)} rows={2} placeholder={`e.g. Based on ${displayCrs(config.coordinateSystem)} system using ${dMeta?.tribalArea || "local"} Reference Marks.`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
             <Field label="4. Method">
-              <textarea value={method} onChange={(e) => setMethod(e.target.value)} rows={4} placeholder="Describe GPS/total-station equipment, beacons found/adopted with SR numbers, working-station occupation, calibration, coordinate computation and transformation, checks performed…" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+              <textarea value={method} onChange={(e) => setMethod(e.target.value)} rows={10} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
           </div>
         </Card>
@@ -290,7 +307,7 @@ export function SurveyRecord() {
               surveyor={surveyor}
               assistedBy={assistedBy}
               dateOfSurvey={dateOfSurvey}
-              purpose={purpose || `Survey of ${lotName}`}
+              purpose={purpose || `Survey of Lot ${lotNumber}`}
               authority={authority}
               calcBasis={calcBasis}
               method={method}
@@ -321,8 +338,12 @@ export function SurveyRecord() {
           )}
           {doc === "coordinates" && (
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h1 className="text-base font-bold text-slate-800">Coordinate List</h1>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h1 className="text-base font-bold text-slate-800">{coordListTitle}</h1>
+                  {coordListSituate && <div className="text-sm text-slate-600">{coordListSituate}</div>}
+                  <div className="text-sm text-slate-600">{coordListSubtitle}</div>
+                </div>
                 {coordListLines && (
                   <div className="flex items-center gap-1 text-xs">
                     <span className="mr-1 text-slate-400">Sort beacons:</span>
@@ -494,17 +515,20 @@ function ReportOnSurvey({
       {/* Inline style (not a Tailwind class) so the column alignment survives
           both on-screen rendering and the print popup, which doesn't load
           Tailwind's stylesheet — plain-text spaces otherwise collapse to one. */}
-      <div style={{ whiteSpace: "pre" }}>Land Surveyor : {surveyor}</div>
-      <div style={{ whiteSpace: "pre" }}>Assisted by   : {assistedBy || "—"}</div>
-      <div style={{ whiteSpace: "pre" }}>Date of Survey: {dateOfSurvey || "—"}</div>
+      {/* <strong>, not a Tailwind class, so the bold survives the print
+          popup too (client req 2026-08-27: labels bold, values regular,
+          matching the reference format). */}
+      <div style={{ whiteSpace: "pre" }}><strong>Land Surveyor : </strong>{surveyor}</div>
+      <div style={{ whiteSpace: "pre" }}><strong>Assisted by   : </strong>{assistedBy || "—"}</div>
+      <div style={{ whiteSpace: "pre" }}><strong>Date of Survey: </strong>{dateOfSurvey || "—"}</div>
 
       <h2 className="text-sm font-semibold text-slate-800">Survey Report</h2>
-      <p>1. Purpose: {purpose}</p>
-      <p>2. Authority: {authority || "—"}</p>
-      <p>3. Calculation Basis: {calcBasis || "—"}</p>
-      <p>4. Method: {method || "—"}</p>
+      <p><strong>1. Purpose:</strong> {purpose}</p>
+      <p><strong>2. Authority:</strong> {authority || "—"}</p>
+      <p><strong>3. Calculation Basis:</strong> {calcBasis || "—"}</p>
+      <div style={{ whiteSpace: "pre-wrap" }}><strong>4. Method:</strong> {method || "—"}</div>
       <p>
-        5. Certificate: I certify that the checks enumerated under prescribed checks Para 3.1 have been completed
+        <strong>5. Certificate:</strong> I certify that the checks enumerated under prescribed checks Para 3.1 have been completed
         and that the relevant check sheets are attached to the survey record.
       </p>
 
