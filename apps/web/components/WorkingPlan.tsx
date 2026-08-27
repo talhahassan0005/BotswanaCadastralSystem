@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { ManualAnnotation, ManualText } from "./SgDiagram";
+import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
 import { dedupePoints } from "@/lib/plots";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +97,26 @@ interface Props {
   onLabelPointerMove?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelPointerUp?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelResize?: (name: string, delta: number) => void;
+  /** Same select/move/resize treatment as the beacon labels above, but for
+   *  the manual text notes — keyed by the note's own `id` instead of a point
+   *  name (client req 2026-08-28: "I want to be able to select, resize, and
+   *  move the text"). Kept as its own offset (not shared with `labelOffsets`,
+   *  and not written back into the Diagrams module's own copy of the note)
+   *  so repositioning a note for this sheet doesn't move it on the Diagrams
+   *  sheet it was originally drawn on. */
+  textOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
+  selectedTextId?: string | null;
+  onTextClick?: (id: string, e: ReactMouseEvent<SVGElement>) => void;
+  onTextPointerDown?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
+  onTextPointerMove?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
+  onTextPointerUp?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
+  onTextResize?: (id: string, delta: number) => void;
+  /** Live pixel<->survey-coordinate conversion, same mechanism/shape as
+   *  SgDiagram's own `onTransform` (client req 2026-08-28: "Also download
+   *  Dxf") — the caller stores it in a ref and uses it to translate every
+   *  screen-space draw call in this sheet into DXF entities, the same way
+   *  Diagrams.tsx's DXF export already does for the SG Diagram. */
+  onTransform?: (t: DiagramTransform) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +208,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onLabelPointerMove,
     onLabelPointerUp,
     onLabelResize,
+    textOffsets,
+    selectedTextId,
+    onTextClick,
+    onTextPointerDown,
+    onTextPointerMove,
+    onTextPointerUp,
+    onTextResize,
+    onTransform,
   },
   ref
 ) {
@@ -245,6 +273,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const offY = draw.y + (draw.h - drawH) / 2;
   const toX = (e: number) => offX + (e - minE) * fit;
   const toY = (n: number) => offY + (maxN - n) * fit; // flip Y so north is up
+  // Handed to the caller every render (client req 2026-08-28) — same
+  // pixel<->survey-coordinate mechanism as SgDiagram.tsx's `onTransform`,
+  // so a DXF export can walk this sheet's own screen-space draw calls the
+  // same way Diagrams.tsx's export already does.
+  onTransform?.({
+    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
+    toWorld: (x, y) => ({ east: (x - offX) / fit + minE, north: maxN - (y - offY) / fit }),
+  });
 
   const cE = avg(es), cN = avg(ns);
   const cx = toX(cE), cy = toY(cN);
@@ -499,17 +535,51 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           stroke="black" strokeWidth={1} strokeDasharray="6 4"
         />
       ))}
+      {/* Selectable/draggable/resizable, same treatment as the beacon labels
+          above — text notes get their own offset store (`textOffsets`, keyed
+          by the note's id) layered on top of their base east/north position,
+          so this sheet's nudge/resize never touches the Diagrams module's
+          own copy of the note. */}
       {(manualTexts ?? []).map((t) => {
-        const x = toX(t.east), y = toY(t.north);
+        const off = textOffsets?.[t.id] || { dx: 0, dy: 0, scale: 1 };
+        const scale = off.scale ?? 1;
+        const fs = 10 * scale;
+        const x = toX(t.east) + off.dx, y = toY(t.north) + off.dy;
+        const isSel = selectedTextId === t.id;
+        const boxW = Math.max(14, t.text.length * fs * 0.3), boxH = 7 * scale;
         return (
-          <text
-            key={t.id}
-            x={x} y={y}
-            fontSize={10}
-            transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}
-          >
-            {t.text}
-          </text>
+          <g key={t.id}>
+            <text
+              x={x} y={y}
+              fontSize={fs}
+              fill={isSel ? "#dc2626" : "#000"}
+              transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}
+              style={{ cursor: isSel ? "move" : "pointer" }}
+              onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
+              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(t.id, e); } }}
+              onPointerMove={(e) => onTextPointerMove?.(t.id, e)}
+              onPointerUp={(e) => onTextPointerUp?.(t.id, e)}
+            >
+              {t.text}
+            </text>
+            {isSel && (
+              <>
+                <rect
+                  x={x - boxW} y={y - boxH - 4} width={boxW * 2} height={boxH * 2 + 4}
+                  fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                  style={{ pointerEvents: "none" }}
+                />
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onTextResize?.(t.id, 0.1); }}>
+                  <circle cx={x + boxW + 8} cy={y - 6} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={x + boxW + 8} y={y - 3} textAnchor="middle" fontSize={9} fill="#dc2626">+</text>
+                </g>
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onTextResize?.(t.id, -0.1); }}>
+                  <circle cx={x + boxW + 8} cy={y + 8} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={x + boxW + 8} y={y + 11} textAnchor="middle" fontSize={9} fill="#dc2626">−</text>
+                </g>
+              </>
+            )}
+          </g>
         );
       })}
 
