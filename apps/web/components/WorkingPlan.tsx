@@ -111,6 +111,19 @@ interface Props {
   onTextPointerMove?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
   onTextPointerUp?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
   onTextResize?: (id: string, delta: number) => void;
+  /** Select/move/resize for the title block itself (client req 2026-08-28,
+   *  screenshot: "I want to be able to select, resize, and move the text" —
+   *  pointing at "WORKING PLAN OF / LOTS.../TRIBAL TERRITORY/SCALE", not the
+   *  Custom Text notes above) — one offset for the whole 5-line block (moved
+   *  as a unit; resize scales every line's font-size together), same
+   *  dx/dy/scale shape as the other offset stores. */
+  titleOffset?: { dx: number; dy: number; scale?: number };
+  titleSelected?: boolean;
+  onTitleClick?: (e: ReactMouseEvent<SVGElement>) => void;
+  onTitlePointerDown?: (e: ReactPointerEvent<SVGElement>) => void;
+  onTitlePointerMove?: (e: ReactPointerEvent<SVGElement>) => void;
+  onTitlePointerUp?: (e: ReactPointerEvent<SVGElement>) => void;
+  onTitleResize?: (delta: number) => void;
   /** Live pixel<->survey-coordinate conversion, same mechanism/shape as
    *  SgDiagram's own `onTransform` (client req 2026-08-28: "Also download
    *  Dxf") — the caller stores it in a ref and uses it to translate every
@@ -215,6 +228,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTextPointerMove,
     onTextPointerUp,
     onTextResize,
+    titleOffset,
+    titleSelected,
+    onTitleClick,
+    onTitlePointerDown,
+    onTitlePointerMove,
+    onTitlePointerUp,
+    onTitleResize,
     onTransform,
   },
   ref
@@ -359,33 +379,66 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       <rect x={12} y={12} width={VB_W - 24} height={VB_H - 24} fill="none" stroke="black" strokeWidth={0.5} />
 
       {/* ---------- Title block (top-centre) ---------- */}
-      <g textAnchor="middle" fontWeight="bold">
-        <text x={VB_W / 2} y={40} fontSize={14} textDecoration="underline">WORKING PLAN OF</text>
-        {useMultiPlot ? (
-          <>
-            {/* Multi-plot title (client req 2026-08-26, Part 33b):
-                LOTS [first]-[last] [LOCALITY]
-                PORTIONS OF LOT [parent lot] [LOCALITY]
-                [TRIBAL TERRITORY]
-                [SCALE] */}
-            <text x={VB_W / 2} y={62} fontSize={13} textDecoration="underline">
-              LOTS {formatLotRange(activePlots.map((p) => p.number))} {meta.locality || ""}
-            </text>
-            <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">
-              PORTIONS OF LOT {meta.parentLotNumber || ""} {meta.locality || ""}
-            </text>
-          </>
-        ) : (
-          <>
-            <text x={VB_W / 2} y={62} fontSize={14} textDecoration="underline">{meta.lotName}</text>
-            {hasParent && (
-              <text x={VB_W / 2} y={82} fontSize={11} textDecoration="none">({meta.parent})</text>
+      {(() => {
+        const off = titleOffset || { dx: 0, dy: 0, scale: 1 };
+        const ts = off.scale ?? 1;
+        const boxTop = 26, boxBottom = 104 + titleExtra + 10, boxHalfW = 155;
+        return (
+          <g
+            transform={`translate(${off.dx},${off.dy})`}
+            style={{ cursor: titleSelected ? "move" : "pointer" }}
+            onClick={(e) => { e.stopPropagation(); onTitleClick?.(e); }}
+            onPointerDown={(e) => { if (titleSelected) { e.stopPropagation(); onTitlePointerDown?.(e); } }}
+            onPointerMove={onTitlePointerMove}
+            onPointerUp={onTitlePointerUp}
+          >
+            <g textAnchor="middle" fontWeight="bold" fill={titleSelected ? "#dc2626" : "#000"}>
+              <text x={VB_W / 2} y={40} fontSize={14 * ts} textDecoration="underline">WORKING PLAN OF</text>
+              {useMultiPlot ? (
+                <>
+                  {/* Multi-plot title (client req 2026-08-26, Part 33b):
+                      LOTS [first]-[last] [LOCALITY]
+                      PORTIONS OF LOT [parent lot] [LOCALITY]
+                      [TRIBAL TERRITORY]
+                      [SCALE] */}
+                  <text x={VB_W / 2} y={62} fontSize={13 * ts} textDecoration="underline">
+                    LOTS {formatLotRange(activePlots.map((p) => p.number))} {meta.locality || ""}
+                  </text>
+                  <text x={VB_W / 2} y={82} fontSize={11 * ts} textDecoration="none">
+                    PORTIONS OF LOT {meta.parentLotNumber || ""} {meta.locality || ""}
+                  </text>
+                </>
+              ) : (
+                <>
+                  <text x={VB_W / 2} y={62} fontSize={14 * ts} textDecoration="underline">{meta.lotName}</text>
+                  {hasParent && (
+                    <text x={VB_W / 2} y={82} fontSize={11 * ts} textDecoration="none">({meta.parent})</text>
+                  )}
+                </>
+              )}
+              <text x={VB_W / 2} y={84 + titleExtra} fontSize={12 * ts} textDecoration="underline">{meta.tribalArea}</text>
+              <text x={VB_W / 2} y={104 + titleExtra} fontSize={12 * ts} textDecoration="underline">1:{meta.scale}</text>
+            </g>
+            {titleSelected && (
+              <>
+                <rect
+                  x={VB_W / 2 - boxHalfW} y={boxTop} width={boxHalfW * 2} height={boxBottom - boxTop}
+                  fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                  style={{ pointerEvents: "none" }}
+                />
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onTitleResize?.(0.1); }}>
+                  <circle cx={VB_W / 2 + boxHalfW + 12} cy={boxTop + 14} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={VB_W / 2 + boxHalfW + 12} y={boxTop + 17} textAnchor="middle" fontSize={10} fill="#dc2626">+</text>
+                </g>
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onTitleResize?.(-0.1); }}>
+                  <circle cx={VB_W / 2 + boxHalfW + 12} cy={boxTop + 32} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={VB_W / 2 + boxHalfW + 12} y={boxTop + 35} textAnchor="middle" fontSize={10} fill="#dc2626">−</text>
+                </g>
+              </>
             )}
-          </>
-        )}
-        <text x={VB_W / 2} y={84 + titleExtra} fontSize={12} textDecoration="underline">{meta.tribalArea}</text>
-        <text x={VB_W / 2} y={104 + titleExtra} fontSize={12} textDecoration="underline">1:{meta.scale}</text>
-      </g>
+          </g>
+        );
+      })()}
 
       {/* ---------- North arrow (top-right) — "T N" below the arrow ---------- */}
       <g transform={`translate(${VB_W - 60}, 70)`}>

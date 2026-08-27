@@ -55,6 +55,7 @@ export function WorkingPlanView() {
         meta?: Partial<WorkingPlanMeta>;
         labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
         textOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
+        titleOffset?: { dx: number; dy: number; scale?: number };
         plotNumbers?: string[];
       }
     | Partial<WorkingPlanMeta>
@@ -73,6 +74,13 @@ export function WorkingPlanView() {
     (isWrappedSave ? (savedRaw as { textOffsets?: Record<string, { dx: number; dy: number; scale?: number }> }).textOffsets : null) ?? {}
   );
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  // Same select/move/resize treatment for the title block itself (client req
+  // 2026-08-28, screenshot pointed at "WORKING PLAN OF / LOTS.../TRIBAL
+  // TERRITORY/SCALE") — one offset for the whole block, not per-line.
+  const [titleOffset, setTitleOffset] = useState<{ dx: number; dy: number; scale?: number }>(
+    (isWrappedSave ? (savedRaw as { titleOffset?: { dx: number; dy: number; scale?: number } }).titleOffset : null) ?? { dx: 0, dy: 0 }
+  );
+  const [titleSelected, setTitleSelected] = useState(false);
   // Plots picked from the Cadastral work station for one multi-plot sheet
   // (client req 2026-08-26, Part 33a) — numbers only; resolved against
   // `cogoPlots` below so the sheet always reflects that tab's latest data.
@@ -104,6 +112,9 @@ export function WorkingPlanView() {
     origDy: number;
   } | null>(null);
   const dragTextMovedRef = useRef(false);
+  // Same in-progress-drag tracking, for the title block (client req 2026-08-28).
+  const [draggingTitle, setDraggingTitle] = useState<{ startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
+  const dragTitleMovedRef = useRef(false);
   // One-time default for the multi-plot title's "PORTIONS OF LOT [...]" line
   // (client req 2026-08-26, Part 33b) — seeded from the Diagrams module's
   // "Parent / portion" field (e.g. "A PORTION OF CADASTRE 243" -> "243"),
@@ -194,8 +205,8 @@ export function WorkingPlanView() {
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
   useEffect(() => {
-    setWorkingPlanInput({ meta, labelOffsets, textOffsets, plotNumbers });
-  }, [meta, labelOffsets, textOffsets, plotNumbers, setWorkingPlanInput]);
+    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers });
+  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, setWorkingPlanInput]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
@@ -297,6 +308,46 @@ export function WorkingPlanView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingText]);
 
+  // Title-block equivalents of the text-note handlers above (client req
+  // 2026-08-28) — one offset for the whole block, so no id parameter.
+  function handleTitleClick() {
+    if (dragTitleMovedRef.current) {
+      dragTitleMovedRef.current = false;
+      return;
+    }
+    setTitleSelected((cur) => !cur);
+  }
+  function handleTitlePointerDown(e: ReactPointerEvent<SVGElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    setDraggingTitle({ startSx: p.x, startSy: p.y, origDx: titleOffset.dx, origDy: titleOffset.dy });
+  }
+  function handleTitlePointerMove(e: ReactPointerEvent<SVGElement>) {
+    if (!draggingTitle) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingTitle.startSx, dy = p.y - draggingTitle.startSy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragTitleMovedRef.current = true;
+    setTitleOffset((cur) => ({ ...cur, dx: draggingTitle.origDx + dx, dy: draggingTitle.origDy + dy }));
+  }
+  function handleTitlePointerUp() {
+    setDraggingTitle(null);
+  }
+  function cancelTitleDrag() {
+    if (!draggingTitle) return;
+    setTitleOffset((cur) => ({ ...cur, dx: draggingTitle.origDx, dy: draggingTitle.origDy }));
+    setDraggingTitle(null);
+  }
+  function handleTitleResize(delta: number) {
+    setTitleOffset((cur) => ({ ...cur, scale: Math.max(0.5, Math.min(3, (cur.scale ?? 1) + delta)) }));
+  }
+  useEffect(() => {
+    if (!draggingTitle) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelTitleDrag(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingTitle]);
+
   function serialize(): string | null {
     if (!svgRef.current) return null;
     const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
@@ -364,11 +415,16 @@ export function WorkingPlanView() {
     }
 
     // Title block text — approximate positions matching WorkingPlan.tsx's
-    // own title layout (VB_W=600), not a pixel-exact re-derivation of it.
-    text(300, 40, "WORKING PLAN OF", 14, "middle");
-    text(300, 62, resolvedPlots.length > 0 ? `LOTS ${resolvedPlots.map((p) => p.number).join(", ")} ${effectiveMeta.locality || ""}` : effectiveMeta.lotName, 13, "middle");
-    text(300, 84, effectiveMeta.tribalArea, 12, "middle");
-    text(300, 104, `1:${effectiveMeta.scale}`, 12, "middle");
+    // own title layout (VB_W=600), not a pixel-exact re-derivation of it —
+    // shifted/scaled by the same titleOffset the user dragged/resized on
+    // screen, so the DXF matches wherever the title currently sits.
+    const tOff = titleOffset;
+    const tScale = tOff.scale ?? 1;
+    const titleX = 300 + tOff.dx;
+    text(titleX, 40 + tOff.dy, "WORKING PLAN OF", 14 * tScale, "middle");
+    text(titleX, 62 + tOff.dy, resolvedPlots.length > 0 ? `LOTS ${resolvedPlots.map((p) => p.number).join(", ")} ${effectiveMeta.locality || ""}` : effectiveMeta.lotName, 13 * tScale, "middle");
+    text(titleX, 84 + tOff.dy, effectiveMeta.tribalArea, 12 * tScale, "middle");
+    text(titleX, 104 + tOff.dy, `1:${effectiveMeta.scale}`, 12 * tScale, "middle");
     text(26, 30, `REFERENCE MARKS: ${effectiveMeta.referenceMarkDescription}`, 8.5);
     text(26, 42, `WORKING STATION: ${effectiveMeta.workingStationDescription}`, 8.5);
     text(26, 54, `PLACED BEACONS: ${effectiveMeta.placedBeaconDescription}`, 8.5);
@@ -521,10 +577,10 @@ export function WorkingPlanView() {
 
       <Card title="Working Plan">
         <p className="mb-2 text-xs text-slate-400">
-          Click a beacon letter or a text note to select it, then drag to reposition, or use the +/− buttons to
+          Click a beacon letter, a text note, or the title block to select it, then drag to reposition, or use the +/− buttons to
           resize it — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
         </p>
-        <div className="mx-auto max-w-3xl" onClick={() => { setSelectedLabel(null); setSelectedTextId(null); }}>
+        <div className="mx-auto max-w-3xl" onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
           <WorkingPlan
             ref={svgRef}
             meta={effectiveMeta}
@@ -548,6 +604,13 @@ export function WorkingPlanView() {
             onTextPointerMove={handleTextPointerMove}
             onTextPointerUp={handleTextPointerUp}
             onTextResize={handleTextResize}
+            titleOffset={titleOffset}
+            titleSelected={titleSelected}
+            onTitleClick={handleTitleClick}
+            onTitlePointerDown={handleTitlePointerDown}
+            onTitlePointerMove={handleTitlePointerMove}
+            onTitlePointerUp={handleTitlePointerUp}
+            onTitleResize={handleTitleResize}
             onTransform={(t) => { transformRef.current = t; }}
           />
         </div>
