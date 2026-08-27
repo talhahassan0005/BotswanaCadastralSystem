@@ -10,6 +10,7 @@ import { fmtSystem } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
+import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 
 const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
 const COORDS_PER_SHEET = 48;
@@ -30,10 +31,24 @@ interface GpBeacon { id: string; east: number; north: number }
  *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
  *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput } = useStore();
+  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
+  // GP's own Working Plan variant (client req 2026-08-27/28, spec Part 3):
+  // same drawing + descriptive block, but the Lot Numbers/Block Corner/
+  // traverse tables are dropped in favour of an inset reference-mark sketch
+  // + certification box — a display mode, not a separate saved document.
+  const [sheetMode, setSheetMode] = useState<"general" | "working">("general");
+  // Reference marks (same source as WorkingPlanView.tsx) — only relevant in
+  // "working" mode, for the inset box.
+  const refMarksGp = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null && r.pointType === "ref")
+        .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
+    [importResult]
+  );
 
   const gpPlots = useMemo<Plot[]>(
     () => cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })),
@@ -356,8 +371,70 @@ export function GeneralPlanView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `general-plan-${(meta.name || "layout").replace(/\s+/g, "_")}-sheet${sheet + 1}.svg`;
+    a.download = `${sheetMode}-plan-${(meta.name || "layout").replace(/\s+/g, "_")}-sheet${sheet + 1}.svg`;
     a.click();
+    URL.revokeObjectURL(url);
+  }
+  // DXF export for the currently-viewed layout sheet (spec Part 7, "once the
+  // SVG renderer is settled") — same pattern as Diagrams.tsx's own
+  // downloadDxf(): walk this sheet's real geometry through screenToWorld
+  // rather than re-deriving layout, using the SAME sx/sy/screenToWorld
+  // already computed above for the active sheet. Scoped to the survey
+  // content a DXF is actually needed for (boundary, beacons, road/boundary
+  // labels, title/registration text) — not the Lot Numbers/Block Corner
+  // tables, which are schedule data the app's own print/PDF output already
+  // covers, same scoping call as WorkingPlanView.tsx's own DXF export.
+  function downloadDxf() {
+    if (sheet >= layoutSheetCount) return; // only layout sheets, not the coordinate schedule
+    const metresPerUnit = (() => {
+      const a = screenToWorld(0, 0), b = screenToWorld(1, 0);
+      return Math.hypot(b.east - a.east, b.north - a.north) || 1;
+    })();
+    const notes: ImportedDrawing["texts"] = [];
+    const polylines: ImportedDrawing["polylines"] = [];
+    const beaconPoints: ImportedDrawing["points"] = [];
+
+    function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
+      if (!s) return;
+      const p = screenToWorld(x, y);
+      notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
+    }
+
+    text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN OF ${meta.name}`, 19, "middle");
+    text(W / 2, 54, `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`, 11, "middle");
+    text(regX + regW, 15, `GC-${meta.gcNo || "—"}`, 9, "end");
+    text(regX + 6, 48, `G.P. No: ${meta.gpNo || "—"}`, 8);
+    text(regX + 6, 60, `DSM No: ${meta.dsmNo || "—"}`, 8);
+    text(regX + 6, 120, `Surveyed in ${meta.surveyedIn || "—"}`, 8);
+    text(regX + 6, 132, meta.surveyor || "—", 8);
+    text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
+
+    const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
+    for (const p of groupGpPlots) {
+      if (p.points.length < 2) continue;
+      polylines.push({ pts: p.points.map((pp) => ({ x: pp.east, y: pp.north })), closed: p.points.length >= 3, layer: "BOUNDARY" });
+    }
+    for (const b of activeUsedBeacons) {
+      beaconPoints.push({ x: b.east, y: b.north, label: b.id, layer: "BEACONS" });
+    }
+    const bounds = computeTransform(activeUsedBeacons).bounds;
+    const inBounds = (tt: ManualText) =>
+      tt.east >= bounds.minX - 1 && tt.east <= bounds.maxX + 1 && tt.north >= bounds.minY - 1 && tt.north <= bounds.maxY + 1;
+    for (const tt of meta.roadLabels.filter(inBounds)) {
+      notes.push({ x: tt.east, y: tt.north, text: tt.text, height: 8.5 * metresPerUnit, layer: "ROADS" });
+    }
+    for (const tt of displayBoundaryLabels.filter(inBounds)) {
+      notes.push({ x: tt.east, y: tt.north, text: tt.text, height: 7.5 * metresPerUnit, layer: "BOUNDARY_LABELS" });
+    }
+
+    const drawing: ImportedDrawing = { points: beaconPoints, polylines, texts: notes };
+    const dxf = writeDxf(drawing);
+    const blob = new Blob([dxf], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a2 = document.createElement("a");
+    a2.href = url;
+    a2.download = `${sheetMode}-plan-${(meta.name || "layout").replace(/\s+/g, "_")}-sheet${sheet + 1}.dxf`;
+    a2.click();
     URL.revokeObjectURL(url);
   }
   function printAll() {
@@ -372,7 +449,7 @@ export function GeneralPlanView() {
       return;
     }
     w.document.write(
-      `<html><head><title>General Plan — ${meta.name}</title>` +
+      `<html><head><title>${sheetMode === "working" ? "Working" : "General"} Plan — ${meta.name}</title>` +
         `<style>@page{size:landscape}body{margin:0}svg{width:100%;height:auto}</style></head>` +
         `<body onload="window.print()">${all.join("")}</body></html>`
     );
@@ -451,7 +528,7 @@ export function GeneralPlanView() {
   const titleBlock = (no: number, label: string) => (
     <>
       <rect x={6} y={6} width={W - 12} height={H - 12} fill="none" stroke="#0f172a" strokeWidth={1.5} />
-      <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">GENERAL PLAN OF {meta.name}</text>
+      <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">{sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}</text>
       <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fill="#334155">{label}{meta.location ? ` — ${meta.location}` : ""}</text>
 
       <text x={regX + regW} y={15} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
@@ -594,105 +671,152 @@ export function GeneralPlanView() {
             {row.text}
           </text>
         ))}
-        {/* Lot Numbers / Areas table (client req 2026-08-27, §2f) — this
-            sheet's own lots only, two side-by-side "LOT No. | SQ. METRES"
-            column-pairs, sorted by lot number. */}
-        <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT NUMBERS / AREAS</text>
-        {lotPairHeader(colAx, lotTableTop + 16)}
-        {lotPairHeader(colBx, lotTableTop + 16)}
-        {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
-          const y = lotTableTop + 30 + k * lotRowH;
-          return (
-            <g key={p.number}>
-              <text x={colAx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-              <text x={colAx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-            </g>
-          );
-        })}
-        {groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
-          const y = lotTableTop + 30 + k * lotRowH;
-          return (
-            <g key={p.number}>
-              <text x={colBx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-              <text x={colBx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-            </g>
-          );
-        })}
-        <line x1={690} y1={lotTableTop + 30 + rowsPerCol * lotRowH} x2={970} y2={lotTableTop + 30 + rowsPerCol * lotRowH} stroke="#cbd5e1" />
-        <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 16} fontSize={10} fontWeight={700}>
-          {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
-        </text>
-        {groupSortedPlots.length > maxLotRows && (
-          <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 32} fontSize={9} fill="#94a3b8">
-            +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
-          </text>
-        )}
-        {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's own
-            corners only; omitted entirely when none qualify, rather than
-            printing an empty section. */}
-        {groupBlockCorners.length > 0 && (() => {
-          const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+        {sheetMode === "general" ? (
+          <>
+            {/* Lot Numbers / Areas table (client req 2026-08-27, §2f) — this
+                sheet's own lots only, two side-by-side "LOT No. | SQ. METRES"
+                column-pairs, sorted by lot number. */}
+            <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT NUMBERS / AREAS</text>
+            {lotPairHeader(colAx, lotTableTop + 16)}
+            {lotPairHeader(colBx, lotTableTop + 16)}
+            {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
+              const y = lotTableTop + 30 + k * lotRowH;
+              return (
+                <g key={p.number}>
+                  <text x={colAx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                  <text x={colAx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                </g>
+              );
+            })}
+            {groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
+              const y = lotTableTop + 30 + k * lotRowH;
+              return (
+                <g key={p.number}>
+                  <text x={colBx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                  <text x={colBx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                </g>
+              );
+            })}
+            <line x1={690} y1={lotTableTop + 30 + rowsPerCol * lotRowH} x2={970} y2={lotTableTop + 30 + rowsPerCol * lotRowH} stroke="#cbd5e1" />
+            <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 16} fontSize={10} fontWeight={700}>
+              {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
+            </text>
+            {groupSortedPlots.length > maxLotRows && (
+              <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 32} fontSize={9} fill="#94a3b8">
+                +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
+              </text>
+            )}
+            {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
+                own corners only; omitted entirely when none qualify, rather
+                than printing an empty section. */}
+            {groupBlockCorners.length > 0 && (() => {
+              const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+              return (
+                <>
+                  <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+                  <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES</text>
+                  <text x={690} y={bcTop + 28} fontSize={8} fill="#475569">CONSTANTS &nbsp; Y: +0.00 &nbsp; X: +0.00</text>
+                  <text x={690} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Point</text>
+                  <text x={745} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Y</text>
+                  <text x={845} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">X</text>
+                  {groupBlockCorners.map((bc, k) => {
+                    const y = bcTop + 56 + k * 13;
+                    return (
+                      <g key={bc.id}>
+                        <text x={690} y={y} fontSize={8.5} fill="#0f172a">{bc.id}</text>
+                        <text x={745} y={y} fontSize={8.5} fill="#0f172a">{bc.east.toFixed(2)}</text>
+                        <text x={845} y={y} fontSize={8.5} fill="#0f172a">{bc.north.toFixed(2)}</text>
+                      </g>
+                    );
+                  })}
+                </>
+              );
+            })()}
+            {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
+                layout's outer boundary + grand total, sheet 1 only (it's not
+                a per-sheet concept); other sheets point back to it. */}
+            {isFirstSheet ? (
+              outerSides.length > 0 ? (
+                <>
+                  <line x1={30} y1={FY1 + 30} x2={970} y2={FY1 + 30} stroke="#0f172a" strokeWidth={0.6} />
+                  <text x={30} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+                  <text x={30} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
+                  <text x={110} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
+                  <text x={230} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
+                  <text x={340} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
+                  <text x={430} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
+                  {outerSides.slice(0, 8).map((s, k) => {
+                    const y = FY1 + 72 + k * 12;
+                    return (
+                      <g key={k}>
+                        <text x={30} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
+                        <text x={110} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
+                        <text x={230} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                        <text x={340} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
+                        <text x={430} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
+                      </g>
+                    );
+                  })}
+                  {outerSides.length > 8 && (
+                    <text x={30} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
+                  )}
+                  <text x={700} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
+                </>
+              ) : (
+                cogoPlots.length > 0 && (
+                  <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">
+                    Outer boundary not traced (plots don&apos;t form one simple connected layout) — TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
+                  </text>
+                )
+              )
+            ) : (
+              <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
+            )}
+          </>
+        ) : (() => {
+          // ===== Working Plan variant (spec Part 3): no tables — an inset
+          // reference-mark sketch + certification box instead, same pattern
+          // as WorkingPlan.tsx's own inset/cert boxes (components/WorkingPlan.tsx). =====
+          const insetBox = { x: 690, y: lotTableTop, w: 280, h: 140 };
+          const insetPad = 20;
+          const iSpanE = Math.max(t.bounds.maxX - t.bounds.minX, 1e-6);
+          const iSpanN = Math.max(t.bounds.maxY - t.bounds.minY, 1e-6);
+          const iFit = Math.min((insetBox.w - 2 * insetPad) / iSpanE, (insetBox.h - 2 * insetPad) / iSpanN);
+          const iOffX = insetBox.x + (insetBox.w - iSpanE * iFit) / 2;
+          const iOffY = insetBox.y + (insetBox.h - iSpanN * iFit) / 2;
+          const iX = (e: number) => iOffX + (e - t.bounds.minX) * iFit;
+          const iY = (n: number) => iOffY + (t.bounds.maxY - n) * iFit;
+          const insetPolygons = groupSchedule
+            .map(({ p }) => p.fig.points)
+            .filter((pts) => pts.length >= 2)
+            .map((pts) => pts.map((pp) => `${iX(pp.east)},${iY(pp.north)}`).join(" "));
+          const refDots = refMarksGp.map((r) => ({
+            x: Math.min(insetBox.x + insetBox.w - 8, Math.max(insetBox.x + 8, iX(r.east))),
+            y: Math.min(insetBox.y + insetBox.h - 8, Math.max(insetBox.y + 8, iY(r.north))),
+            label: r.name || "RM",
+          }));
+          const cert = { x: 650, y: FY1 + 20, w: 320, h: 90 };
           return (
             <>
-              <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
-              <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES</text>
-              <text x={690} y={bcTop + 28} fontSize={8} fill="#475569">CONSTANTS &nbsp; Y: +0.00 &nbsp; X: +0.00</text>
-              <text x={690} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Point</text>
-              <text x={745} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Y</text>
-              <text x={845} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">X</text>
-              {groupBlockCorners.map((bc, k) => {
-                const y = bcTop + 56 + k * 13;
-                return (
-                  <g key={bc.id}>
-                    <text x={690} y={y} fontSize={8.5} fill="#0f172a">{bc.id}</text>
-                    <text x={745} y={y} fontSize={8.5} fill="#0f172a">{bc.east.toFixed(2)}</text>
-                    <text x={845} y={y} fontSize={8.5} fill="#0f172a">{bc.north.toFixed(2)}</text>
-                  </g>
-                );
-              })}
+              <rect x={insetBox.x} y={insetBox.y} width={insetBox.w} height={insetBox.h} fill="white" stroke="#16a34a" strokeWidth={1.2} />
+              <text x={insetBox.x + insetBox.w / 2} y={insetBox.y - 4} textAnchor="middle" fontSize={8.5} fill="#16a34a">INSET NOT TO SCALE</text>
+              {insetPolygons.map((poly, i) => (
+                <polygon key={i} points={poly} fill="none" stroke="#0f172a" strokeWidth={1} strokeLinejoin="round" />
+              ))}
+              {refDots.map((d, i) => (
+                <g key={i}>
+                  <circle cx={d.x} cy={d.y} r={2.2} fill="#dc2626" />
+                  <text x={d.x + 5} y={d.y + 3} fontSize={7} fill="#dc2626">{d.label}</text>
+                </g>
+              ))}
+              <rect x={cert.x} y={cert.y} width={cert.w} height={cert.h} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+              <text x={cert.x + 10} y={cert.y + 16} fontSize={9} fill="#0f172a">Surveyed by me in accordance with the provisions of THE</text>
+              <text x={cert.x + 10} y={cert.y + 30} fontSize={9} fill="#0f172a">LAND SURVEY ACT and the regulations framed thereunder.</text>
+              <text x={cert.x + 10} y={cert.y + 52} fontSize={9} fill="#0f172a">DATE: {meta.surveyedIn || "—"}</text>
+              <text x={cert.x + 10} y={cert.y + 74} fontSize={9} fill="#0f172a">LAND SURVEYOR: {meta.surveyor || "—"}</text>
             </>
           );
         })()}
-        {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
-            layout's outer boundary + grand total, sheet 1 only (it's not a
-            per-sheet concept); other sheets point back to it. */}
-        {isFirstSheet ? (
-          outerSides.length > 0 ? (
-            <>
-              <line x1={30} y1={FY1 + 30} x2={970} y2={FY1 + 30} stroke="#0f172a" strokeWidth={0.6} />
-              <text x={30} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
-              <text x={30} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
-              <text x={110} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
-              <text x={230} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
-              <text x={340} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
-              <text x={430} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
-              {outerSides.slice(0, 8).map((s, k) => {
-                const y = FY1 + 72 + k * 12;
-                return (
-                  <g key={k}>
-                    <text x={30} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
-                    <text x={110} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
-                    <text x={230} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
-                    <text x={340} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
-                    <text x={430} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
-                  </g>
-                );
-              })}
-              {outerSides.length > 8 && (
-                <text x={30} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
-              )}
-              <text x={700} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
-            </>
-          ) : (
-            cogoPlots.length > 0 && (
-              <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">
-                Outer boundary not traced (plots don&apos;t form one simple connected layout) — TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
-              </text>
-            )
-          )
-        ) : (
-          <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
-        )}
       </svg>
     );
   }
@@ -748,7 +872,31 @@ export function GeneralPlanView() {
           <Field label="Surveyed in"><Input value={meta.surveyedIn} onChange={set("surveyedIn")} placeholder="e.g. February 2026" /></Field>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setSheetMode("general")}
+              className={`px-3 py-1.5 text-sm font-medium ${sheetMode === "general" ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              General Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheetMode("working")}
+              className={`px-3 py-1.5 text-sm font-medium ${sheetMode === "working" ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              Working Plan
+            </button>
+          </span>
+          <span className="text-xs text-slate-400">
+            {sheetMode === "general"
+              ? "Full sheet with Lot Numbers, Block Corner and traverse tables."
+              : "Drawing + descriptions only, with an inset sketch and certification box — no tables."}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={download}>⬇ Download sheet SVG</Button>
+          {sheet < layoutSheetCount && <Button variant="ghost" onClick={downloadDxf}>⬇ Download DXF</Button>}
           <Button variant="ghost" onClick={printAll}>Print all sheets / PDF</Button>
           <span className="ml-2 inline-flex items-center gap-2 text-sm">
             <Button variant="ghost" onClick={() => setSheet((x) => Math.max(0, x - 1))} disabled={sheet === 0}>← Prev</Button>
@@ -798,7 +946,7 @@ export function GeneralPlanView() {
         </div>
       </Card>
 
-      <Card title={`General Plan — Sheet ${sheet + 1}`}>
+      <Card title={`${sheetMode === "working" ? "Working" : "General"} Plan — Sheet ${sheet + 1}`}>
         {sheet < layoutSheetCount && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Button
