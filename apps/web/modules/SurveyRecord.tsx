@@ -63,6 +63,7 @@ export function SurveyRecord() {
     date?: string;
     toBlock?: string;
     checklist?: ChecklistItem[];
+    lotNumber?: string;
     assistedBy?: string;
     dateOfSurvey?: string;
     purpose?: string;
@@ -76,6 +77,11 @@ export function SurveyRecord() {
   const [date, setDate] = useState(() => ri.date ?? formatLongDate(new Date()));
   const [toBlock, setToBlock] = useState(ri.toBlock ?? DEFAULT_TO_BLOCK);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(ri.checklist ?? DEFAULT_CHECKLIST);
+  // Editable override for the letter's "Lot 102" — defaults to the Diagrams
+  // module's lot name but, once typed here, drives both "Re: SUBMISSION OF
+  // LOT ..." and the "in respect of Lot ..." sentence together (client req
+  // 2026-08-27: editing it in one place must update both).
+  const [lotNumber, setLotNumber] = useState(ri.lotNumber ?? lotName.replace(/^lot\s+/i, ""));
   const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? "");
   const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey ?? dMeta?.surveyedDate ?? "");
   const [purpose, setPurpose] = useState(ri.purpose ?? "");
@@ -87,8 +93,8 @@ export function SurveyRecord() {
   // Persist every field so the letter/report round-trips with the project
   // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, toBlock, checklist, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea });
-  }, [doc, date, toBlock, checklist, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea });
+  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, setRecordInput]);
 
   const docRef = useRef<HTMLDivElement>(null);
 
@@ -190,7 +196,10 @@ export function SurveyRecord() {
       {doc === "submission" && (
         <Card title="Submission letter details">
           <div className="space-y-3">
-            <Field label="Date"><Input value={date} onChange={setDate} placeholder="e.g. 26 August 2026" /></Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Date"><Input value={date} onChange={setDate} placeholder="e.g. 26 August 2026" /></Field>
+              <Field label="Lot number"><Input value={lotNumber} onChange={setLotNumber} placeholder="e.g. 102" /></Field>
+            </div>
             <Field label='"To:" address block'>
               <textarea
                 value={toBlock}
@@ -274,7 +283,7 @@ export function SurveyRecord() {
       <Card>
         <div ref={docRef} className="space-y-4 text-sm text-slate-700">
           {doc === "submission" && (
-            <SubmissionLetter toBlock={toBlock} date={date} lotName={lotName} tribalArea={tribalArea} checklist={checklist} surveyor={surveyor} />
+            <SubmissionLetter toBlock={toBlock} date={date} lotNumber={lotNumber} tribalArea={tribalArea} checklist={checklist} surveyor={surveyor} />
           )}
           {doc === "report" && (
             <ReportOnSurvey
@@ -414,23 +423,19 @@ export function SurveyRecord() {
 function SubmissionLetter({
   toBlock,
   date,
-  lotName,
+  lotNumber,
   tribalArea,
   checklist,
   surveyor,
 }: {
   toBlock: string;
   date: string;
-  lotName: string;
+  lotNumber: string;
   tribalArea: string;
   checklist: ChecklistItem[];
   surveyor: string;
 }) {
   const toLines = toBlock.split("\n").filter(Boolean);
-  // lotName from Diagrams already reads "LOT 1583 PALLAROAD" — strip any
-  // leading "LOT " so it doesn't double up against the fixed "LOT"/"Lot"
-  // word in this letter's own wording.
-  const bareLot = lotName.replace(/^lot\s+/i, "");
   return (
     <div className="space-y-4">
       <div>
@@ -440,12 +445,16 @@ function SubmissionLetter({
       </div>
       <div>Date {date}</div>
       <p>Dear Sir/Madam:</p>
-      <p className="font-semibold text-slate-800">Re: SUBMISSION OF LOT {bareLot.toUpperCase()}</p>
+      <p className="font-semibold text-slate-800">Re: SUBMISSION OF LOT {lotNumber.toUpperCase()}</p>
       <p>
-        Herewith, please find enclosed, compilation Record in respect of Lot {bareLot}
+        Herewith, please find enclosed, compilation Record in respect of Lot {lotNumber}
         {tribalArea ? ` in the ${tribalArea}` : ""}. The record consists of:
       </p>
-      <ul className="list-none space-y-1 pl-2">
+      {/* Two-column checklist (client req 2026-08-27: "so many lines going
+          down") — inline styles, not Tailwind classes, so the compact layout
+          survives the print popup too, which doesn't load Tailwind's
+          stylesheet (see printDoc() above). */}
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: "32px", rowGap: "4px" }}>
         {checklist.filter((c) => c.checked && c.text.trim()).map((c, i) => (
           <li key={i}>☑ {c.text}</li>
         ))}
