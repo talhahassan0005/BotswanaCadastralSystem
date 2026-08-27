@@ -775,7 +775,10 @@ export function Diagrams() {
       text((tx + xMetR) / 2, hRow2, "METRES", FS_TABLE_SUB, "middle");
       text(xPt + (xY - xPt) / 2, hRow2, "Y", FS_TABLE_SUB, "middle");
       text((xY + xXR) / 2, hRow2, `System ${fmtSystem(meta.coordinateSystem)}`, FS_TABLE_SUB, "middle");
-      text(xX + (xXR - xX) / 2, hRow2, "X", FS_TABLE_SUB, "middle");
+      // Nudged right off centre (client req 2026-08-27) — dead-centre in the X
+      // column sat right against the tail of the "System LO. N°" label next
+      // to it, which spans into this column too, so the two collided.
+      text(xX + (xXR - xX) / 2 + 20, hRow2, "X", FS_TABLE_SUB, "middle");
       text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
       text((xDir + xDirR) / 2, hRow3, "CONSTANTS", FS_CONSTANTS, "middle");
       text(xY + 8, hRow3, "+    0,00", FS_CONSTANTS);

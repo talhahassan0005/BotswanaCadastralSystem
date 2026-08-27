@@ -246,7 +246,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB}>
           {clampWords(`System ${fmtSystem(meta.coordinateSystem)}`, xXR - xY - 12, FS_TABLE_SUB)}
         </text>
-        <text x={xX + (xXR - xX) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
+        {/* Nudged right off centre (client req 2026-08-27) — dead-centre in the
+            X column sat against the tail of the "System LO. N°" label next to
+            it, which spans into this column too, so the two collided. */}
+        <text x={xX + (xXR - xX) / 2 + 20} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
         <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_HEAD}>
           {clampWords(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}
         </text>
