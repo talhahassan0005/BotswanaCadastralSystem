@@ -93,6 +93,7 @@ export function CogoWorkspace({
     lineMeta?: Record<string, LineMeta>;
     polygonMeta?: Record<string, PolygonMeta>;
     lastPlotNumber?: string | null;
+    rotation?: number;
   };
   const [active, setActive] = useState(false);
   // Which toolbar group's icon row is showing — a tab bar instead of 9
@@ -105,7 +106,10 @@ export function CogoWorkspace({
   // data, so it never affects computed coordinates, only how the drawing is
   // displayed (client req 2026-08-28: "add a rotator... 360 takay rotate kar
   // sako", modelled after an image editor's rotate control).
-  const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1, rotation: 0 });
+  // rotation restored from the saved project (client req 2026-08-28: it
+  // must stick across reloads, not reset every time the project reopens —
+  // pan/cx/cy/zoom stay session-only as before, just the rotation persists).
+  const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1, rotation: savedDoc.rotation ?? 0 });
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
   /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
@@ -1050,7 +1054,7 @@ export function CogoWorkspace({
   const lastPersistValuesRef = useRef<unknown[] | null>(null);
   const persistCallCountRef = useRef(0);
   useEffect(() => {
-    const cur = [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber];
+    const cur = [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber, view.rotation];
     const isStrictModeReplay = lastPersistValuesRef.current !== null && cur.every((v, i) => v === lastPersistValuesRef.current![i]);
     lastPersistValuesRef.current = cur;
     if (isStrictModeReplay) return;
@@ -1067,9 +1071,10 @@ export function CogoWorkspace({
       lineMeta,
       polygonMeta,
       lastPlotNumber,
+      rotation: view.rotation,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber]);
+  }, [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber, view.rotation]);
 
   // Auto-frame the imported points whenever the point set changes size (e.g. a
   // fresh import) so newly loaded beacons are visible without manual panning.
