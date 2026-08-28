@@ -146,12 +146,29 @@ export function GeneralPlanView() {
   // traverse table + total area, matching the reference sheet's bottom band.
   const FX0 = 30, FY0 = 90, FX1 = 660, FY1 = H - 150;
   const pad = 30;
+  // Shared display rotation (client req 2026-08-28) — applied AFTER the
+  // fit-to-bounds projection below, spinning the drawing around the centre
+  // of its own frame, same order/convention as CogoWorkspace.tsx's toScreen.
+  // Deliberately screen-space only: every TABLE/DXF value elsewhere in this
+  // file (Block Corner Table, outer-boundary traverse, coordinate schedule,
+  // DXF export) reads real east/north straight from `cogoPlots`, untouched —
+  // only where shapes/labels are DRAWN moves, never the numbers a legal
+  // document depends on.
+  const rotation = config.displayRotation ?? 0;
+  const rotPivotX = (FX0 + FX1) / 2, rotPivotY = (FY0 + FY1) / 2;
+  const rotRad = (rotation * Math.PI) / 180;
+  const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
   /** Fit-to-box transform for one sheet's own subset of beacons — each
    *  layout sheet is scaled independently to its own plots (client req
    *  2026-08-27: real geographic alignment across sheets isn't available
    *  without a cut-line concept, so each sheet is instead kept legible on
    *  its own, same as the reference's per-sheet layout). */
-  function computeTransform(beacons: GpBeacon[]) {
+  // `rotationOverride` lets a caller opt OUT of the live display rotation —
+  // used by DXF export below, which must stay a true north-up drawing (its
+  // boundary polylines already read raw, unrotated east/north; text() must
+  // agree, or title/label text would land rotated relative to a boundary
+  // that isn't).
+  function computeTransform(beacons: GpBeacon[], rotationOverride: number = rotation) {
     const xs = beacons.map((b) => b.east);
     const ys = beacons.map((b) => b.north);
     const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
@@ -160,13 +177,35 @@ export function GeneralPlanView() {
     const s = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
     const ox = FX0 + ((FX1 - FX0) - s * spanX) / 2;
     const oyOff = ((FY1 - FY0) - s * spanY) / 2;
-    const sx = (e: number) => ox + (e - minX) * s;
-    const sy = (n: number) => FY1 - oyOff - (n - minY) * s;
+    const sx0 = (e: number) => ox + (e - minX) * s;
+    const sy0 = (n: number) => FY1 - oyOff - (n - minY) * s;
+    const rRad = (rotationOverride * Math.PI) / 180;
+    const cR = Math.cos(rRad), sR = Math.sin(rRad);
+    // sx/sy now take BOTH east and north — a rotation couples the two axes,
+    // so (unlike the old single-argument versions) neither can be computed
+    // from its own coordinate alone once `rotationOverride` is nonzero.
+    const sx = (e: number, n: number) => {
+      if (!rotationOverride) return sx0(e);
+      return rotPivotX + (sx0(e) - rotPivotX) * cR - (sy0(n) - rotPivotY) * sR;
+    };
+    const sy = (e: number, n: number) => {
+      if (!rotationOverride) return sy0(n);
+      return rotPivotY + (sx0(e) - rotPivotX) * sR + (sy0(n) - rotPivotY) * cR;
+    };
     // Inverse of sx/sy — screen (viewBox) point back to real east/north, for
     // placing/dragging labels the same way the boundary itself is fixed to
     // real survey coordinates rather than raw pixels (client req 2026-08-27,
-    // same reasoning as Diagrams.tsx's `transformRef`).
-    const screenToWorld = (px: number, py: number) => ({ east: (px - ox) / s + minX, north: minY + (FY1 - oyOff - py) / s });
+    // same reasoning as Diagrams.tsx's `transformRef`); un-rotates first
+    // when a display rotation is active.
+    const screenToWorld = (px: number, py: number) => {
+      let x = px, y = py;
+      if (rotationOverride) {
+        const dx = px - rotPivotX, dy = py - rotPivotY;
+        x = rotPivotX + dx * cR + dy * sR;
+        y = rotPivotY - dx * sR + dy * cR;
+      }
+      return { east: (x - ox) / s + minX, north: minY + (FY1 - oyOff - y) / s };
+    };
     const bounds = { minX, maxX, minY, maxY };
     return { sx, sy, screenToWorld, bounds };
   }
@@ -238,7 +277,7 @@ export function GeneralPlanView() {
     setSelectedLabel((cur) => (cur?.id === id && cur.kind === kind ? null : { id, kind }));
   }
   function handleLabelDoubleClick(id: string, kind: "road" | "boundary", tt: ManualText) {
-    const p = { x: sx(tt.east), y: sy(tt.north) };
+    const p = { x: sx(tt.east, tt.north), y: sy(tt.east, tt.north) };
     setTextPrompt({ id, kind, x: p.x, y: p.y, value: tt.text, angle: tt.angle ?? 0 });
   }
   function handleLabelPointerDown(id: string, kind: "road" | "boundary", e: ReactPointerEvent<SVGElement>) {
@@ -449,8 +488,14 @@ export function GeneralPlanView() {
   // covers, same scoping call as WorkingPlanView.tsx's own DXF export.
   function downloadDxf() {
     if (sheet >= layoutSheetCount) return; // only layout sheets, not the coordinate schedule
+    // Always north-up (rotationOverride 0) — a DXF is a real CAD file, so its
+    // boundary/beacon geometry (below) already reads raw, unrotated
+    // east/north; this keeps title/label TEXT positions consistent with
+    // that, regardless of whatever the on-screen preview is currently
+    // rotated to (client req 2026-08-28).
+    const dxfT = computeTransform(activeUsedBeacons, 0);
     const metresPerUnit = (() => {
-      const a = screenToWorld(0, 0), b = screenToWorld(1, 0);
+      const a = dxfT.screenToWorld(0, 0), b = dxfT.screenToWorld(1, 0);
       return Math.hypot(b.east - a.east, b.north - a.north) || 1;
     })();
     const notes: ImportedDrawing["texts"] = [];
@@ -459,7 +504,7 @@ export function GeneralPlanView() {
 
     function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
       if (!s) return;
-      const p = screenToWorld(x, y);
+      const p = dxfT.screenToWorld(x, y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
@@ -699,9 +744,9 @@ export function GeneralPlanView() {
         {groupSchedule.map(({ p, i }) => {
           const pts = p.fig.points;
           if (pts.length < 3) return null;
-          const d = pts.map((pp) => `${t.sx(pp.east)},${t.sy(pp.north)}`).join(" ");
-          const cx = pts.reduce((a, pp) => a + t.sx(pp.east), 0) / pts.length;
-          const cy = pts.reduce((a, pp) => a + t.sy(pp.north), 0) / pts.length;
+          const d = pts.map((pp) => `${t.sx(pp.east, pp.north)},${t.sy(pp.east, pp.north)}`).join(" ");
+          const cx = pts.reduce((a, pp) => a + t.sx(pp.east, pp.north), 0) / pts.length;
+          const cy = pts.reduce((a, pp) => a + t.sy(pp.east, pp.north), 0) / pts.length;
           const col = PALETTE[i % PALETTE.length];
           return (
             <g key={p.number}>
@@ -712,8 +757,8 @@ export function GeneralPlanView() {
         })}
         {groupUsedBeacons.map((b) => (
           <g key={b.id}>
-            <circle cx={t.sx(b.east)} cy={t.sy(b.north)} r={2.6} fill="#0f172a" />
-            <text x={t.sx(b.east) + 4} y={t.sy(b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
+            <circle cx={t.sx(b.east, b.north)} cy={t.sy(b.east, b.north)} r={2.6} fill="#0f172a" />
+            <text x={t.sx(b.east, b.north) + 4} y={t.sy(b.east, b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
           </g>
         ))}
         {groupUsedBeacons.length === 0 && (
@@ -723,13 +768,13 @@ export function GeneralPlanView() {
         {sheetRoadLabels.map((tt) => (
           <text
             key={tt.id}
-            x={t.sx(tt.east)}
-            y={t.sy(tt.north)}
+            x={t.sx(tt.east, tt.north)}
+            y={t.sy(tt.east, tt.north)}
             textAnchor="middle"
             fontSize={8.5}
             fontWeight={600}
             fill={selectedLabel?.id === tt.id && selectedLabel.kind === "road" ? "#2563eb" : "#0f172a"}
-            transform={tt.angle ? `rotate(${tt.angle} ${t.sx(tt.east)} ${t.sy(tt.north)})` : undefined}
+            transform={(tt.angle || 0) + rotation ? `rotate(${(tt.angle || 0) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
             style={{ cursor: "move" }}
             onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "road"); }}
             onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "road", tt); }}
@@ -743,13 +788,13 @@ export function GeneralPlanView() {
         {sheetBoundaryLabels.map((tt) => (
           <text
             key={tt.id}
-            x={t.sx(tt.east)}
-            y={t.sy(tt.north)}
+            x={t.sx(tt.east, tt.north)}
+            y={t.sy(tt.east, tt.north)}
             textAnchor="middle"
             fontSize={7.5}
             fontStyle="italic"
             fill={selectedLabel?.id === tt.id && selectedLabel.kind === "boundary" ? "#2563eb" : "#64748b"}
-            transform={tt.angle ? `rotate(${tt.angle} ${t.sx(tt.east)} ${t.sy(tt.north)})` : undefined}
+            transform={(tt.angle || 0) + rotation ? `rotate(${(tt.angle || 0) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
             style={{ cursor: "move" }}
             onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "boundary"); }}
             onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "boundary", tt); }}
@@ -764,9 +809,9 @@ export function GeneralPlanView() {
             2026-08-28) — auto-computed, not draggable, so no click/pointer
             handlers unlike the manual labels above. */}
         {sheetDimLabels.map((d) => (
-          <g key={d.id} transform={`rotate(${d.angle} ${t.sx(d.east)} ${t.sy(d.north)})`}>
-            <text x={t.sx(d.east)} y={t.sy(d.north)} textAnchor="middle" fontSize={7} fill="#334155">{d.distance}</text>
-            <text x={t.sx(d.east)} y={t.sy(d.north) + 9} textAnchor="middle" fontSize={7} fill="#334155">{d.bearing}</text>
+          <g key={d.id} transform={`rotate(${d.angle + rotation} ${t.sx(d.east, d.north)} ${t.sy(d.east, d.north)})`}>
+            <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north)} textAnchor="middle" fontSize={7} fill="#334155">{d.distance}</text>
+            <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north) + 9} textAnchor="middle" fontSize={7} fill="#334155">{d.bearing}</text>
           </g>
         ))}
         <text x={(FX0 + FX1) / 2} y={FY1 + 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>

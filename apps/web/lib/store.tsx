@@ -36,6 +36,14 @@ export interface ProjectConfig {
    *  so existing saved projects need no migration. */
   dsmLimitMode?: "ratio" | "absolute";
   dsmLimitAbsolute?: number; // allowable linear misclosure (m), used when dsmLimitMode === "absolute"
+  /** Shared display-only rotation (degrees, 0-360; client req 2026-08-28) —
+   *  a pure view rotation applied consistently across COGO, Diagrams,
+   *  Working Plan and General Plan, like an image editor's rotate control.
+   *  Never touches the underlying east/north survey coordinates; undefined
+   *  = 0 (no existing saved project needs migration). Set from the COGO
+   *  canvas's Rotate slider (CogoWorkspace.tsx), read everywhere the
+   *  project's figure is drawn. */
+  displayRotation?: number;
 }
 
 interface Store {

@@ -35,6 +35,46 @@ export function dedupePoints(plots: Plot[]): PlotPoint[] {
   return [...named.values(), ...anon];
 }
 
+/** Rotate a single (east, north) point around a pivot by `angleDeg`, matching
+ *  CogoWorkspace.tsx's on-screen rotation sense (positive = clockwise as
+ *  drawn) even though this operates on WORLD coordinates, not screen ones.
+ *  North is the "flipped" axis relative to screen-y (north-up display maps
+ *  increasing north to a SMALLER screen y), so a straight screen-space
+ *  rotation matrix applied directly to (east, north) would spin the
+ *  opposite way from what the same slider value produces in CogoWorkspace —
+ *  this compensates so every module's rotation looks the same for the same
+ *  `config.displayRotation` value (client req 2026-08-28: rotation must be
+ *  consistent everywhere, not just the COGO canvas). Pure display maths —
+ *  callers use this to build a ROTATED COPY of points to feed through their
+ *  existing fit-to-bounds/screen transform unchanged; it never writes back
+ *  to the actual stored beacon coordinates. */
+export function rotateWorldPoint(
+  e: number,
+  n: number,
+  angleDeg: number,
+  pivotE: number,
+  pivotN: number
+): { east: number; north: number } {
+  if (!angleDeg) return { east: e, north: n };
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const de = e - pivotE, dn = n - pivotN;
+  return { east: pivotE + de * cos + dn * sin, north: pivotN - de * sin + dn * cos };
+}
+
+/** Rotates every point in `points` around their shared centroid — the
+ *  natural pivot for "spin this drawing in place" (client req 2026-08-28),
+ *  same idea as rotating a photo around its own centre in an image editor.
+ *  Returns the input unchanged (same references) when angleDeg is falsy, so
+ *  callers can unconditionally pipe every point list through this without a
+ *  separate "is rotation active" branch. */
+export function rotateAroundCentroid<T extends { east: number; north: number }>(points: T[], angleDeg: number): T[] {
+  if (!angleDeg || !points.length) return points;
+  const cE = points.reduce((a, p) => a + p.east, 0) / points.length;
+  const cN = points.reduce((a, p) => a + p.north, 0) / points.length;
+  return points.map((p) => ({ ...p, ...rotateWorldPoint(p.east, p.north, angleDeg, cE, cN) }));
+}
+
 /** Metres — matches computeDiagramLayout's own point-identity tolerance
  *  (diagramLayout.ts's `isSamePoint`/`DUP_TOL`) and Diagrams.tsx's Part 37
  *  auto-adjacency detection. Kept here too (not just those two places) so

@@ -130,6 +130,14 @@ interface Props {
    *  screen-space draw call in this sheet into DXF entities, the same way
    *  Diagrams.tsx's DXF export already does for the SG Diagram. */
   onTransform?: (t: DiagramTransform) => void;
+  /** Shared display rotation (degrees, client req 2026-08-28) — the same
+   *  project-wide value CogoWorkspace's Rotate slider and General Plan use,
+   *  so this sheet's figure/beacons/labels spin the same way. Applied only
+   *  to what's DRAWN (polygons, beacons, annotations, the inset) — the
+   *  coordinate grid and its axis labels stay north-up, since a rotated
+   *  rectangular grid with edge labels has no coherent "edge" to label
+   *  against; the SIDES/DIRECTIONS values elsewhere never touch this at all. */
+  rotation?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +244,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTitlePointerUp,
     onTitleResize,
     onTransform,
+    rotation: rotationProp,
   },
   ref
 ) {
@@ -302,13 +311,32 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     toWorld: (x, y) => ({ east: (x - offX) / fit + minE, north: maxN - (y - offY) / fit }),
   });
 
+  // Shared display rotation (client req 2026-08-28) — same project-wide
+  // value CogoWorkspace's Rotate slider and General Plan use. Applied only
+  // to what's drawn below (figure, beacons, annotations) — pivots around
+  // the drawing panel's own centre; the coordinate grid stays north-up
+  // (see the Props doc above for why) and every SIDES/DIRECTIONS/DXF value
+  // elsewhere reads real, unrotated east/north.
+  const rotation = rotationProp || 0;
+  const figPivotX = draw.x + draw.w / 2, figPivotY = draw.y + draw.h / 2;
+  const figRotRad = (rotation * Math.PI) / 180;
+  const figCosR = Math.cos(figRotRad), figSinR = Math.sin(figRotRad);
+  const fx = (e: number, n: number) => {
+    if (!rotation) return toX(e);
+    return figPivotX + (toX(e) - figPivotX) * figCosR - (toY(n) - figPivotY) * figSinR;
+  };
+  const fy = (e: number, n: number) => {
+    if (!rotation) return toY(n);
+    return figPivotY + (toX(e) - figPivotX) * figSinR + (toY(n) - figPivotY) * figCosR;
+  };
+
   const cE = avg(es), cN = avg(ns);
-  const cx = toX(cE), cy = toY(cN);
+  const cx = fx(cE, cN), cy = fy(cE, cN);
 
   // Each plot draws as its own closed polygon; a plot number gets labeled at
   // its own area-weighted centroid (client req 2026-08-26, Part 33a/33c).
   const plotPolygons = activePlots.map((plot) => {
-    const screenPts = plot.points.map((p) => ({ x: toX(p.east), y: toY(p.north) }));
+    const screenPts = plot.points.map((p) => ({ x: fx(p.east, p.north), y: fy(p.east, p.north) }));
     const centroid = polygonCentroid(screenPts);
     return {
       number: plot.number,
@@ -528,7 +556,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           Uses `allPoints` (deduped across plots) so a point shared between
           two adjoining plots gets exactly one dot + one label (Part 33a). */}
       {allPoints.map((p, i) => {
-        const bx = toX(p.east), by = toY(p.north);
+        const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         const dx = bx - cx, dy = by - cy;
         const len = Math.hypot(dx, dy) || 1;
         const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0, scale: 1 };
@@ -584,7 +612,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       {(manualAnnotations ?? []).map((a) => (
         <line
           key={a.id}
-          x1={toX(a.e1)} y1={toY(a.n1)} x2={toX(a.e2)} y2={toY(a.n2)}
+          x1={fx(a.e1, a.n1)} y1={fy(a.e1, a.n1)} x2={fx(a.e2, a.n2)} y2={fy(a.e2, a.n2)}
           stroke="black" strokeWidth={1} strokeDasharray="6 4"
         />
       ))}
@@ -597,16 +625,17 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const off = textOffsets?.[t.id] || { dx: 0, dy: 0, scale: 1 };
         const scale = off.scale ?? 1;
         const fs = 10 * scale;
-        const x = toX(t.east) + off.dx, y = toY(t.north) + off.dy;
+        const x = fx(t.east, t.north) + off.dx, y = fy(t.east, t.north) + off.dy;
         const isSel = selectedTextId === t.id;
         const boxW = Math.max(14, t.text.length * fs * 0.3), boxH = 7 * scale;
+        const textAngle = (t.angle || 0) + rotation;
         return (
           <g key={t.id}>
             <text
               x={x} y={y}
               fontSize={fs}
               fill={isSel ? "#dc2626" : "#000"}
-              transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}
+              transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}
               style={{ cursor: isSel ? "move" : "pointer" }}
               onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
               onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(t.id, e); } }}

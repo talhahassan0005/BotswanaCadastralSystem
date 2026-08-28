@@ -76,7 +76,7 @@ export function CogoWorkspace({
     closed: boolean;
   } | null;
 }) {
-  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
+  const { config, setConfig, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
   // Restore whatever was drawn here last time (client req 2026-08-23: a
   // polygon/line/point added in this work station must survive a refresh,
   // not need redoing) — read once, synchronously, as each piece of state's
@@ -93,7 +93,6 @@ export function CogoWorkspace({
     lineMeta?: Record<string, LineMeta>;
     polygonMeta?: Record<string, PolygonMeta>;
     lastPlotNumber?: string | null;
-    rotation?: number;
   };
   const [active, setActive] = useState(false);
   // Which toolbar group's icon row is showing — a tab bar instead of 9
@@ -101,15 +100,15 @@ export function CogoWorkspace({
   // of a wall of icons (client req 2026-08-16).
   const [activeGroup, setActiveGroup] = useState<ToolGroupId>("point");
   const svgRef = useRef<SVGSVGElement>(null);
-  // `rotation` (degrees, 0-360) is a pure VIEW rotation — like rotating a
-  // photo in an image editor — independent of the underlying east/north
-  // data, so it never affects computed coordinates, only how the drawing is
-  // displayed (client req 2026-08-28: "add a rotator... 360 takay rotate kar
-  // sako", modelled after an image editor's rotate control).
-  // rotation restored from the saved project (client req 2026-08-28: it
-  // must stick across reloads, not reset every time the project reopens —
-  // pan/cx/cy/zoom stay session-only as before, just the rotation persists).
-  const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1, rotation: savedDoc.rotation ?? 0 });
+  const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
+  // Display-only rotation (client req 2026-08-28: "add a rotator... 360
+  // takay rotate kar sako", like an image editor's rotate control) lives in
+  // `config.displayRotation` — a SHARED project-wide setting, not local view
+  // state, so the same rotation the surveyor dials in here also applies in
+  // Diagrams/Working Plan/General Plan (client req 2026-08-28: "rotated
+  // diagram doesn't show... sirf cogo per hi rotate show hai"). Persisted
+  // automatically with the rest of `config`, same as coordinateSystem etc.
+  const rotation = config.displayRotation ?? 0;
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
   /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
@@ -386,7 +385,7 @@ export function CogoWorkspace({
     const spanX = Math.max(Math.abs(wx2 - wx1), 0.01);
     const spanY = Math.max(Math.abs(wy2 - wy1), 0.01);
     const zoom = Math.min(50, Math.max(0.01, Math.min(W / spanX, H / spanY) * 0.95));
-    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom)) setView((v) => ({ cx, cy, zoom, rotation: v.rotation }));
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom)) setView({ cx, cy, zoom });
   }
 
   function frameOn(pts: WPoint[]) {
@@ -396,7 +395,7 @@ export function CogoWorkspace({
     const cy = (Math.min(...ns) + Math.max(...ns)) / 2;
     const span = Math.max(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns), 1);
     const zoom = (Math.min(W, H) * 0.7) / span;
-    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView((v) => ({ cx, cy, zoom, rotation: v.rotation }));
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
   }
 
   function addToolResult(result: ToolResult): { pointIds: string[]; lineIds: string[]; polygonIds: string[] } {
@@ -1054,7 +1053,7 @@ export function CogoWorkspace({
   const lastPersistValuesRef = useRef<unknown[] | null>(null);
   const persistCallCountRef = useRef(0);
   useEffect(() => {
-    const cur = [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber, view.rotation];
+    const cur = [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber];
     const isStrictModeReplay = lastPersistValuesRef.current !== null && cur.every((v, i) => v === lastPersistValuesRef.current![i]);
     lastPersistValuesRef.current = cur;
     if (isStrictModeReplay) return;
@@ -1071,10 +1070,9 @@ export function CogoWorkspace({
       lineMeta,
       polygonMeta,
       lastPlotNumber,
-      rotation: view.rotation,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber, view.rotation]);
+  }, [extra, hidden, lines, arcs, polygons, texts, pointMeta, lineMeta, polygonMeta, lastPlotNumber]);
 
   // Auto-frame the imported points whenever the point set changes size (e.g. a
   // fresh import) so newly loaded beacons are visible without manual panning.
@@ -1152,18 +1150,18 @@ export function CogoWorkspace({
   // separate step (not folded into the pan/zoom maths) so the "north-up by
   // default" correctness above stays untouched; rotation is purely how it's
   // displayed.
-  const rotRad = ((view.rotation || 0) * Math.PI) / 180;
+  const rotRad = (rotation * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
   const toScreen = (e: number, n: number): [number, number] => {
     const y = H / 2 - (n - view.cy) * view.zoom;
     const x = (e - view.cx) * view.zoom + W / 2;
-    if (!view.rotation) return [x, y];
+    if (!rotation) return [x, y];
     const dx = x - W / 2, dy = y - H / 2;
     return [W / 2 + dx * cosR - dy * sinR, H / 2 + dx * sinR + dy * cosR];
   };
   const toWorld = (sx: number, sy: number): [number, number] => {
     let x = sx, y = sy;
-    if (view.rotation) {
+    if (rotation) {
       const dx = sx - W / 2, dy = sy - H / 2;
       // Inverse rotation (-angle): swap the sine's sign.
       x = W / 2 + dx * cosR + dy * sinR;
@@ -1190,11 +1188,11 @@ export function CogoWorkspace({
    *  at creation time. */
   function segLabelAngle(a: { east: number; north: number }, b: { east: number; north: number }): number {
     const dN = b.north - a.north;
-    // + view.rotation (client req 2026-08-28): the view-rotation control
-    // spins the whole screen, so a label's on-screen angle must follow it
-    // too, or text would stay tilted to the old, un-rotated orientation
-    // while the line it labels visibly rotates underneath it.
-    let deg = (Math.atan2(-dN, b.east - a.east) * 180) / Math.PI + (view.rotation || 0);
+    // + rotation (client req 2026-08-28): the shared display-rotation spins
+    // the whole screen, so a label's on-screen angle must follow it too, or
+    // text would stay tilted to the old, un-rotated orientation while the
+    // line it labels visibly rotates underneath it.
+    let deg = (Math.atan2(-dN, b.east - a.east) * 180) / Math.PI + rotation;
     deg = (((deg + 180) % 360) + 360) % 360 - 180; // normalize to (-180, 180]
     if (deg > 90) deg -= 180;
     if (deg < -90) deg += 180;
@@ -2596,9 +2594,11 @@ export function CogoWorkspace({
                 By Coordinates
               </button>
             )}
-            {/* View rotation (client req 2026-08-28) — a pure display
-                rotation, like an image editor's rotate control; never
-                touches the underlying east/north data. */}
+            {/* Display rotation (client req 2026-08-28) — a shared,
+                project-wide setting (config.displayRotation), not local view
+                state, so the same rotation also applies in Diagrams/Working
+                Plan/General Plan; never touches the underlying east/north
+                data. */}
             <span className="flex items-center gap-1.5">
               <span className="text-slate-400">Rotate</span>
               <input
@@ -2606,8 +2606,8 @@ export function CogoWorkspace({
                 min={0}
                 max={360}
                 step={1}
-                value={view.rotation}
-                onChange={(e) => setView((v) => ({ ...v, rotation: Number(e.target.value) }))}
+                value={rotation}
+                onChange={(e) => setConfig({ displayRotation: Number(e.target.value) })}
                 className="w-20 accent-brand"
                 aria-label="Rotate view"
               />
@@ -2615,16 +2615,16 @@ export function CogoWorkspace({
                 type="number"
                 min={0}
                 max={360}
-                value={Math.round(view.rotation)}
-                onChange={(e) => setView((v) => ({ ...v, rotation: ((Number(e.target.value) || 0) % 360 + 360) % 360 }))}
+                value={Math.round(rotation)}
+                onChange={(e) => setConfig({ displayRotation: ((Number(e.target.value) || 0) % 360 + 360) % 360 })}
                 className="w-12 rounded border border-slate-200 px-1 py-0.5 text-right"
                 aria-label="Rotation degrees"
               />
               <span className="text-slate-400">°</span>
-              {view.rotation !== 0 && (
+              {rotation !== 0 && (
                 <button
                   type="button"
-                  onClick={() => setView((v) => ({ ...v, rotation: 0 }))}
+                  onClick={() => setConfig({ displayRotation: 0 })}
                   className="text-slate-400 hover:text-slate-700"
                   title="Reset rotation"
                   aria-label="Reset rotation"
