@@ -155,6 +155,10 @@ export function GeneralPlanView() {
   // only where shapes/labels are DRAWN moves, never the numbers a legal
   // document depends on.
   const rotation = config.displayRotation ?? 0;
+  // Horizontal mirror (client req 2026-08-28) — rotation alone can never fix
+  // a mirrored shape, so this covers that case too; same shared, persisted,
+  // display-only setting CogoWorkspace's Flip button uses.
+  const flip = config.displayFlip ?? false;
   const rotPivotX = (FX0 + FX1) / 2, rotPivotY = (FY0 + FY1) / 2;
   const rotRad = (rotation * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
@@ -163,12 +167,12 @@ export function GeneralPlanView() {
    *  2026-08-27: real geographic alignment across sheets isn't available
    *  without a cut-line concept, so each sheet is instead kept legible on
    *  its own, same as the reference's per-sheet layout). */
-  // `rotationOverride` lets a caller opt OUT of the live display rotation —
-  // used by DXF export below, which must stay a true north-up drawing (its
-  // boundary polylines already read raw, unrotated east/north; text() must
-  // agree, or title/label text would land rotated relative to a boundary
-  // that isn't).
-  function computeTransform(beacons: GpBeacon[], rotationOverride: number = rotation) {
+  // `rotationOverride`/`flipOverride` let a caller opt OUT of the live
+  // display transform — used by DXF export below, which must stay a true
+  // north-up, unmirrored drawing (its boundary polylines already read raw
+  // east/north; text() must agree, or title/label text would land off
+  // relative to a boundary that isn't transformed the same way).
+  function computeTransform(beacons: GpBeacon[], rotationOverride: number = rotation, flipOverride: boolean = flip) {
     const xs = beacons.map((b) => b.east);
     const ys = beacons.map((b) => b.north);
     const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
@@ -177,7 +181,12 @@ export function GeneralPlanView() {
     const s = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
     const ox = FX0 + ((FX1 - FX0) - s * spanX) / 2;
     const oyOff = ((FY1 - FY0) - s * spanY) / 2;
-    const sx0 = (e: number) => ox + (e - minX) * s;
+    // Order matches CogoWorkspace.tsx exactly: fit -> flip (mirror x around
+    // the frame's own centre) -> rotate.
+    const sx0 = (e: number) => {
+      const x = ox + (e - minX) * s;
+      return flipOverride ? 2 * rotPivotX - x : x;
+    };
     const sy0 = (n: number) => FY1 - oyOff - (n - minY) * s;
     const rRad = (rotationOverride * Math.PI) / 180;
     const cR = Math.cos(rRad), sR = Math.sin(rRad);
@@ -195,8 +204,8 @@ export function GeneralPlanView() {
     // Inverse of sx/sy — screen (viewBox) point back to real east/north, for
     // placing/dragging labels the same way the boundary itself is fixed to
     // real survey coordinates rather than raw pixels (client req 2026-08-27,
-    // same reasoning as Diagrams.tsx's `transformRef`); un-rotates first
-    // when a display rotation is active.
+    // same reasoning as Diagrams.tsx's `transformRef`); un-rotates and
+    // un-flips first when either display transform is active.
     const screenToWorld = (px: number, py: number) => {
       let x = px, y = py;
       if (rotationOverride) {
@@ -204,6 +213,7 @@ export function GeneralPlanView() {
         x = rotPivotX + dx * cR + dy * sR;
         y = rotPivotY - dx * sR + dy * cR;
       }
+      if (flipOverride) x = 2 * rotPivotX - x;
       return { east: (x - ox) / s + minX, north: minY + (FY1 - oyOff - y) / s };
     };
     const bounds = { minX, maxX, minY, maxY };
@@ -375,7 +385,10 @@ export function GeneralPlanView() {
    *  delta's sign flips for screen angle; clamped to ±90° to stay upright
    *  regardless of which endpoint is "a" and which is "b"). */
   function edgeLabelAngle(a: { east: number; north: number }, b: { east: number; north: number }): number {
-    let deg = (Math.atan2(-(b.north - a.north), b.east - a.east) * 180) / Math.PI;
+    // flip mirrors the screen-x sense (client req 2026-08-28), which negates
+    // the angle measured from horizontal — negate the east delta to match.
+    const dE = b.east - a.east;
+    let deg = (Math.atan2(-(b.north - a.north), flip ? -dE : dE) * 180) / Math.PI;
     if (deg > 90) deg -= 180;
     if (deg < -90) deg += 180;
     return deg;
@@ -431,7 +444,7 @@ export function GeneralPlanView() {
       }
     }
     return out;
-  }, [gpPlots]);
+  }, [gpPlots, flip]);
 
   // Block corners (client req 2026-08-27, §2g) — points where 3+ distinct
   // plots' boundaries converge (see findBlockCorners' own comment for why
@@ -493,7 +506,7 @@ export function GeneralPlanView() {
     // east/north; this keeps title/label TEXT positions consistent with
     // that, regardless of whatever the on-screen preview is currently
     // rotated to (client req 2026-08-28).
-    const dxfT = computeTransform(activeUsedBeacons, 0);
+    const dxfT = computeTransform(activeUsedBeacons, 0, false);
     const metresPerUnit = (() => {
       const a = dxfT.screenToWorld(0, 0), b = dxfT.screenToWorld(1, 0);
       return Math.hypot(b.east - a.east, b.north - a.north) || 1;
@@ -774,7 +787,7 @@ export function GeneralPlanView() {
             fontSize={8.5}
             fontWeight={600}
             fill={selectedLabel?.id === tt.id && selectedLabel.kind === "road" ? "#2563eb" : "#0f172a"}
-            transform={(tt.angle || 0) + rotation ? `rotate(${(tt.angle || 0) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
+            transform={(flip ? -(tt.angle || 0) : (tt.angle || 0)) + rotation ? `rotate(${(flip ? -(tt.angle || 0) : (tt.angle || 0)) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
             style={{ cursor: "move" }}
             onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "road"); }}
             onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "road", tt); }}
@@ -794,7 +807,7 @@ export function GeneralPlanView() {
             fontSize={7.5}
             fontStyle="italic"
             fill={selectedLabel?.id === tt.id && selectedLabel.kind === "boundary" ? "#2563eb" : "#64748b"}
-            transform={(tt.angle || 0) + rotation ? `rotate(${(tt.angle || 0) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
+            transform={(flip ? -(tt.angle || 0) : (tt.angle || 0)) + rotation ? `rotate(${(flip ? -(tt.angle || 0) : (tt.angle || 0)) + rotation} ${t.sx(tt.east, tt.north)} ${t.sy(tt.east, tt.north)})` : undefined}
             style={{ cursor: "move" }}
             onClick={(e) => { e.stopPropagation(); handleLabelClick(tt.id, "boundary"); }}
             onDoubleClick={(e) => { e.stopPropagation(); handleLabelDoubleClick(tt.id, "boundary", tt); }}

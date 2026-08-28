@@ -133,11 +133,16 @@ interface Props {
   /** Shared display rotation (degrees, client req 2026-08-28) — the same
    *  project-wide value CogoWorkspace's Rotate slider and General Plan use,
    *  so this sheet's figure/beacons/labels spin the same way. Applied only
-   *  to what's DRAWN (polygons, beacons, annotations, the inset) — the
-   *  coordinate grid and its axis labels stay north-up, since a rotated
-   *  rectangular grid with edge labels has no coherent "edge" to label
-   *  against; the SIDES/DIRECTIONS values elsewhere never touch this at all. */
+   *  to what's DRAWN (polygons, beacons, annotations) — the coordinate grid
+   *  and its axis labels, and the locality inset, stay north-up (a rotated
+   *  rectangular grid has no coherent edge to label against, and the inset
+   *  is more useful as a stable orientation reference); the SIDES/DIRECTIONS
+   *  values elsewhere never touch this at all. */
   rotation?: number;
+  /** Shared display-only horizontal mirror (client req 2026-08-28) —
+   *  rotation alone can never fix a mirrored shape, so this covers that
+   *  case; same project-wide setting as CogoWorkspace's Flip button. */
+  flip?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +250,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTitleResize,
     onTransform,
     rotation: rotationProp,
+    flip: flipProp,
   },
   ref
 ) {
@@ -318,16 +324,23 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // (see the Props doc above for why) and every SIDES/DIRECTIONS/DXF value
   // elsewhere reads real, unrotated east/north.
   const rotation = rotationProp || 0;
+  const flip = flipProp ?? false;
   const figPivotX = draw.x + draw.w / 2, figPivotY = draw.y + draw.h / 2;
   const figRotRad = (rotation * Math.PI) / 180;
   const figCosR = Math.cos(figRotRad), figSinR = Math.sin(figRotRad);
+  // Order matches CogoWorkspace.tsx/GeneralPlanView.tsx exactly: fit -> flip
+  // (mirror x around the panel's own centre) -> rotate.
+  const fx0 = (e: number) => {
+    const x = toX(e);
+    return flip ? 2 * figPivotX - x : x;
+  };
   const fx = (e: number, n: number) => {
-    if (!rotation) return toX(e);
-    return figPivotX + (toX(e) - figPivotX) * figCosR - (toY(n) - figPivotY) * figSinR;
+    if (!rotation) return fx0(e);
+    return figPivotX + (fx0(e) - figPivotX) * figCosR - (toY(n) - figPivotY) * figSinR;
   };
   const fy = (e: number, n: number) => {
     if (!rotation) return toY(n);
-    return figPivotY + (toX(e) - figPivotX) * figSinR + (toY(n) - figPivotY) * figCosR;
+    return figPivotY + (fx0(e) - figPivotX) * figSinR + (toY(n) - figPivotY) * figCosR;
   };
 
   const cE = avg(es), cN = avg(ns);
@@ -628,7 +641,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const x = fx(t.east, t.north) + off.dx, y = fy(t.east, t.north) + off.dy;
         const isSel = selectedTextId === t.id;
         const boxW = Math.max(14, t.text.length * fs * 0.3), boxH = 7 * scale;
-        const textAngle = (t.angle || 0) + rotation;
+        const textAngle = (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
         return (
           <g key={t.id}>
             <text

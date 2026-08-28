@@ -613,6 +613,7 @@ export function WorkingPlanView() {
             onTitleResize={handleTitleResize}
             onTransform={(t) => { transformRef.current = t; }}
             rotation={config.displayRotation ?? 0}
+            flip={config.displayFlip ?? false}
           />
         </div>
       </Card>

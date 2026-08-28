@@ -44,6 +44,12 @@ export interface ProjectConfig {
    *  canvas's Rotate slider (CogoWorkspace.tsx), read everywhere the
    *  project's figure is drawn. */
   displayRotation?: number;
+  /** Shared display-only horizontal mirror (client req 2026-08-28) — a
+   *  rotation alone can never turn a mirrored shape into its correct
+   *  orientation (no angle exists for that), so this exists alongside
+   *  displayRotation to cover that case too. Same "never touches the
+   *  underlying east/north" guarantee. */
+  displayFlip?: boolean;
 }
 
 interface Store {

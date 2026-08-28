@@ -109,6 +109,10 @@ export function CogoWorkspace({
   // diagram doesn't show... sirf cogo per hi rotate show hai"). Persisted
   // automatically with the rest of `config`, same as coordinateSystem etc.
   const rotation = config.displayRotation ?? 0;
+  // Horizontal mirror (client req 2026-08-28) — rotation alone can never fix
+  // a mirrored shape (no angle does that), so this covers that case too;
+  // same shared, persisted, display-only setting as rotation above.
+  const flip = config.displayFlip ?? false;
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
   /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
@@ -1152,9 +1156,14 @@ export function CogoWorkspace({
   // displayed.
   const rotRad = (rotation * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
+  // Order: pan/zoom -> flip (mirror x around the screen centre) -> rotate.
+  // Fixed points drawn from plain x,y numbers here, not an SVG-level
+  // `scale(-1,1)` transform, so a flip never mirrors text glyphs backwards —
+  // only where each point lands changes.
   const toScreen = (e: number, n: number): [number, number] => {
     const y = H / 2 - (n - view.cy) * view.zoom;
-    const x = (e - view.cx) * view.zoom + W / 2;
+    let x = (e - view.cx) * view.zoom + W / 2;
+    if (flip) x = W - x;
     if (!rotation) return [x, y];
     const dx = x - W / 2, dy = y - H / 2;
     return [W / 2 + dx * cosR - dy * sinR, H / 2 + dx * sinR + dy * cosR];
@@ -1167,6 +1176,7 @@ export function CogoWorkspace({
       x = W / 2 + dx * cosR + dy * sinR;
       y = H / 2 - dx * sinR + dy * cosR;
     }
+    if (flip) x = W - x;
     return [view.cx + (x - W / 2) / view.zoom, view.cy - (y - H / 2) / view.zoom];
   };
   function eventToVb(ev: RPointerEvent | RWheelEvent): [number, number] {
@@ -1192,7 +1202,10 @@ export function CogoWorkspace({
     // the whole screen, so a label's on-screen angle must follow it too, or
     // text would stay tilted to the old, un-rotated orientation while the
     // line it labels visibly rotates underneath it.
-    let deg = (Math.atan2(-dN, b.east - a.east) * 180) / Math.PI + rotation;
+    // flip mirrors the screen-x sense (client req 2026-08-28), which negates
+    // the angle measured from horizontal — negate the east delta to match.
+    const dE = b.east - a.east;
+    let deg = (Math.atan2(-dN, flip ? -dE : dE) * 180) / Math.PI + rotation;
     deg = (((deg + 180) % 360) + 360) % 360 - 180; // normalize to (-180, 180]
     if (deg > 90) deg -= 180;
     if (deg < -90) deg += 180;
@@ -2632,6 +2645,19 @@ export function CogoWorkspace({
                   ↺
                 </button>
               )}
+              {/* Flip (client req 2026-08-28) — rotation alone can never
+                  correct a mirrored shape, so this covers that case; same
+                  shared, persisted, display-only setting as Rotate. */}
+              <button
+                type="button"
+                onClick={() => setConfig({ displayFlip: !flip })}
+                className={`rounded border px-2 py-0.5 ${flip ? "border-brand bg-brand/10 text-brand-dark" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                title="Mirror the drawing horizontally"
+                aria-label="Flip horizontally"
+                aria-pressed={flip}
+              >
+                ⇋ Flip
+              </button>
             </span>
             <span className="font-mono">
               {DRAW_TOOLS.includes(draftTool) && draft.length > 0 && cursor
