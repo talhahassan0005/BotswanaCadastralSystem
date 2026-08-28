@@ -537,10 +537,12 @@ export function GeneralPlanView() {
     text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN OF ${meta.name}`, 19, "middle");
     text(W / 2, 54, `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`, 11, "middle");
     text(regX + regW, 18, `GC-${meta.gcNo || "—"}`, 9, "end");
-    text(regX + 6, 58, `G.P. No: ${meta.gpNo || "—"}`, 8);
-    text(regX + 6, 70, `DSM No: ${meta.dsmNo || "—"}`, 8);
-    text(regX + 6, 130, `Surveyed in ${meta.surveyedIn || "—"}`, 8);
-    text(regX + 6, 142, meta.surveyor || "—", 8);
+    text(regX + 6, 60, `DSM No: ${meta.dsmNo || "—"}`, 8);
+    text(regX + 6, 129, "Surveyed in", 8);
+    text(regX + regW - 6, 129, meta.surveyedIn || "—", 8, "end");
+    text(regX + 6, 142, "By me", 8);
+    text(regX + regW - 6, 142, meta.surveyor || "—", 8, "end");
+    text(regX + regW - 6, 153, "Land Surveyor", 7, "end");
     text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
 
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
@@ -636,7 +638,7 @@ export function GeneralPlanView() {
   // Sheet Index is a single trivial entry for now (real multi-sheet splitting
   // is a later phase); the numeric lot range is derived straight from the
   // numbered COGO plots when their numbers are numeric.
-  const panelX = 690, panelTop = 160; // registration block above now ends at y=156, not 146
+  const panelX = 690, panelTop = 167; // registration block above now ends at y=163
   // One line per LAYOUT sheet (client req 2026-08-27, multi-sheet split) —
   // shown identically on every sheet so a reader can find any lot's sheet
   // from any page, matching the reference's own Sheet Index panel.
@@ -709,18 +711,27 @@ export function GeneralPlanView() {
           everything below (SHEET No/DSM No/Approved/Director/Surveyed in)
           stays INSIDE it. */}
       <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-      <rect x={regX} y={30} width={regW} height={126} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+      {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
+          screenshot circling this whole box): no "G.P. No." row here (that
+          field stays editable for other diagrams' own cross-reference, just
+          not printed in this box); a real blank gap — not a drawn line —
+          between "Approved" and "Director of Surveys and Mapping" for the
+          actual signature; "Surveyed in"/"By me" each pair a label on the
+          left with its value right-aligned on the same row, and "Land
+          Surveyor" sits alone on the row under the surveyor's name. */}
+      <rect x={regX} y={30} width={regW} height={133} fill="none" stroke="#0f172a" strokeWidth={0.6} />
       <text x={regX + regW / 2} y={42} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
       <line x1={regX} y1={47} x2={regX + regW} y2={47} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={58} fontSize={8} fill="#334155">G.P. No: {meta.gpNo || "—"}</text>
-      <text x={regX + 6} y={70} fontSize={8} fill="#334155">DSM No: {meta.dsmNo || "—"}</text>
-      <text x={regX + regW / 2} y={82} textAnchor="middle" fontSize={8.5}>Approved</text>
-      <line x1={regX + 16} y1={100} x2={regX + regW - 14} y2={100} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + regW / 2} y={110} textAnchor="middle" fontSize={7.5} fill="#334155">Director of Surveys and Mapping</text>
-      <line x1={regX} y1={118} x2={regX + regW} y2={118} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={130} fontSize={8} fill="#334155">Surveyed in {meta.surveyedIn || "—"}</text>
-      <text x={regX + 6} y={142} fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-      <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={7} fill="#64748b">By me · Land Surveyor</text>
+      <text x={regX + 6} y={60} fontSize={8} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+      <line x1={regX} y1={66} x2={regX + regW} y2={66} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={80} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
+      <text x={regX + 6} y={108} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
+      <line x1={regX} y1={116} x2={regX + regW} y2={116} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={129} fontSize={8} fill="#334155">Surveyed in</text>
+      <text x={regX + regW - 6} y={129} textAnchor="end" fontSize={8} fill="#334155">{meta.surveyedIn || "—"}</text>
+      <text x={regX + 6} y={142} fontSize={8} fill="#334155">By me</text>
+      <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+      <text x={regX + regW - 6} y={153} textAnchor="end" fontSize={7} fill="#64748b">Land Surveyor</text>
 
       {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
           outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
