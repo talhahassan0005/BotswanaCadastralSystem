@@ -727,11 +727,11 @@ export function GeneralPlanView() {
       <text x={regX + 6} y={80} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
       <text x={regX + 6} y={108} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
       <line x1={regX} y1={116} x2={regX + regW} y2={116} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={129} fontSize={8} fill="#334155">Surveyed in</text>
+      <text x={regX + 6} y={129} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
       <text x={regX + regW - 6} y={129} textAnchor="end" fontSize={8} fill="#334155">{meta.surveyedIn || "—"}</text>
-      <text x={regX + 6} y={142} fontSize={8} fill="#334155">By me</text>
+      <text x={regX + 6} y={142} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
       <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-      <text x={regX + regW - 6} y={153} textAnchor="end" fontSize={7} fill="#64748b">Land Surveyor</text>
+      <text x={regX + regW - 6} y={153} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
 
       {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
           outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
