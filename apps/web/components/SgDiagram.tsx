@@ -72,6 +72,14 @@ export interface ManualText {
 export interface DiagramTransform {
   toScreen: (east: number, north: number) => { x: number; y: number };
   toWorld: (x: number, y: number) => { east: number; north: number };
+  /** Same as `toScreen`, but including any live display rotation/flip the
+   *  caller has applied (client req 2026-08-28: "DXF main rotation working
+   *  nahi kar raha") — optional since not every DiagramTransform provider
+   *  has a rotation/flip concept; a DXF export can round-trip a world point
+   *  through this then back through the plain (unrotated) `toWorld` to get
+   *  a "fake" world coordinate that plots in the same place/orientation the
+   *  live preview shows, without needing its own copy of the rotation math. */
+  toScreenLive?: (east: number, north: number) => { x: number; y: number };
 }
 
 interface Props {
@@ -129,6 +137,18 @@ interface Props {
    *  be a React anti-pattern) and uses it to convert annotation/text
    *  clicks and drags to/from real east/north before persisting them. */
   onTransform?: (t: DiagramTransform) => void;
+  /** Shared display rotation (degrees, client req 2026-08-28) — the same
+   *  project-wide value CogoWorkspace's Rotate slider, Working Plan and
+   *  General Plan use. Applied only to the FIGURE (boundary, beacons,
+   *  manual annotations/text) — pivoted on the figure's own drawing box
+   *  (`fig`) — never to the fixed title block/legal-description/
+   *  registration-table positions around it, which stay exactly where the
+   *  official template puts them regardless of rotation. */
+  rotation?: number;
+  /** Shared display-only horizontal mirror (client req 2026-08-28) — same
+   *  project-wide setting as CogoWorkspace's Flip button; rotation alone
+   *  can never fix a mirrored shape. */
+  flip?: boolean;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -143,6 +163,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTransform,
+    rotation: rotationProp, flip: flipProp,
   },
   ref
 ) {
@@ -169,7 +190,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
-    sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
+    sc, dw, dh, offX, offY, toX, toY,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
     landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, surveyorFit,
@@ -177,6 +198,46 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
     annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,
   } = L;
+  // Shared display rotation/flip (client req 2026-08-28) — same project-
+  // wide values CogoWorkspace/Working Plan/General Plan use, applied ONLY
+  // to the figure (boundary/beacons/annotations/extraPoints) below, pivoted
+  // on the figure's own drawing box `fig`. The title block, legal
+  // description, and registration tables never call toX/toY at all (they
+  // use their own fixed tx/ty/dsmBoxTop-style positions), so they're
+  // untouched by construction — nothing to opt them out of.
+  const rotation = rotationProp || 0;
+  const flip = flipProp ?? false;
+  const figPivotX = fig.x + fig.w / 2, figPivotY = fig.y + fig.h / 2;
+  const figRotRad = (rotation * Math.PI) / 180;
+  const figCosR = Math.cos(figRotRad), figSinR = Math.sin(figRotRad);
+  const fx0 = (e: number) => {
+    const x = toX(e);
+    return flip ? 2 * figPivotX - x : x;
+  };
+  const fx = (e: number, n: number) => {
+    if (!rotation) return fx0(e);
+    return figPivotX + (fx0(e) - figPivotX) * figCosR - (toY(n) - figPivotY) * figSinR;
+  };
+  const fy = (e: number, n: number) => {
+    if (!rotation) return toY(n);
+    return figPivotY + (fx0(e) - figPivotX) * figSinR + (toY(n) - figPivotY) * figCosR;
+  };
+  // Rotation/flip-aware point-in-polygon test (mirrors diagramLayout.ts's
+  // own `insidePoly`, which is built from the UNROTATED screenPts and so
+  // can't be reused once the queried point is itself rotated) — used below
+  // to keep a beacon label on the true outside of a concave corner
+  // regardless of the live rotation/flip.
+  const rotatedRing = points.map((p) => ({ x: fx(p.east, p.north), y: fy(p.east, p.north) }));
+  function rotInsidePoly(px: number, py: number): boolean {
+    let inside = false;
+    for (let i = 0, j = rotatedRing.length - 1; i < rotatedRing.length; j = i++) {
+      const a = rotatedRing[i], b = rotatedRing[j];
+      const hit = a.y > py !== b.y > py && px < ((b.x - a.x) * (py - a.y)) / (b.y - a.y) + a.x;
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+  const rotatedPolyPoints = rotatedRing.map((p) => `${p.x},${p.y}`).join(" ");
   // Inverse of toX/toY (client req 2026-08-25) — lets the caller convert a
   // pixel-space click/drag back to real survey coordinates so annotations
   // stay attached to the boundary regardless of how this scale/offset
@@ -184,6 +245,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   onTransform?.({
     toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
     toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
+    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
   });
   return (
     <svg
@@ -355,10 +417,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* ===================== FIGURE ===================== */}
       {parcels && parcels.length > 0 ? (
         parcels.map((pc, i) => {
-          const ring = pc.points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
+          const ring = pc.points.map((p) => `${fx(p.east, p.north)},${fy(p.east, p.north)}`).join(" ");
           const col = PARCEL_COLORS[i % PARCEL_COLORS.length];
-          const lcx = avg(pc.points.map((p) => toX(p.east)));
-          const lcy = avg(pc.points.map((p) => toY(p.north)));
+          const lcx = avg(pc.points.map((p) => fx(p.east, p.north)));
+          const lcy = avg(pc.points.map((p) => fy(p.east, p.north)));
           return (
             <g key={`pc${i}`}>
               <polygon points={ring} fill={col} fillOpacity={0.12} stroke={col} strokeWidth={1.6} strokeLinejoin="round" />
@@ -367,10 +429,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           );
         })
       ) : (
-        <polygon points={polyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
+        <polygon points={rotatedPolyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
       )}
       {points.map((p, i) => {
-        const bx = toX(p.east), by = toY(p.north);
+        const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         // Point the label along this vertex's own angle bisector (away from
         // its two neighbors), verified with the same inside/outside test as
         // the side-distance labels — more reliable than a flat centroid
@@ -379,15 +441,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // label instead of clearing the figure.
         const prev = points[(i - 1 + points.length) % points.length];
         const next = points[(i + 1) % points.length];
-        const px = toX(prev.east), py = toY(prev.north);
-        const qx = toX(next.east), qy = toY(next.north);
+        const px = fx(prev.east, prev.north), py = fy(prev.east, prev.north);
+        const qx = fx(next.east, next.north), qy = fy(next.east, next.north);
         const d1x = bx - px, d1y = by - py, l1 = Math.hypot(d1x, d1y) || 1;
         const d2x = bx - qx, d2y = by - qy, l2 = Math.hypot(d2x, d2y) || 1;
         let dx = d1x / l1 + d2x / l2, dy = d1y / l1 + d2y / l2;
         const dl = Math.hypot(dx, dy) || 1;
         dx /= dl; dy /= dl;
         const probe = 10;
-        if (insidePoly(bx + dx * probe, by + dy * probe)) { dx = -dx; dy = -dy; }
+        if (rotInsidePoly(bx + dx * probe, by + dy * probe)) { dx = -dx; dy = -dy; }
         const lx = bx + dx * 40, ly = by + dy * 40;
         return (
           <g key={`bcn${i}`}>
@@ -417,7 +479,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           dashed stroke itself. */}
       {(manualAnnotations ?? []).map((a) => {
         const isSel = selectedAnnotationId === a.id;
-        const x1 = toX(a.e1), y1 = toY(a.n1), x2 = toX(a.e2), y2 = toY(a.n2);
+        const x1 = fx(a.e1, a.n1), y1 = fy(a.e1, a.n1), x2 = fx(a.e2, a.n2), y2 = fy(a.e2, a.n2);
         return (
           <g key={a.id}>
             <line
@@ -465,9 +527,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           part of the text's own styling, not a selection indicator). */}
       {(manualTexts ?? []).map((t) => {
         const isSel = selectedTextId === t.id;
-        const x = toX(t.east), y = toY(t.north);
+        const x = fx(t.east, t.north), y = fy(t.east, t.north);
+        const textAngle = (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
         return (
-          <g key={t.id} transform={t.angle ? `rotate(${t.angle} ${x} ${y})` : undefined}>
+          <g key={t.id} transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}>
             <text
               x={x} y={y}
               fontSize={FS_BEACON_HEAD}
@@ -491,8 +554,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           (no boundary side, no coordinate-table row). */}
       {(extraPoints ?? []).map((p, i) => (
         <g key={`xp${i}`}>
-          <circle cx={toX(p.east)} cy={toY(p.north)} r={5} fill="black" />
-          <text x={toX(p.east) + 12} y={toY(p.north) + 4} fontSize={FS_BEACON_HEAD} textAnchor="middle">
+          <circle cx={fx(p.east, p.north)} cy={fy(p.east, p.north)} r={5} fill="black" />
+          <text x={fx(p.east, p.north) + 12} y={fy(p.east, p.north) + 4} fontSize={FS_BEACON_HEAD} textAnchor="middle">
             {p.name}
           </text>
         </g>

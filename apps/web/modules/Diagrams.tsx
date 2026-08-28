@@ -653,6 +653,20 @@ export function Diagrams() {
     const notes: ImportedDrawing["texts"] = [];
     const sheetLines: ImportedDrawing["polylines"] = [];
     const t = transformRef.current;
+    // The exported DXF now matches whatever the live preview is rotated/
+    // flipped to (client req 2026-08-28: "DXF main rotation working nahi
+    // kar raha") — round-trip a real east/north through the LIVE (rotation/
+    // flip-aware) screen projection (toScreenLive), then back through the
+    // plain unrotated toWorld, to get a "fake" world coordinate that plots
+    // in the same place/orientation the live preview shows. The sheet frame/
+    // table lines above (line/rect/text) intentionally keep using the plain
+    // toWorld directly — they're already FIXED screen positions, not data
+    // points, so they don't need this round-trip.
+    function toExportWorld(east: number, north: number) {
+      if (!t || !t.toScreenLive) return { east, north };
+      const s = t.toScreenLive(east, north);
+      return t.toWorld(s.x, s.y);
+    }
 
     if (points.length && t) {
       // One page-unit's real-world length (metres per unit, MM=10
@@ -916,12 +930,12 @@ export function Diagrams() {
 
     const drawing: ImportedDrawing = {
       points: [
-        ...points.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "BEACONS" })),
-        ...extraPoints.map((p) => ({ x: p.east, y: p.north, label: p.name ?? undefined, layer: "REFERENCE" })),
+        ...points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north, label: p.name ?? undefined, layer: "BEACONS" }; }),
+        ...extraPoints.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north, label: p.name ?? undefined, layer: "REFERENCE" }; }),
       ],
       polylines: [
         ...(points.length >= 2
-          ? [{ pts: points.map((p) => ({ x: p.east, y: p.north })), closed: fig?.type === "closed", layer: "BOUNDARY" }]
+          ? [{ pts: points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north }; }), closed: fig?.type === "closed", layer: "BOUNDARY" }]
           : []),
         ...sheetLines,
       ],
@@ -1279,6 +1293,8 @@ export function Diagrams() {
                 onTextDoubleClick={handleTextDoubleClick}
                 onTextHandleDown={handleTextHandleDown}
                 onTransform={(t) => { transformRef.current = t; }}
+                rotation={config.displayRotation ?? 0}
+                flip={config.displayFlip ?? false}
               />
             )}
           </div>

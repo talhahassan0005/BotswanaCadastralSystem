@@ -387,12 +387,25 @@ export function WorkingPlanView() {
       const p = t!.toWorld(x, y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
+    // The exported DXF now matches whatever the live preview is rotated/
+    // flipped to (client req 2026-08-28: "DXF main rotation working nahi kar
+    // raha") — round-trip a real east/north through the LIVE (rotation/flip
+    // -aware) screen projection, then back through the plain (unrotated)
+    // toWorld, to get a "fake" world coordinate that plots in the same
+    // place/orientation the live preview shows. Falls back to the real
+    // point when toScreenLive isn't provided (shouldn't happen — WorkingPlan
+    // always supplies it — but keeps this safe if that ever changes).
+    function toExportWorld(east: number, north: number) {
+      if (!t!.toScreenLive) return { east, north };
+      const s = t!.toScreenLive(east, north);
+      return t!.toWorld(s.x, s.y);
+    }
 
     const activePlots = resolvedPlots.length > 0 ? resolvedPlots : [{ number: effectiveMeta.lotName, points }];
     for (const plot of activePlots) {
       if (plot.points.length < 2) continue;
       polylines.push({
-        pts: plot.points.map((p) => ({ x: p.east, y: p.north })),
+        pts: plot.points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north }; }),
         closed: plot.points.length >= 3,
         layer: "BOUNDARY",
       });
@@ -400,17 +413,21 @@ export function WorkingPlanView() {
     const allBeacons = dedupePoints(activePlots);
     for (const p of allBeacons) {
       if (!p.name) continue;
-      beaconPoints.push({ x: p.east, y: p.north, label: p.name, layer: "BEACONS" });
+      const w = toExportWorld(p.east, p.north);
+      beaconPoints.push({ x: w.east, y: w.north, label: p.name, layer: "BEACONS" });
     }
     for (const r of refMarks) {
-      beaconPoints.push({ x: r.east, y: r.north, label: r.name ?? undefined, layer: "REFERENCE" });
+      const w = toExportWorld(r.east, r.north);
+      beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "REFERENCE" });
     }
     for (const ann of diagramAnnotations) {
-      polylines.push({ pts: [{ x: ann.e1, y: ann.n1 }, { x: ann.e2, y: ann.n2 }], closed: false, layer: "ANNOTATIONS" });
+      const w1 = toExportWorld(ann.e1, ann.n1), w2 = toExportWorld(ann.e2, ann.n2);
+      polylines.push({ pts: [{ x: w1.east, y: w1.north }, { x: w2.east, y: w2.north }], closed: false, layer: "ANNOTATIONS" });
     }
     for (const tt of diagramTexts) {
       const off = textOffsets[tt.id];
-      const p = off ? t.toWorld(t.toScreen(tt.east, tt.north).x + off.dx, t.toScreen(tt.east, tt.north).y + off.dy) : { east: tt.east, north: tt.north };
+      const base = t.toScreenLive ? t.toScreenLive(tt.east, tt.north) : t.toScreen(tt.east, tt.north);
+      const p = off ? t.toWorld(base.x + off.dx, base.y + off.dy) : toExportWorld(tt.east, tt.north);
       notes.push({ x: p.east, y: p.north, text: tt.text, height: 10 * (off?.scale ?? 1) * metresPerUnit, layer: "NOTES" });
     }
 

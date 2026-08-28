@@ -308,20 +308,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const offY = draw.y + (draw.h - drawH) / 2;
   const toX = (e: number) => offX + (e - minE) * fit;
   const toY = (n: number) => offY + (maxN - n) * fit; // flip Y so north is up
-  // Handed to the caller every render (client req 2026-08-28) — same
-  // pixel<->survey-coordinate mechanism as SgDiagram.tsx's `onTransform`,
-  // so a DXF export can walk this sheet's own screen-space draw calls the
-  // same way Diagrams.tsx's export already does.
-  onTransform?.({
-    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
-    toWorld: (x, y) => ({ east: (x - offX) / fit + minE, north: maxN - (y - offY) / fit }),
-  });
-
   // Shared display rotation (client req 2026-08-28) — same project-wide
   // value CogoWorkspace's Rotate slider and General Plan use. Applied only
   // to what's drawn below (figure, beacons, annotations) — pivots around
   // the drawing panel's own centre; the coordinate grid stays north-up
-  // (see the Props doc above for why) and every SIDES/DIRECTIONS/DXF value
+  // (see the Props doc above for why) and every SIDES/DIRECTIONS value
   // elsewhere reads real, unrotated east/north.
   const rotation = rotationProp || 0;
   const flip = flipProp ?? false;
@@ -342,6 +333,20 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     if (!rotation) return toY(n);
     return figPivotY + (fx0(e) - figPivotX) * figSinR + (toY(n) - figPivotY) * figCosR;
   };
+  // Handed to the caller every render (client req 2026-08-28) — same
+  // pixel<->survey-coordinate mechanism as SgDiagram.tsx's `onTransform`,
+  // so a DXF export can walk this sheet's own screen-space draw calls the
+  // same way Diagrams.tsx's export already does. `toScreen`/`toWorld` stay
+  // the plain, unrotated pair (used for fixed screen positions like the
+  // title block); `toScreenLive` includes the live rotation/flip so the
+  // DXF export can round-trip a data point through it to match what's
+  // actually drawn (client req 2026-08-28: "DXF main rotation working nahi
+  // kar raha").
+  onTransform?.({
+    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
+    toWorld: (x, y) => ({ east: (x - offX) / fit + minE, north: maxN - (y - offY) / fit }),
+    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
+  });
 
   const cE = avg(es), cN = avg(ns);
   const cx = fx(cE, cN), cy = fy(cE, cN);

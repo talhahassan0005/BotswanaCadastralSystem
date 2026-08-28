@@ -501,14 +501,27 @@ export function GeneralPlanView() {
   // covers, same scoping call as WorkingPlanView.tsx's own DXF export.
   function downloadDxf() {
     if (sheet >= layoutSheetCount) return; // only layout sheets, not the coordinate schedule
-    // Always north-up (rotationOverride 0) — a DXF is a real CAD file, so its
-    // boundary/beacon geometry (below) already reads raw, unrotated
-    // east/north; this keeps title/label TEXT positions consistent with
-    // that, regardless of whatever the on-screen preview is currently
-    // rotated to (client req 2026-08-28).
-    const dxfT = computeTransform(activeUsedBeacons, 0, false);
+    // The exported DXF now matches whatever the live preview is rotated/
+    // flipped to (client req 2026-08-28: "DXF main rotation working nahi
+    // kar raha") — SURVEY VALUES are still never altered (this file's own
+    // Lot Numbers/Block Corner/traverse tables and every other export path
+    // still read true east/north straight from `cogoPlots`); only THIS
+    // export's geometry is re-expressed in "as displayed" coordinates.
+    //
+    // `baseT` has no rotation/flip — it's used only to convert a FIXED
+    // SCREEN position (title/label text) into world units, and as the
+    // "plain linear inverse" half of the round-trip below. `liveT` carries
+    // whatever rotation/flip is currently active. For a DATA point (e,n),
+    // projecting it through liveT.sx/sy (world -> as-displayed screen) and
+    // then back through baseT.screenToWorld (screen -> world, skipping any
+    // un-rotation) yields a "fake" world coordinate that a plain north-up
+    // DXF viewer will draw in exactly the same place/orientation the live
+    // preview shows.
+    const baseT = computeTransform(activeUsedBeacons, 0, false);
+    const liveT = computeTransform(activeUsedBeacons);
+    const toExportWorld = (e: number, n: number) => baseT.screenToWorld(liveT.sx(e, n), liveT.sy(e, n));
     const metresPerUnit = (() => {
-      const a = dxfT.screenToWorld(0, 0), b = dxfT.screenToWorld(1, 0);
+      const a = baseT.screenToWorld(0, 0), b = baseT.screenToWorld(1, 0);
       return Math.hypot(b.east - a.east, b.north - a.north) || 1;
     })();
     const notes: ImportedDrawing["texts"] = [];
@@ -517,7 +530,7 @@ export function GeneralPlanView() {
 
     function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
       if (!s) return;
-      const p = dxfT.screenToWorld(x, y);
+      const p = baseT.screenToWorld(x, y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
@@ -533,19 +546,26 @@ export function GeneralPlanView() {
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
     for (const p of groupGpPlots) {
       if (p.points.length < 2) continue;
-      polylines.push({ pts: p.points.map((pp) => ({ x: pp.east, y: pp.north })), closed: p.points.length >= 3, layer: "BOUNDARY" });
+      polylines.push({
+        pts: p.points.map((pp) => { const w = toExportWorld(pp.east, pp.north); return { x: w.east, y: w.north }; }),
+        closed: p.points.length >= 3,
+        layer: "BOUNDARY",
+      });
     }
     for (const b of activeUsedBeacons) {
-      beaconPoints.push({ x: b.east, y: b.north, label: b.id, layer: "BEACONS" });
+      const w = toExportWorld(b.east, b.north);
+      beaconPoints.push({ x: w.east, y: w.north, label: b.id, layer: "BEACONS" });
     }
     const bounds = computeTransform(activeUsedBeacons).bounds;
     const inBounds = (tt: ManualText) =>
       tt.east >= bounds.minX - 1 && tt.east <= bounds.maxX + 1 && tt.north >= bounds.minY - 1 && tt.north <= bounds.maxY + 1;
     for (const tt of meta.roadLabels.filter(inBounds)) {
-      notes.push({ x: tt.east, y: tt.north, text: tt.text, height: 8.5 * metresPerUnit, layer: "ROADS" });
+      const w = toExportWorld(tt.east, tt.north);
+      notes.push({ x: w.east, y: w.north, text: tt.text, height: 8.5 * metresPerUnit, layer: "ROADS" });
     }
     for (const tt of displayBoundaryLabels.filter(inBounds)) {
-      notes.push({ x: tt.east, y: tt.north, text: tt.text, height: 7.5 * metresPerUnit, layer: "BOUNDARY_LABELS" });
+      const w = toExportWorld(tt.east, tt.north);
+      notes.push({ x: w.east, y: w.north, text: tt.text, height: 7.5 * metresPerUnit, layer: "BOUNDARY_LABELS" });
     }
 
     const drawing: ImportedDrawing = { points: beaconPoints, polylines, texts: notes };
