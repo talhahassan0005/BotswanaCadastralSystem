@@ -66,7 +66,7 @@ export function GeneralPlanView() {
     name: string; location: string; surveyor: string; gpNo: string; scale: number;
     gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
-    parentCadastre: string; roadLabels: ManualText[]; boundaryLabels: ManualText[]; dismissedAutoIds: string[];
+    roadLabels: ManualText[]; boundaryLabels: ManualText[];
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -83,21 +83,16 @@ export function GeneralPlanView() {
     // Per-corner splay distances, e.g. "A,B,B2,B3" -> "5m", with a default
     // fallback row ("All Others" -> "3m") — client req 2026-08-27, §2e.
     splayEntries: [{ corner: "All Others", distance: "3m" }] as { corner: string; distance: string }[],
-    // The undivided lot these plots were subdivided from, e.g. "243" — feeds
-    // the auto-suggested "REMAINDER OF CADASTRE 243" boundary labels below.
-    parentCadastre: "",
     // Manually-placed road-width labels ("ROAD 15m" etc.) — client req
     // 2026-08-27, spec Part 4. Free text anchored in real east/north so it
     // stays put across pan/zoom/rescale, same as Diagrams' manual notes.
     roadLabels: [] as ManualText[],
-    // Boundary labels — both user-placed and user-EDITED auto-suggestions
-    // (an edited auto-suggestion is persisted here under its own auto- id so
-    // the live auto-detection below doesn't also render its own copy).
+    // Boundary labels (e.g. "REMAINDER OF CADASTRE 243") — placed manually
+    // only, same Add Text tool as roadLabels (client req 2026-08-28: an
+    // earlier auto-suggestion for every unmatched edge produced too much
+    // false-positive clutter, since there's no data to tell a road-facing
+    // edge apart from an actual remainder-facing one).
     boundaryLabels: [] as ManualText[],
-    // ids of auto-suggested boundary labels the user has explicitly removed
-    // — the suggestion is recomputed from geometry every render, so without
-    // this it would just reappear right after being deleted.
-    dismissedAutoIds: [] as string[],
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -329,56 +324,19 @@ export function GeneralPlanView() {
   }
   function deleteSelectedLabel() {
     if (!selectedLabel) return;
-    if (selectedLabel.kind === "boundary" && selectedLabel.id.startsWith("auto-remainder-") && !meta.boundaryLabels.some((tt) => tt.id === selectedLabel.id)) {
-      // An un-edited auto-suggestion isn't actually stored — remember that
-      // it was dismissed instead, or the live detection below just re-adds it.
-      setMeta((m) => ({ ...m, dismissedAutoIds: [...m.dismissedAutoIds, selectedLabel.id] }));
-    } else {
-      setLabelArray(selectedLabel.kind, labelArray(selectedLabel.kind).filter((tt) => tt.id !== selectedLabel.id));
-    }
+    setLabelArray(selectedLabel.kind, labelArray(selectedLabel.kind).filter((tt) => tt.id !== selectedLabel.id));
     setSelectedLabel(null);
   }
 
-  // Auto-suggested "REMAINDER OF CADASTRE N" labels (spec Part 4): every
-  // plot edge with no matching edge on any other plot in gpPlots — i.e. the
-  // outer boundary of the whole layout — gets a suggested label at its
-  // midpoint, unless the user already placed/edited one there (same id) or
-  // explicitly dismissed it. Same shared-edge detection as Diagrams.tsx's
-  // Part 37 auto-adjacency (`sameWorldPoint`, promoted to lib/plots.ts),
-  // just inverted: there it labels a MATCHED edge with the neighbour's
-  // number, here it labels an UNMATCHED edge with the parent cadastre.
-  const autoBoundaryLabels = useMemo<ManualText[]>(() => {
-    const out: ManualText[] = [];
-    for (let pi = 0; pi < gpPlots.length; pi++) {
-      const plot = gpPlots[pi];
-      const pts = plot.points;
-      if (pts.length < 3) continue;
-      const cE = pts.reduce((a, p) => a + p.east, 0) / pts.length;
-      const cN = pts.reduce((a, p) => a + p.north, 0) / pts.length;
-      for (let i = 0; i < pts.length; i++) {
-        const a = pts[i], b = pts[(i + 1) % pts.length];
-        const matched = gpPlots.some((other, oi) => {
-          if (oi === pi) return false;
-          return other.points.some((oa, j) => {
-            const ob = other.points[(j + 1) % other.points.length];
-            return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
-          });
-        });
-        if (matched) continue;
-        const id = `auto-remainder-${plot.number}-${i}`;
-        if (meta.dismissedAutoIds.includes(id) || meta.boundaryLabels.some((tt) => tt.id === id)) continue;
-        const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
-        const dE = b.east - a.east, dN = b.north - a.north;
-        const segLen = Math.hypot(dE, dN) || 1;
-        let pE = -dN / segLen, pN = dE / segLen;
-        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
-        const stub = Math.min(20, Math.max(4, segLen * 0.15));
-        out.push({ id, east: mE + pE * stub, north: mN + pN * stub, text: `REMAINDER OF CADASTRE ${meta.parentCadastre || "—"}` });
-      }
-    }
-    return out;
-  }, [gpPlots, meta.dismissedAutoIds, meta.boundaryLabels, meta.parentCadastre]);
-  const displayBoundaryLabels = useMemo(() => [...meta.boundaryLabels, ...autoBoundaryLabels], [meta.boundaryLabels, autoBoundaryLabels]);
+  // "REMAINDER OF CADASTRE" boundary labels are placed manually only (client
+  // req 2026-08-28: "delete this remainder of Cadastre. I will add it
+  // manually with Add text option") — the earlier auto-suggestion (one
+  // guessed for every unmatched plot edge) produced too much clutter/false
+  // positives, since an unmatched edge is just as likely to be road-facing
+  // as remainder-facing and there's no data to tell them apart. `meta.
+  // boundaryLabels` is now the only source, same manual "road" kind Add
+  // Text tool the user already places road-width labels with.
+  const displayBoundaryLabels = meta.boundaryLabels;
 
   /** Screen-space rotation so a label runs along its edge (same convention
    *  as CogoWorkspace.tsx's segLabelAngle — sy is north-up, so the north
@@ -1111,7 +1069,6 @@ export function GeneralPlanView() {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} placeholder="e.g. ALL: 12MM IRON PEG" /></Field>
           <Field label="Ped way"><Input value={meta.pedWay} onChange={set("pedWay")} placeholder="e.g. All: 3m" /></Field>
-          <Field label="Parent cadastre (for REMAINDER OF CADASTRE labels)"><Input value={meta.parentCadastre} onChange={set("parentCadastre")} placeholder="e.g. 243" /></Field>
         </div>
         <div className="mt-3">
           <div className="mb-1 text-xs font-medium text-slate-500">Splay information (corner → distance; untick isn't needed, just leave blank rows out)</div>
