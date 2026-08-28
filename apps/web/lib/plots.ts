@@ -89,6 +89,65 @@ export function sameWorldPoint(
   return Math.abs(a.east - b.east) < tol && Math.abs(a.north - b.north) < tol;
 }
 
+export interface DetectedLot {
+  points: PlotPoint[];
+}
+
+/** Reconstructs individual rectangular lot boundaries from a flat, ungrouped
+ *  point cloud (client req 2026-08-28) — real survey exports often list every
+ *  beacon of a whole grid subdivision as one flat "name,east,north" file with
+ *  no lot-grouping column at all. For a rectilinear grid layout (every lot an
+ *  axis-aligned rectangle, adjoining lots sharing corner beacons) that alone
+ *  is enough to reconstruct each lot on its own: a point's nearest same-row
+ *  neighbour to the east and nearest same-column neighbour to the north
+ *  define two edges of "its" lot; the fourth corner only closes the rectangle
+ *  if it is ALSO the nearest neighbour of those two points back toward this
+ *  one — that check rejects a coincidentally-matching but non-elementary
+ *  rectangle (e.g. one that actually spans an un-subdivided gap because a
+ *  beacon in between is missing). Points that never anchor a rectangle this
+ *  way (outer parent-boundary beacons, block corners, splayed/chamfered
+ *  corner lots) are simply left out — `usedPointCount` tells the caller how
+ *  many of `points` were consumed, so the rest can be reported as needing
+ *  manual placement with the Polygon tool. */
+export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: DetectedLot[]; usedPointCount: number } {
+  const pts = points.filter((p) => Number.isFinite(p.east) && Number.isFinite(p.north));
+
+  function nearest(from: PlotPoint, axis: "east" | "north", dir: 1 | -1): PlotPoint | null {
+    const other = axis === "east" ? "north" : "east";
+    let best: PlotPoint | null = null;
+    let bestDelta = Infinity;
+    for (const q of pts) {
+      if (q === from) continue;
+      if (Math.abs(q[other] - from[other]) > tol) continue;
+      const delta = (q[axis] - from[axis]) * dir;
+      if (delta <= tol) continue; // wrong side, or effectively the same point
+      if (delta < bestDelta) { bestDelta = delta; best = q; }
+    }
+    return best;
+  }
+
+  const lots: DetectedLot[] = [];
+  const used = new Set<PlotPoint>();
+
+  for (const p of pts) {
+    const right = nearest(p, "east", 1);
+    const up = nearest(p, "north", 1);
+    if (!right || !up) continue;
+    const corner = pts.find(
+      (q) => q !== p && q !== right && q !== up && Math.abs(q.east - right.east) <= tol && Math.abs(q.north - up.north) <= tol
+    );
+    if (!corner) continue;
+    // Elementary-face check: walking back from the corner must land on
+    // exactly these same two edge points, not skip past a missing beacon.
+    if (nearest(corner, "east", -1) !== up || nearest(corner, "north", -1) !== right) continue;
+
+    lots.push({ points: [p, right, corner, up] });
+    used.add(p); used.add(right); used.add(corner); used.add(up);
+  }
+
+  return { lots, usedPointCount: used.size };
+}
+
 export interface BlockCorner {
   id: string;
   east: number;

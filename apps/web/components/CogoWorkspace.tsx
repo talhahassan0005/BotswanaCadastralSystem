@@ -16,6 +16,7 @@ import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore, type CogoPlot } from "@/lib/store";
+import { detectRectangularLots } from "@/lib/plots";
 import type { CogoLeg, CogoResult } from "@/lib/types";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
@@ -101,6 +102,7 @@ export function CogoWorkspace({
   const [activeGroup, setActiveGroup] = useState<ToolGroupId>("point");
   const svgRef = useRef<SVGSVGElement>(null);
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
+  const [autoDetectStart, setAutoDetectStart] = useState("");
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
   // Display-only rotation (client req 2026-08-28: "add a rotator... 360
   // takay rotate kar sako", like an image editor's rotate control) lives in
@@ -968,6 +970,55 @@ export function CogoWorkspace({
     setCogoPlots([...cogoPlots.filter((p) => !importedLotSet.has(p.number)), ...newPlots]);
     frameOn(newPlots.flatMap((p) => p.fig.points.map((pt) => ({ id: `bulk-${p.number}-${pt.name}`, name: pt.name ?? "", east: pt.east, north: pt.north }))));
     return { imported: newPlots.length, skipped };
+  }
+  /** Auto-builds numbered plots straight from whatever points are currently
+   *  on the canvas (client req 2026-08-28) — real client data is often just a
+   *  flat "name, east, north" beacon list with NO lot-grouping column at all
+   *  (unlike Bulk Import's CSV format above), too many points to draw one
+   *  Polygon-tool click at a time for a real subdivision. Only works for a
+   *  rectilinear grid layout (every lot an axis-aligned rectangle) — see
+   *  `detectRectangularLots` in lib/plots.ts for the reconstruction logic and
+   *  its limits. Detected lots are numbered sequentially from `startNumber`
+   *  in reading order (top row first, left to right within a row); anything
+   *  left over (outer parent-boundary beacons, block corners, splayed corner
+   *  lots) isn't touched here — draw those few by hand with Polygon Tools. */
+  function autoDetectLots(startNumber: string) {
+    const start = parseInt(startNumber, 10);
+    if (!Number.isFinite(start)) { window.alert("Enter a valid starting lot number first."); return; }
+    const source = visible.map((p) => ({ name: p.name || null, east: p.east, north: p.north }));
+    const { lots, usedPointCount } = detectRectangularLots(source);
+    if (!lots.length) {
+      window.alert("No rectangular lots could be detected in the points currently on the canvas.");
+      return;
+    }
+    const ordered = [...lots].sort((a, b) => {
+      const aN = Math.max(...a.points.map((p) => p.north));
+      const bN = Math.max(...b.points.map((p) => p.north));
+      if (Math.abs(aN - bN) > 0.5) return bN - aN;
+      const aE = Math.min(...a.points.map((p) => p.east));
+      const bE = Math.min(...b.points.map((p) => p.east));
+      return aE - bE;
+    });
+    const newPlots: CogoPlot[] = ordered.map((lot, i) => ({ number: String(start + i), fig: buildFigureFromPoints(lot.points) }));
+    const importedSet = new Set(newPlots.map((p) => p.number));
+    setCogoPlots([...cogoPlots.filter((p) => !importedSet.has(p.number)), ...newPlots]);
+    const leftover = source.length - usedPointCount;
+    // Flag lots much bigger than the typical detected lot — the elementary-
+    // rectangle check rejects most false positives, but a beacon that's
+    // missing or mis-tagged can still make it silently swallow two real lots
+    // into one oversized rectangle. Report these instead of trusting them
+    // blindly, so the user knows exactly which plot numbers to re-check.
+    const areasSorted = [...newPlots].sort((a, b) => a.fig.area_m2 - b.fig.area_m2);
+    const medianArea = areasSorted[Math.floor(areasSorted.length / 2)].fig.area_m2;
+    const suspicious = newPlots.filter((p) => p.fig.area_m2 > medianArea * 3);
+    window.alert(
+      `Detected ${newPlots.length} rectangular lots, numbered ${start}-${start + newPlots.length - 1}.\n` +
+      `${leftover} point(s) were not part of any detected rectangle (outer boundary, block corners, or irregular/splayed corner lots) — add those manually with Polygon Tools.\n` +
+      (suspicious.length
+        ? `Double-check these — much bigger than the typical lot here, may have merged two real lots: ${suspicious.map((p) => p.number).join(", ")}.\n`
+        : "") +
+      `Rename any individual plot by re-drawing it with Polygon Tools and entering the correct number.`
+    );
   }
   function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
     const [wx, wy] = toWorld(sx, sy);
@@ -2677,6 +2728,26 @@ export function CogoWorkspace({
               title='CSV columns: lot, name, east, north — rows sharing a "lot" become one plot'
             >
               Bulk Import Plots (CSV)
+            </button>
+            {/* Auto-detect rectangular lots straight from whatever points are
+                on the canvas (client req 2026-08-28) — for a raw flat beacon
+                list (no lot-grouping column at all, unlike the CSV above)
+                that's too large to draw one Polygon-tool click at a time. */}
+            <input
+              type="text"
+              inputMode="numeric"
+              value={autoDetectStart}
+              onChange={(e) => setAutoDetectStart(e.target.value)}
+              placeholder="Start lot #"
+              className="w-20 rounded border border-slate-200 px-2 py-0.5 text-slate-600"
+            />
+            <button
+              type="button"
+              onClick={() => autoDetectLots(autoDetectStart)}
+              className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
+              title="Builds one numbered plot per rectangle found among the points currently on the canvas (works for a rectilinear grid subdivision only)"
+            >
+              Auto-Detect Rectangular Lots
             </button>
             {draftTool === "addpoint" && !coordEntry && (
               <button type="button" onClick={coordEntryOpen} className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
