@@ -722,13 +722,13 @@ export function GeneralPlanView() {
       <rect x={regX} y={30} width={regW} height={133} fill="none" stroke="#0f172a" strokeWidth={0.6} />
       <text x={regX + regW / 2} y={42} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
       <line x1={regX} y1={47} x2={regX + regW} y2={47} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={60} fontSize={8} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+      <text x={regX + 6} y={61} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
       <line x1={regX} y1={66} x2={regX + regW} y2={66} stroke="#0f172a" strokeWidth={0.4} />
       <text x={regX + 6} y={80} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
       <text x={regX + 6} y={108} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
       <line x1={regX} y1={116} x2={regX + regW} y2={116} stroke="#0f172a" strokeWidth={0.4} />
       <text x={regX + 6} y={129} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
-      <text x={regX + regW - 6} y={129} textAnchor="end" fontSize={8} fill="#334155">{meta.surveyedIn || "—"}</text>
+      <text x={regX + regW - 6} y={129} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
       <text x={regX + 6} y={142} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
       <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
       <text x={regX + regW - 6} y={153} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
