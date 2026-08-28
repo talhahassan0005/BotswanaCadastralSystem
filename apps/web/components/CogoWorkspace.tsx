@@ -15,7 +15,7 @@ import { forward, inverse, polygonArea, formatArea } from "@/lib/server/geometry
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
-import { useStore } from "@/lib/store";
+import { useStore, type CogoPlot } from "@/lib/store";
 import type { CogoLeg, CogoResult } from "@/lib/types";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
@@ -100,6 +100,7 @@ export function CogoWorkspace({
   // of a wall of icons (client req 2026-08-16).
   const [activeGroup, setActiveGroup] = useState<ToolGroupId>("point");
   const svgRef = useRef<SVGSVGElement>(null);
+  const bulkImportInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
   // Display-only rotation (client req 2026-08-28: "add a rotator... 360
   // takay rotate kar sako", like an image editor's rotate control) lives in
@@ -923,6 +924,50 @@ export function CogoWorkspace({
     if (!n || pts.length < 3) return;
     const fig = buildFigureFromPoints(pts);
     setCogoPlots([...cogoPlots.filter((p) => p.number !== n), { number: n, fig }]);
+  }
+  /** Bulk-creates many numbered plots at once from a CSV (client req
+   *  2026-08-28: no format anywhere populates `cogoPlots` in bulk — every
+   *  plot otherwise needs its own manual draw-then-number pass through the
+   *  UI, which doesn't scale to a real subdivision with dozens/hundreds of
+   *  lots). CSV columns: lot, name, east, north — rows sharing a `lot`
+   *  value become one plot's boundary ring, in the order they appear.
+   *  Computes the WHOLE next cogoPlots array in one pass and calls
+   *  setCogoPlots exactly once — looping savePlotNumber (which reads
+   *  `cogoPlots` from this render's closure) would have each iteration
+   *  overwrite the previous one's update with stale state instead of
+   *  accumulating, since React batches these into one re-render. */
+  function bulkImportPlots(csvText: string): { imported: number; skipped: number; error?: string } {
+    const lines = csvText.split(/\r\n|\r|\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return { imported: 0, skipped: 0, error: "Empty file" };
+    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const lotIdx = header.indexOf("lot");
+    const nameIdx = header.indexOf("name");
+    const eastIdx = header.indexOf("east");
+    const northIdx = header.indexOf("north");
+    if (lotIdx === -1 || eastIdx === -1 || northIdx === -1) {
+      return { imported: 0, skipped: 0, error: 'CSV must have "lot", "east", "north" columns (and optionally "name")' };
+    }
+    const byLot = new Map<string, { name: string | null; east: number; north: number }[]>();
+    let skipped = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",").map((c) => c.trim());
+      const lot = cols[lotIdx];
+      const east = Number(cols[eastIdx]);
+      const north = Number(cols[northIdx]);
+      if (!lot || !Number.isFinite(east) || !Number.isFinite(north)) { skipped++; continue; }
+      if (!byLot.has(lot)) byLot.set(lot, []);
+      byLot.get(lot)!.push({ name: (nameIdx !== -1 && cols[nameIdx]) || null, east, north });
+    }
+    const newPlots: CogoPlot[] = [];
+    for (const [lot, pts] of byLot) {
+      if (pts.length < 3) { skipped += pts.length; continue; }
+      newPlots.push({ number: lot, fig: buildFigureFromPoints(pts) });
+    }
+    if (!newPlots.length) return { imported: 0, skipped, error: "No valid plots (need >=3 points per lot)" };
+    const importedLotSet = new Set(newPlots.map((p) => p.number));
+    setCogoPlots([...cogoPlots.filter((p) => !importedLotSet.has(p.number)), ...newPlots]);
+    frameOn(newPlots.flatMap((p) => p.fig.points.map((pt) => ({ id: `bulk-${p.number}-${pt.name}`, name: pt.name ?? "", east: pt.east, north: pt.north }))));
+    return { imported: newPlots.length, skipped };
   }
   function diagramPickAt(sx: number, sy: number, screenX: number, screenY: number) {
     const [wx, wy] = toWorld(sx, sy);
@@ -2602,6 +2647,37 @@ export function CogoWorkspace({
                 ? "Click a line, then a side, then type the distance"
                 : "Click a point to select · Drag to pan · Scroll to zoom"}
             </span>
+            {/* Bulk-import many numbered plots at once from a CSV (client req
+                2026-08-28) — "lot,name,east,north" rows, grouped by lot into
+                one polygon each, instead of drawing/numbering each one by
+                hand. */}
+            <input
+              ref={bulkImportInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                file.text().then((text) => {
+                  const result = bulkImportPlots(text);
+                  if (result.error) {
+                    alert(`Bulk import failed: ${result.error}`);
+                  } else {
+                    alert(`Imported ${result.imported} plot(s)${result.skipped ? `, skipped ${result.skipped} invalid row(s)` : ""}.`);
+                  }
+                });
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => bulkImportInputRef.current?.click()}
+              className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
+              title='CSV columns: lot, name, east, north — rows sharing a "lot" become one plot'
+            >
+              Bulk Import Plots (CSV)
+            </button>
             {draftTool === "addpoint" && !coordEntry && (
               <button type="button" onClick={coordEntryOpen} className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
                 By Coordinates
