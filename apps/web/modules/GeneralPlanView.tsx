@@ -402,11 +402,11 @@ export function GeneralPlanView() {
 
     text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN OF ${meta.name}`, 19, "middle");
     text(W / 2, 54, `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`, 11, "middle");
-    text(regX + regW, 15, `GC-${meta.gcNo || "—"}`, 9, "end");
-    text(regX + 6, 48, `G.P. No: ${meta.gpNo || "—"}`, 8);
-    text(regX + 6, 60, `DSM No: ${meta.dsmNo || "—"}`, 8);
-    text(regX + 6, 120, `Surveyed in ${meta.surveyedIn || "—"}`, 8);
-    text(regX + 6, 132, meta.surveyor || "—", 8);
+    text(regX + regW, 18, `GC-${meta.gcNo || "—"}`, 9, "end");
+    text(regX + 6, 58, `G.P. No: ${meta.gpNo || "—"}`, 8);
+    text(regX + 6, 70, `DSM No: ${meta.dsmNo || "—"}`, 8);
+    text(regX + 6, 130, `Surveyed in ${meta.surveyedIn || "—"}`, 8);
+    text(regX + 6, 142, meta.surveyor || "—", 8);
     text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
 
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
@@ -456,12 +456,38 @@ export function GeneralPlanView() {
     w.document.close();
   }
 
+  // Outer page frame (client req 2026-08-28, GC-122 reference audit): the
+  // reference has a real margin between the page edge and the drawn border
+  // — grid tick marks and "GC-122"/"SR No" live OUT THERE, not inside the
+  // border. The old frame sat only 6 units in from the page edge, leaving no
+  // room for any of that, so GC-No/SR-No were accidentally rendering INSIDE
+  // the border instead of outside it like the reference. FRAME_R/FRAME_B are
+  // the border's right/bottom edges.
+  const FRAME_M = 24, FRAME_X = FRAME_M, FRAME_Y = FRAME_M, FRAME_R = W - FRAME_M, FRAME_B = H - FRAME_M;
+  const TICK = 7; // grid-tick length, projecting outward from the border into the margin
+  /** One row of evenly-spaced tick marks along a border edge, projecting
+   *  outward (into the margin) rather than inward onto the drawing. */
+  function edgeTicks(fixed: number, from: number, to: number, count: number, horizontal: boolean, out: number) {
+    const lines = [];
+    for (let i = 0; i <= count; i++) {
+      const t = from + ((to - from) * i) / count;
+      lines.push(
+        horizontal
+          ? <line key={i} x1={t} y1={fixed} x2={t} y2={fixed + out} stroke="#0f172a" strokeWidth={0.6} />
+          : <line key={i} x1={fixed} y1={t} x2={fixed + out} y2={t} stroke="#0f172a" strokeWidth={0.6} />
+      );
+    }
+    return lines;
+  }
+
   // Top-right registration block (client req 2026-08-27, matching the GC-122
   // reference sheet exactly): GC-No, SHEET No, G.P./DSM No, a real
   // Approved/Director-of-Surveys signature block, and Surveyed-in/surveyor
   // details — replaces the old bare "Sheet N of M" caption and the informal
   // Approved box that used to sit at the bottom of the parcel-schedule panel.
-  const regX = 796, regW = 190;
+  // Sized to sit inside the wider frame above (right edge 6 units short of
+  // FRAME_R, client req 2026-08-28).
+  const regX = 790, regW = 180;
 
   // Right-side reference panel (client req 2026-08-27, §2e): Sheet Index,
   // Beacon Description, Splay Information, Ped Way — sits between the
@@ -469,7 +495,7 @@ export function GeneralPlanView() {
   // Sheet Index is a single trivial entry for now (real multi-sheet splitting
   // is a later phase); the numeric lot range is derived straight from the
   // numbered COGO plots when their numbers are numeric.
-  const panelX = 690, panelTop = 150;
+  const panelX = 690, panelTop = 160; // registration block above now ends at y=156, not 146
   // One line per LAYOUT sheet (client req 2026-08-27, multi-sheet split) —
   // shown identically on every sheet so a reader can find any lot's sheet
   // from any page, matching the reference's own Sheet Index panel.
@@ -527,24 +553,37 @@ export function GeneralPlanView() {
   );
   const titleBlock = (no: number, label: string) => (
     <>
-      <rect x={6} y={6} width={W - 12} height={H - 12} fill="none" stroke="#0f172a" strokeWidth={1.5} />
+      {/* Grid tick marks along the border, projecting OUTWARD into the page
+          margin (client req 2026-08-28: "check grid marks on frame"). */}
+      {edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, -TICK)}
+      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, TICK)}
+      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, -TICK)}
+      {edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, TICK)}
+      <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">{sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}</text>
       <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fill="#334155">{label}{meta.location ? ` — ${meta.location}` : ""}</text>
 
-      <text x={regX + regW} y={15} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-      <rect x={regX} y={20} width={regW} height={126} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-      <text x={regX + regW / 2} y={32} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
-      <line x1={regX} y1={37} x2={regX + regW} y2={37} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={48} fontSize={8} fill="#334155">G.P. No: {meta.gpNo || "—"}</text>
-      <text x={regX + 6} y={60} fontSize={8} fill="#334155">DSM No: {meta.dsmNo || "—"}</text>
-      <text x={regX + regW / 2} y={72} textAnchor="middle" fontSize={8.5}>Approved</text>
-      <line x1={regX + 16} y1={90} x2={regX + regW - 14} y2={90} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + regW / 2} y={100} textAnchor="middle" fontSize={7.5} fill="#334155">Director of Surveys and Mapping</text>
-      <line x1={regX} y1={108} x2={regX + regW} y2={108} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={120} fontSize={8} fill="#334155">Surveyed in {meta.surveyedIn || "—"}</text>
-      <text x={regX + 6} y={132} fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-      <text x={regX + regW - 6} y={132} textAnchor="end" fontSize={7} fill="#64748b">By me · Land Surveyor</text>
+      {/* "GC-No" sits OUTSIDE the border, in the top margin (client req
+          2026-08-28: "check what's within the frame and what is outside") —
+          everything below (SHEET No/DSM No/Approved/Director/Surveyed in)
+          stays INSIDE it. */}
+      <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+      <rect x={regX} y={30} width={regW} height={126} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+      <text x={regX + regW / 2} y={42} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
+      <line x1={regX} y1={47} x2={regX + regW} y2={47} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={58} fontSize={8} fill="#334155">G.P. No: {meta.gpNo || "—"}</text>
+      <text x={regX + 6} y={70} fontSize={8} fill="#334155">DSM No: {meta.dsmNo || "—"}</text>
+      <text x={regX + regW / 2} y={82} textAnchor="middle" fontSize={8.5}>Approved</text>
+      <line x1={regX + 16} y1={100} x2={regX + regW - 14} y2={100} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + regW / 2} y={110} textAnchor="middle" fontSize={7.5} fill="#334155">Director of Surveys and Mapping</text>
+      <line x1={regX} y1={118} x2={regX + regW} y2={118} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={130} fontSize={8} fill="#334155">Surveyed in {meta.surveyedIn || "—"}</text>
+      <text x={regX + 6} y={142} fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+      <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={7} fill="#64748b">By me · Land Surveyor</text>
 
+      {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
+          outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
+          margin is wide enough to hold it. */}
       <text x={W - 20} y={H - 16} textAnchor="end" fontSize={9} fill="#64748b">SR No: {meta.srNo || "—"}</text>
     </>
   );
