@@ -1124,24 +1124,25 @@ export function CogoWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultBoundary]);
 
-  // Botswana's Lo (Gauss-Conform) grid is South-positive/West-positive on X/Y
-  // (see lib/server/crs.ts's own loForward/loInverse, which already negate
-  // both to reach true easting/northing for the GIS Map). Imported Lo
-  // coordinates land in `north` unmodified though, so plotting them with the
-  // usual north-up screen convention mirrors the shape top-to-bottom versus
-  // any reference tool that plots true north up (client req 2026-08-27,
-  // confirmed empirically: only the vertical arrangement was flipped, not
-  // left/right). Mirrored here in the screen transform only — the
-  // coordinate values themselves, and every table/export that shows them,
-  // are untouched.
-  const isLoSystem = /^Lo\s*\d/i.test(config.coordinateSystem);
+  // (Reverted 2026-08-28 — client comparison against InfoMate/Compuplot,
+  // same project's own coordinate list, showed the flip below was WRONG: the
+  // east/north values already plot correctly with the plain north-up screen
+  // convention, no sign correction needed. The removed flip was added
+  // 2026-08-27 on the theory that raw Lo-grid coordinates land in `north`
+  // unmodified and need mirroring to match a north-up reference — that
+  // theory doesn't hold for COGO-computed traverses: `forward()`/`inverse()`
+  // in lib/server/geometry.ts already use the standard clockwise-from-north
+  // convention (east += dist*sin(bearing), north += dist*cos(bearing)), so
+  // `east`/`north` here are true easting/northing regardless of the
+  // project's CRS label, and the extra flip just mirrored an already-correct
+  // shape.)
   const toScreen = (e: number, n: number): [number, number] => {
     const y = H / 2 - (n - view.cy) * view.zoom;
-    return [(e - view.cx) * view.zoom + W / 2, isLoSystem ? H - y : y];
+    return [(e - view.cx) * view.zoom + W / 2, y];
   };
   const toWorld = (sx: number, sy: number): [number, number] => [
     view.cx + (sx - W / 2) / view.zoom,
-    view.cy - ((isLoSystem ? H - sy : sy) - H / 2) / view.zoom,
+    view.cy - (sy - H / 2) / view.zoom,
   ];
   function eventToVb(ev: RPointerEvent | RWheelEvent): [number, number] {
     const r = svgRef.current!.getBoundingClientRect();
@@ -1156,14 +1157,13 @@ export function CogoWorkspace({
   /** On-screen rotation for a segment's label so it runs along the segment
    *  itself (client req 2026-08-26) instead of always sitting flat/
    *  horizontal. Screen Y is flipped relative to north, so the north delta's
-   *  sign flips too (and flips back again for a Lo-system project, which
-   *  toScreen above mirrors a second time); clamped to ±90° so the text
-   *  reads upright regardless of which endpoint is "a" and which is "b".
-   *  Depends only on the direction between the two points, not on pan/zoom,
-   *  so it's safe to compute once at creation time. */
+   *  sign flips too; clamped to ±90° so the text reads upright regardless of
+   *  which endpoint is "a" and which is "b". Depends only on the direction
+   *  between the two points, not on pan/zoom, so it's safe to compute once
+   *  at creation time. */
   function segLabelAngle(a: { east: number; north: number }, b: { east: number; north: number }): number {
     const dN = b.north - a.north;
-    let deg = (Math.atan2(isLoSystem ? dN : -dN, b.east - a.east) * 180) / Math.PI;
+    let deg = (Math.atan2(-dN, b.east - a.east) * 180) / Math.PI;
     if (deg > 90) deg -= 180;
     if (deg < -90) deg += 180;
     return deg;
