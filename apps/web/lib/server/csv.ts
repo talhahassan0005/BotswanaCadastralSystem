@@ -69,17 +69,27 @@ function parseNum(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Strip a single layer of matching quotes CAD/Excel exports wrap cells in
+ *  (e.g. `"L11"` -> `L11`) so beacon IDs don't end up with literal quote marks. */
+function unquote(cell: string): string {
+  const t = cell.trim();
+  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === "'" && t[t.length - 1] === "'"))) {
+    return t.slice(1, -1).trim();
+  }
+  return t;
+}
+
 function splitLine(line: string): string[] {
   // Delimiter precedence: an explicit ';' or tab wins over comma, so European
   // files ("A;93205,88;2464520,65" — semicolon delimiter + decimal comma) split
   // correctly instead of breaking on the decimal comma. Comma is the fallback
   // delimiter only when no ';'/tab is present.
-  if (line.includes(";")) return line.split(";").map((c) => c.trim());
-  if (line.includes("\t")) return line.split("\t").map((c) => c.trim());
+  if (line.includes(";")) return line.split(";").map((c) => unquote(c));
+  if (line.includes("\t")) return line.split("\t").map((c) => unquote(c));
   if (line.includes(",") && line.split(",").length >= line.split(/\s+/).length) {
-    return line.split(",").map((c) => c.trim());
+    return line.split(",").map((c) => unquote(c));
   }
-  return line.split(/\s{2,}|\s/).map((c) => c.trim()).filter(Boolean);
+  return line.split(/\s{2,}|\s/).map((c) => unquote(c)).filter(Boolean);
 }
 
 /** Heuristic: does this text look like a binary / non-text file?
