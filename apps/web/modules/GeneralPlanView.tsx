@@ -67,6 +67,7 @@ export function GeneralPlanView() {
     gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
+    titleOffset: { dx: number; dy: number; scale?: number };
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -93,6 +94,11 @@ export function GeneralPlanView() {
     // false-positive clutter, since there's no data to tell a road-facing
     // edge apart from an actual remainder-facing one).
     boundaryLabels: [] as ManualText[],
+    // Select/move/resize for the title heading (client req 2026-08-28: "ye
+    // client khud drag kar ke kahi bi place kar sake ur resize bi kar
+    // sake") — same dx/dy/scale-offset pattern as WorkingPlan.tsx's own
+    // title-block treatment.
+    titleOffset: { dx: 0, dy: 0 } as { dx: number; dy: number; scale?: number },
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -238,6 +244,52 @@ export function GeneralPlanView() {
   const [draggingLabel, setDraggingLabel] = useState<{ id: string; kind: "road" | "boundary" } | null>(null);
   const dragMovedRef = useRef(false);
 
+  // Select/move/resize for the title heading (client req 2026-08-28: "ye
+  // client khud drag kar ke kahi bi place kar sake ur resize bi kar sake") —
+  // same dx/dy/scale-offset pattern WorkingPlan.tsx already uses for its own
+  // title block, tracked here directly since GeneralPlanView draws its
+  // title inline rather than through a child component's props.
+  const [titleSelected, setTitleSelected] = useState(false);
+  const [draggingTitle, setDraggingTitle] = useState<{ startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
+  const titleDragMovedRef = useRef(false);
+  function handleTitleClick(e: ReactMouseEvent<SVGElement>) {
+    e.stopPropagation();
+    if (titleDragMovedRef.current) { titleDragMovedRef.current = false; return; }
+    setTitleSelected((s) => !s);
+  }
+  function handleTitlePointerDown(e: ReactPointerEvent<SVGElement>) {
+    if (!titleSelected) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    setDraggingTitle({ startSx: p.x, startSy: p.y, origDx: meta.titleOffset.dx, origDy: meta.titleOffset.dy });
+  }
+  function handleTitlePointerMove(e: ReactPointerEvent<SVGElement>) {
+    if (!draggingTitle) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingTitle.startSx, dy = p.y - draggingTitle.startSy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) titleDragMovedRef.current = true;
+    setMeta((m) => ({ ...m, titleOffset: { ...m.titleOffset, dx: draggingTitle.origDx + dx, dy: draggingTitle.origDy + dy } }));
+  }
+  function handleTitlePointerUp() {
+    setDraggingTitle(null);
+  }
+  function cancelTitleDrag() {
+    if (!draggingTitle) return;
+    setMeta((m) => ({ ...m, titleOffset: { ...m.titleOffset, dx: draggingTitle.origDx, dy: draggingTitle.origDy } }));
+    setDraggingTitle(null);
+  }
+  function handleTitleResize(delta: number) {
+    setMeta((m) => ({ ...m, titleOffset: { ...m.titleOffset, scale: Math.max(0.4, Math.min(3, (m.titleOffset.scale ?? 1) + delta)) } }));
+  }
+  useEffect(() => {
+    if (!draggingTitle) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelTitleDrag(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingTitle]);
+
   useEffect(() => {
     if (!textPrompt && !addingRoadLabel) return;
     function onKey(e: KeyboardEvent) {
@@ -267,6 +319,7 @@ export function GeneralPlanView() {
       return;
     }
     setSelectedLabel(null);
+    setTitleSelected(false);
   }
   function labelArray(kind: "road" | "boundary") {
     return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
@@ -664,8 +717,47 @@ export function GeneralPlanView() {
       {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK)}
       {edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
-      <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">{sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}</text>
-      <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fill="#334155">{label}{meta.location ? ` — ${meta.location}` : ""}</text>
+      {/* Title heading — select/move/resize (client req 2026-08-28: "ye
+          client khud drag kar ke kahi bi place kar sake ur resize bi kar
+          sake"), same offset pattern as WorkingPlan.tsx's own title block. */}
+      {(() => {
+        const ts = meta.titleOffset.scale ?? 1;
+        const tBoxTop = 18, tBoxBottom = 62, tBoxHalfW = 200;
+        return (
+          <g
+            transform={`translate(${meta.titleOffset.dx},${meta.titleOffset.dy})`}
+            style={{ cursor: titleSelected ? "move" : "pointer" }}
+            onClick={handleTitleClick}
+            onPointerDown={handleTitlePointerDown}
+            onPointerMove={handleTitlePointerMove}
+            onPointerUp={handleTitlePointerUp}
+          >
+            <text x={W / 2} y={34} textAnchor="middle" fontSize={19 * ts} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
+              {sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}
+            </text>
+            <text x={W / 2} y={54} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+              {label}{meta.location ? ` — ${meta.location}` : ""}
+            </text>
+            {titleSelected && (
+              <>
+                <rect
+                  x={W / 2 - tBoxHalfW} y={tBoxTop} width={tBoxHalfW * 2} height={tBoxBottom - tBoxTop}
+                  fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                  style={{ pointerEvents: "none" }}
+                />
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); handleTitleResize(0.1); }}>
+                  <circle cx={W / 2 + tBoxHalfW + 12} cy={tBoxTop + 14} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={W / 2 + tBoxHalfW + 12} y={tBoxTop + 17} textAnchor="middle" fontSize={10} fill="#dc2626">+</text>
+                </g>
+                <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); handleTitleResize(-0.1); }}>
+                  <circle cx={W / 2 + tBoxHalfW + 12} cy={tBoxTop + 32} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+                  <text x={W / 2 + tBoxHalfW + 12} y={tBoxTop + 35} textAnchor="middle" fontSize={10} fill="#dc2626">−</text>
+                </g>
+              </>
+            )}
+          </g>
+        );
+      })()}
 
       {/* "GC-No" sits OUTSIDE the border, in the top margin (client req
           2026-08-28: "check what's within the frame and what is outside") —
