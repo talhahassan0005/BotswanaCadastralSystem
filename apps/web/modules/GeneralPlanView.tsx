@@ -654,12 +654,15 @@ export function GeneralPlanView() {
   );
   const titleBlock = (no: number, label: string) => (
     <>
-      {/* Grid tick marks along the border, projecting OUTWARD into the page
-          margin (client req 2026-08-28: "check grid marks on frame"). */}
-      {edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, -TICK)}
-      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, TICK)}
-      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, -TICK)}
-      {edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, TICK)}
+      {/* Grid tick marks along the border, projecting INWARD into the frame
+          (client req 2026-08-28: "check grid marks on frame", then "Grids
+          must be inside the frame and be visible" — the first version had
+          these pointing outward into the page margin, which the client
+          confirmed is wrong). */}
+      {edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK)}
+      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK)}
+      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK)}
+      {edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       <text x={W / 2} y={34} textAnchor="middle" fontSize={19} fontWeight={700} fill="#0f172a">{sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}</text>
       <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fill="#334155">{label}{meta.location ? ` — ${meta.location}` : ""}</text>
