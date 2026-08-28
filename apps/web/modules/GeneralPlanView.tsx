@@ -6,7 +6,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, findBlockCorners, findOuterBoundary, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
-import { fmtSystem } from "@/lib/diagramLayout";
+import { fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
@@ -331,6 +331,69 @@ export function GeneralPlanView() {
   }, [gpPlots, meta.dismissedAutoIds, meta.boundaryLabels, meta.parentCadastre]);
   const displayBoundaryLabels = useMemo(() => [...meta.boundaryLabels, ...autoBoundaryLabels], [meta.boundaryLabels, autoBoundaryLabels]);
 
+  /** Screen-space rotation so a label runs along its edge (same convention
+   *  as CogoWorkspace.tsx's segLabelAngle — sy is north-up, so the north
+   *  delta's sign flips for screen angle; clamped to ±90° to stay upright
+   *  regardless of which endpoint is "a" and which is "b"). */
+  function edgeLabelAngle(a: { east: number; north: number }, b: { east: number; north: number }): number {
+    let deg = (Math.atan2(-(b.north - a.north), b.east - a.east) * 180) / Math.PI;
+    if (deg > 90) deg -= 180;
+    if (deg < -90) deg += 180;
+    return deg;
+  }
+  interface EdgeDimLabel { id: string; east: number; north: number; angle: number; distance: string; bearing: string }
+  // Distance/bearing labels along each ROAD-FACING edge (client req
+  // 2026-08-28, screenshot: "distance and bearings are placed nicely like
+  // that" — rotated along the edge, distance over bearing, dotted DMS).
+  // Reuses the SAME unmatched-edge detection as the REMAINDER labels above
+  // — an edge with no matching neighbour plot is either road-facing or
+  // backs onto remainder land, and the reference labels both the same way;
+  // a shared internal edge between two adjoining lots is left unlabeled to
+  // avoid clutter (client's own choice among the options offered).
+  // Auto-computed and purely visual — not draggable/editable like the
+  // manual road/boundary labels above. Stores real east/north (like
+  // `autoBoundaryLabels` above), NOT screen coordinates — this covers every
+  // plot across every layout sheet, and only the per-sheet renderer knows
+  // which sheet's own fit-to-bounds transform (`t.sx`/`t.sy`) to project
+  // through, same reasoning as `displayBoundaryLabels`.
+  const edgeDimensionLabels = useMemo<EdgeDimLabel[]>(() => {
+    const out: EdgeDimLabel[] = [];
+    for (let pi = 0; pi < gpPlots.length; pi++) {
+      const plot = gpPlots[pi];
+      const pts = plot.points;
+      if (pts.length < 3) continue;
+      const cE = pts.reduce((a, p) => a + p.east, 0) / pts.length;
+      const cN = pts.reduce((a, p) => a + p.north, 0) / pts.length;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        const matched = gpPlots.some((other, oi) => {
+          if (oi === pi) return false;
+          return other.points.some((oa, j) => {
+            const ob = other.points[(j + 1) % other.points.length];
+            return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
+          });
+        });
+        if (matched) continue;
+        const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+        const dE = b.east - a.east, dN = b.north - a.north;
+        const segLen = Math.hypot(dE, dN) || 1;
+        let pE = -dN / segLen, pN = dE / segLen;
+        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+        const off = Math.min(14, Math.max(3, segLen * 0.08)); // just off the line, matching the reference's tight offset
+        const [brg, dist] = inverse({ east: a.east, north: a.north }, { east: b.east, north: b.north });
+        out.push({
+          id: `dim-${plot.number}-${i}`,
+          east: mE + pE * off,
+          north: mN + pN * off,
+          angle: edgeLabelAngle(a, b),
+          distance: dist.toFixed(2),
+          bearing: toDotted(formatDms(brg)),
+        });
+      }
+    }
+    return out;
+  }, [gpPlots]);
+
   // Block corners (client req 2026-08-27, §2g) — points where 3+ distinct
   // plots' boundaries converge (see findBlockCorners' own comment for why
   // that's the only usable signal without a Road/Block entity in the data
@@ -614,6 +677,7 @@ export function GeneralPlanView() {
       tt.east >= t.bounds.minX - 1 && tt.east <= t.bounds.maxX + 1 && tt.north >= t.bounds.minY - 1 && tt.north <= t.bounds.maxY + 1;
     const sheetRoadLabels = meta.roadLabels.filter(inBounds);
     const sheetBoundaryLabels = displayBoundaryLabels.filter(inBounds);
+    const sheetDimLabels = edgeDimensionLabels.filter((d) => inBounds({ id: d.id, east: d.east, north: d.north, text: "" }));
 
     return (
       <svg
@@ -695,6 +759,15 @@ export function GeneralPlanView() {
           >
             {tt.text}
           </text>
+        ))}
+        {/* Distance/bearing labels along road-facing edges (client req
+            2026-08-28) — auto-computed, not draggable, so no click/pointer
+            handlers unlike the manual labels above. */}
+        {sheetDimLabels.map((d) => (
+          <g key={d.id} transform={`rotate(${d.angle} ${t.sx(d.east)} ${t.sy(d.north)})`}>
+            <text x={t.sx(d.east)} y={t.sy(d.north)} textAnchor="middle" fontSize={7} fill="#334155">{d.distance}</text>
+            <text x={t.sx(d.east)} y={t.sy(d.north) + 9} textAnchor="middle" fontSize={7} fill="#334155">{d.bearing}</text>
+          </g>
         ))}
         <text x={(FX0 + FX1) / 2} y={FY1 + 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
         {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
