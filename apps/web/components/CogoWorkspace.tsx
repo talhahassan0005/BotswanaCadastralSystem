@@ -77,7 +77,7 @@ export function CogoWorkspace({
     closed: boolean;
   } | null;
 }) {
-  const { config, setConfig, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
+  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
   // Restore whatever was drawn here last time (client req 2026-08-23: a
   // polygon/line/point added in this work station must survive a refresh,
   // not need redoing) — read once, synchronously, as each piece of state's
@@ -1230,11 +1230,21 @@ export function CogoWorkspace({
     const now = Date.now();
     const newLines: WLine[] = [];
     const newTexts: WText[] = [];
+    // A bearing/distance label per leg is readable for a normal traverse, but
+    // a computation run over a whole raw multi-lot import produces one per
+    // leg for hundreds of legs — they overlap into an unreadable mass that
+    // buries the geometry underneath (client req 2026-08-30: "diagram mess ki
+    // tarah show ku ho rahi hain"). Past this many legs the labels carry no
+    // usable information anyway (the Adjusted Traverse Table below lists
+    // every one), so only the lines/polygon are drawn.
+    const MAX_SEG_LABELS = 60;
+    const labelLegs = resultBoundary.legs.length <= MAX_SEG_LABELS;
     resultBoundary.legs.forEach((lg, i) => {
       const a = lg.from ? byName.get(lg.from) : null;
       const b = lg.to ? byName.get(lg.to) : null;
       if (!a || !b) return;
       newLines.push({ id: `cogores-line-${now}-${i}`, aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+      if (!labelLegs) return;
       newTexts.push({
         id: `cogores-text-${now}-${i}`,
         text: `${lg.bearing_dms}  ${lg.distance.toFixed(2)}m`,
@@ -2752,14 +2762,11 @@ export function CogoWorkspace({
                 });
               }}
             />
-            <button
-              type="button"
-              onClick={() => bulkImportInputRef.current?.click()}
-              className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
-              title='CSV columns: lot, name, east, north — rows sharing a "lot" become one plot'
-            >
-              Bulk Import Plots (CSV)
-            </button>
+            {/* Bulk Import button hidden (client req 2026-08-30) — Auto-Detect
+                Rectangular Lots covers the real workflow (a raw beacon list
+                with no lot column), and having both side by side was
+                confusing. The importer itself is kept intact for the
+                "lot,name,east,north" CSV path; only the button is hidden. */}
             {/* Auto-detect rectangular lots straight from whatever points are
                 on the canvas (client req 2026-08-28) — for a raw flat beacon
                 list (no lot-grouping column at all, unlike the CSV above)
@@ -2805,58 +2812,15 @@ export function CogoWorkspace({
                 By Coordinates
               </button>
             )}
-            {/* Display rotation (client req 2026-08-28) — a shared,
-                project-wide setting (config.displayRotation), not local view
-                state, so the same rotation also applies in Diagrams/Working
-                Plan/General Plan; never touches the underlying east/north
-                data. */}
-            <span className="flex items-center gap-1.5">
-              <span className="text-slate-400">Rotate</span>
-              <input
-                type="range"
-                min={0}
-                max={360}
-                step={1}
-                value={rotation}
-                onChange={(e) => setConfig({ displayRotation: Number(e.target.value) })}
-                className="w-20 accent-brand"
-                aria-label="Rotate view"
-              />
-              <input
-                type="number"
-                min={0}
-                max={360}
-                value={Math.round(rotation)}
-                onChange={(e) => setConfig({ displayRotation: ((Number(e.target.value) || 0) % 360 + 360) % 360 })}
-                className="w-12 rounded border border-slate-200 px-1 py-0.5 text-right"
-                aria-label="Rotation degrees"
-              />
-              <span className="text-slate-400">°</span>
-              {rotation !== 0 && (
-                <button
-                  type="button"
-                  onClick={() => setConfig({ displayRotation: 0 })}
-                  className="text-slate-400 hover:text-slate-700"
-                  title="Reset rotation"
-                  aria-label="Reset rotation"
-                >
-                  ↺
-                </button>
-              )}
-              {/* Flip (client req 2026-08-28) — rotation alone can never
-                  correct a mirrored shape, so this covers that case; same
-                  shared, persisted, display-only setting as Rotate. */}
-              <button
-                type="button"
-                onClick={() => setConfig({ displayFlip: !flip })}
-                className={`rounded border px-2 py-0.5 ${flip ? "border-brand bg-brand/10 text-brand-dark" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-                title="Mirror the drawing horizontally"
-                aria-label="Flip horizontally"
-                aria-pressed={flip}
-              >
-                ⇋ Flip
-              </button>
-            </span>
+            {/* Rotate slider + Flip button hidden (client req 2026-08-30) —
+                they were added to correct an orientation mismatch that turned
+                out to be a data problem, and the controls only added clutter
+                once the data was right. The shared config.displayRotation /
+                displayFlip values are still read by every view (COGO canvas,
+                Diagrams, Working Plan, General Plan, and all three DXF
+                exports), so anything a project already had set keeps applying
+                — only the controls are hidden. Restore this block to bring
+                them back. */}
             <span className="font-mono">
               {DRAW_TOOLS.includes(draftTool) && draft.length > 0 && cursor
                 ? (() => {
