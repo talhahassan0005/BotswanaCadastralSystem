@@ -981,10 +981,28 @@ export function CogoWorkspace({
    *  its limits. Detected lots are numbered sequentially from `startNumber`
    *  in reading order (top row first, left to right within a row); anything
    *  left over (outer parent-boundary beacons, block corners, splayed corner
-   *  lots) isn't touched here — draw those few by hand with Polygon Tools. */
+   *  lots) isn't touched here — draw those few by hand with Polygon Tools.
+   *  An empty "Starting lot #" field falls back to a sensible default
+   *  (continuing from the highest numbered plot already in the project, or
+   *  1) rather than blocking with an error — client req 2026-08-30: typing
+   *  a number first shouldn't be required just to try the tool, and this
+   *  field was easily confused with the sidebar's unrelated "Starting
+   *  beacon" field. Only genuinely unparseable typed input (not blank) is
+   *  still rejected. */
+  function suggestedNextLotStart(): number {
+    const existing = cogoPlots.map((p) => parseInt(p.number, 10)).filter(Number.isFinite);
+    return existing.length ? Math.max(...existing) + 1 : 1;
+  }
   function autoDetectLots(startNumber: string) {
-    const start = parseInt(startNumber, 10);
-    if (!Number.isFinite(start)) { window.alert("Enter a valid starting lot number first."); return; }
+    const trimmed = startNumber.trim();
+    let start: number;
+    if (!trimmed) {
+      start = suggestedNextLotStart();
+    } else {
+      const parsed = parseInt(trimmed, 10);
+      if (!Number.isFinite(parsed)) { window.alert("That starting lot number isn't valid — enter a whole number, or leave it blank to use a default."); return; }
+      start = parsed;
+    }
     const source = visible.map((p) => ({ name: p.name || null, east: p.east, north: p.north }));
     const { lots, usedPointCount } = detectRectangularLots(source);
     if (!lots.length) {
@@ -2738,8 +2756,9 @@ export function CogoWorkspace({
               inputMode="numeric"
               value={autoDetectStart}
               onChange={(e) => setAutoDetectStart(e.target.value)}
-              placeholder="Start lot #"
-              className="w-20 rounded border border-slate-200 px-2 py-0.5 text-slate-600"
+              placeholder={`Starting lot # (default ${suggestedNextLotStart()})`}
+              title='Numbers the AUTO-DETECTED LOTS below, starting here — unrelated to the "Starting beacon" field in the left sidebar (that one names the traverse). Leave blank to continue from the highest lot number already in this project.'
+              className="w-52 rounded border border-slate-200 px-2 py-0.5 text-slate-600"
             />
             <button
               type="button"
