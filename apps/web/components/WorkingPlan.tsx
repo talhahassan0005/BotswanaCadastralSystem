@@ -2,7 +2,7 @@
 
 import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
-import { dedupePoints } from "@/lib/plots";
+import { dedupePoints, formatLotRange } from "@/lib/plots";
 import { declutterLabels } from "@/lib/labelLayout";
 
 // ---------------------------------------------------------------------------
@@ -176,18 +176,6 @@ function polygonCentroid(pts: { x: number; y: number }[]): { x: number; y: numbe
 
 /** "LOTS 37455-37458" for a contiguous numeric run, "LOTS 37455, 37460" for
  *  a non-contiguous or non-numeric set (client req 2026-08-26, Part 33b). */
-function formatLotRange(numbers: string[]): string {
-  const trimmed = numbers.map((n) => n.trim()).filter(Boolean);
-  const allNumeric = trimmed.length > 0 && trimmed.every((n) => /^\d+$/.test(n));
-  if (allNumeric) {
-    const sorted = [...trimmed.map(Number)].sort((a, b) => a - b);
-    const contiguous = sorted.every((v, i) => i === 0 || v === sorted[i - 1] + 1);
-    if (contiguous && sorted.length > 1) return `${sorted[0]}-${sorted[sorted.length - 1]}`;
-    return sorted.join(", ");
-  }
-  return trimmed.join(", ");
-}
-
 /** Pick a "nice" grid step so 3–6 gridlines span the given range. */
 function niceStep(span: number): number {
   if (!(span > 0)) return 1;

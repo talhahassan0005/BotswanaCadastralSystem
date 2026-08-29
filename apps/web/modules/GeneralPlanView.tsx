@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { dedupePoints, findBlockCorners, findOuterBoundary, sameWorldPoint, type Plot } from "@/lib/plots";
+import { dedupePoints, findBlockCorners, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { declutterLabels } from "@/lib/labelLayout";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtSystem, toDotted } from "@/lib/diagramLayout";
@@ -55,6 +55,11 @@ export function GeneralPlanView() {
     () => cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })),
     [cogoPlots]
   );
+  // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
+  // reference sheets' title exactly) — the WHOLE layout's range, not just
+  // whichever sheet is currently showing, same source `cogoPlots` the rest
+  // of this module already reads.
+  const lotRangeText = useMemo(() => formatLotRange(cogoPlots.map((p) => p.number)), [cogoPlots]);
   const usedBeacons = useMemo<GpBeacon[]>(
     () =>
       dedupePoints(gpPlots)
@@ -66,6 +71,7 @@ export function GeneralPlanView() {
   const savedGp = (generalPlanInput ?? null) as Partial<{
     name: string; location: string; surveyor: string; gpNo: string; scale: number;
     gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
+    parentLotNumber: string; tribalArea: string; parentDsmNo: string;
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
@@ -80,6 +86,15 @@ export function GeneralPlanView() {
     dsmNo: "",      // "DSM No: 1244/2026"
     srNo: "",       // "SR No: 966/2026", bottom-right of the sheet
     surveyedIn: "", // "Surveyed in February 2026"
+    // Extra title lines matching the GC-122/WP_CH reference exactly (client
+    // req 2026-08-30) — each is OPTIONAL and only adds its own line when
+    // filled in, so a project that never sets these keeps today's shorter
+    // title unchanged. "PORTIONS OF LOT {parentLotNumber} {name}" / "SITUATE
+    // AT {location} IN THE {tribalArea} TRIBAL AREA" / (General Plan only)
+    // "VIDE DIAGRAM DSM NO. {parentDsmNo} ANNEXED TO".
+    parentLotNumber: "", // e.g. "14182"
+    tribalArea: "",      // e.g. "GHANZI"
+    parentDsmNo: "",     // e.g. "1243/2026"
     beaconDescription: "ALL: 12MM IRON PEG",
     pedWay: "All: 3m",
     // Per-corner splay distances, e.g. "A,B,B2,B3" -> "5m", with a default
@@ -146,7 +161,17 @@ export function GeneralPlanView() {
   // FY1 pulled up from H-30 to H-150 (client req 2026-08-27, §2h) — frees a
   // strip along the bottom of the first sheet for the outer-boundary
   // traverse table + total area, matching the reference sheet's bottom band.
-  const FX0 = 30, FY0 = 90, FX1 = 660, FY1 = H - 150;
+  // Extra title lines (client req 2026-08-30, matching the GC-122/WP_CH
+  // reference exactly — "PORTIONS OF LOT .../VIDE DIAGRAM DSM NO. .../
+  // SITUATE AT ... TRIBAL AREA") each push the drawing area down by one
+  // line so they never overlap it; a project that leaves these fields blank
+  // keeps today's shorter title and FY0 stays exactly 90 as before.
+  const extraTitleLines: string[] = [];
+  if (meta.parentLotNumber.trim()) extraTitleLines.push(`PORTIONS OF LOT ${meta.parentLotNumber.trim()} ${meta.name}`);
+  if (sheetMode === "general" && meta.parentDsmNo.trim()) extraTitleLines.push(`VIDE DIAGRAM DSM NO. ${meta.parentDsmNo.trim()} ANNEXED TO`);
+  if (meta.tribalArea.trim()) extraTitleLines.push(`SITUATE AT ${(meta.location || meta.name).trim()} IN THE ${meta.tribalArea.trim()} TRIBAL AREA`);
+  const TITLE_EXTRA_LINE_H = 13;
+  const FX0 = 30, FY0 = 90 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = 660, FY1 = H - 150;
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
   // fit-to-bounds projection below, spinning the drawing around the centre
@@ -547,7 +572,14 @@ export function GeneralPlanView() {
     }
 
     text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN OF ${meta.name}`, 19, "middle");
-    text(W / 2, 54, `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`, 11, "middle");
+    text(
+      W / 2, 54,
+      lotRangeText
+        ? `LOTS ${lotRangeText}`
+        : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`,
+      11, "middle"
+    );
+    extraTitleLines.forEach((ln, i) => text(W / 2, 54 + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
     text(regX + regW, 18, `GC-${meta.gcNo || "—"}`, 9, "end");
     text(regX + 6, 60, `DSM No: ${meta.dsmNo || "—"}`, 8);
     text(regX + 6, 129, "Surveyed in", 8);
@@ -723,7 +755,11 @@ export function GeneralPlanView() {
           sake"), same offset pattern as WorkingPlan.tsx's own title block. */}
       {(() => {
         const ts = meta.titleOffset.scale ?? 1;
-        const tBoxTop = 18, tBoxBottom = 62, tBoxHalfW = 200;
+        const tBoxTop = 18, tBoxBottom = 62 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
+        // "LOTS 14183-14608" once plots are numbered (matching the reference
+        // exactly), falling back to the original "Layout of N parcel(s)"
+        // wording when there's nothing numbered yet to range over.
+        const line2 = lotRangeText ? `LOTS ${lotRangeText}` : `${label}${meta.location ? ` — ${meta.location}` : ""}`;
         return (
           <g
             transform={`translate(${meta.titleOffset.dx},${meta.titleOffset.dy})`}
@@ -737,8 +773,13 @@ export function GeneralPlanView() {
               {sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}
             </text>
             <text x={W / 2} y={54} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
-              {label}{meta.location ? ` — ${meta.location}` : ""}
+              {line2}
             </text>
+            {extraTitleLines.map((ln, i) => (
+              <text key={i} x={W / 2} y={54 + (i + 1) * TITLE_EXTRA_LINE_H} textAnchor="middle" fontSize={10 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+                {ln}
+              </text>
+            ))}
             {titleSelected && (
               <>
                 <rect
@@ -1152,7 +1193,18 @@ export function GeneralPlanView() {
           <Field label="DSM No."><Input value={meta.dsmNo} onChange={set("dsmNo")} placeholder="e.g. 1244/2026" /></Field>
           <Field label="SR No."><Input value={meta.srNo} onChange={set("srNo")} placeholder="e.g. 966/2026" /></Field>
           <Field label="Surveyed in"><Input value={meta.surveyedIn} onChange={set("surveyedIn")} placeholder="e.g. February 2026" /></Field>
+          <Field label="Portions of Lot (parent lot no.)"><Input value={meta.parentLotNumber} onChange={set("parentLotNumber")} placeholder="e.g. 14182" /></Field>
+          <Field label="Tribal area"><Input value={meta.tribalArea} onChange={set("tribalArea")} placeholder="e.g. GHANZI" /></Field>
+          {sheetMode === "general" && (
+            <Field label="Vide diagram DSM No. (parent diagram)"><Input value={meta.parentDsmNo} onChange={set("parentDsmNo")} placeholder="e.g. 1243/2026" /></Field>
+          )}
         </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Fill in "Portions of Lot" / "Tribal area" / "Vide diagram DSM No." to add the matching title lines
+          ("LOTS {lotRangeText || "…"} {meta.name}" / "PORTIONS OF LOT {meta.parentLotNumber || "…"} {meta.name}" /
+          "SITUATE AT {meta.location || meta.name} IN THE {meta.tribalArea || "…"} TRIBAL AREA") — leave any of them
+          blank to keep today's shorter title.
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
             <button
