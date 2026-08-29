@@ -168,6 +168,43 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   },
   ref
 ) {
+  // A single-lot diagram sheet's SIDES/DIRECTIONS/CO-ORDINATES table lists
+  // one row per boundary point — real, required data, not decoration, so
+  // unlike the beacon-dot labels below (nudged/hidden by declutterLabels
+  // when crowded) its rows can't be usefully thinned without deleting real
+  // survey values from a document that needs to be legally complete. A real
+  // single lot has at most a few dozen beacons; hundreds/thousands here
+  // (client req 2026-08-30, "Testing1": 1026 points, "1 polygon(s)") means a
+  // raw multi-lot point import got run through Run COGO Computation as one
+  // traverse instead of being split into separate lots first — no amount of
+  // label-layout math fixes that, so this is caught here (before the
+  // expensive layout math even runs) with a clear pointer back to the right
+  // tool, rather than attempting to force an illegible thousand-row table
+  // onto one fixed-size sheet.
+  const MAX_SINGLE_LOT_POINTS = 150;
+  if (rawPoints.length > MAX_SINGLE_LOT_POINTS) {
+    const VB_W0 = 2100, VB_H0 = 2970;
+    return (
+      <svg ref={ref} viewBox={`0 0 ${VB_W0} ${VB_H0}`} xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", height: "auto", background: "white" }}>
+        <rect x={4} y={4} width={VB_W0 - 8} height={VB_H0 - 8} fill="white" stroke="black" strokeWidth={1} />
+        <text x={VB_W0 / 2} y={VB_H0 / 2 - 40} textAnchor="middle" fontSize={16} fontWeight="bold" fill="#dc2626">
+          Too many points for one lot ({rawPoints.length})
+        </text>
+        <text x={VB_W0 / 2} y={VB_H0 / 2 - 10} textAnchor="middle" fontSize={12} fill="#333">
+          A single lot diagram normally has a handful to a few dozen beacons.
+        </text>
+        <text x={VB_W0 / 2} y={VB_H0 / 2 + 12} textAnchor="middle" fontSize={12} fill="#333">
+          This usually means a raw, multi-lot point file was run through
+        </text>
+        <text x={VB_W0 / 2} y={VB_H0 / 2 + 34} textAnchor="middle" fontSize={12} fill="#333">
+          "Run COGO Computation" as one traverse instead of separate lots.
+        </text>
+        <text x={VB_W0 / 2} y={VB_H0 / 2 + 64} textAnchor="middle" fontSize={12} fontWeight="bold" fill="#111">
+          Use "Auto-Detect Rectangular Lots" in COGO, then load one lot number here.
+        </text>
+      </svg>
+    );
+  }
   // All layout math (frame/table/legal-description/annexure-table
   // measurements) lives in computeDiagramLayout — the single source of
   // truth shared with the DXF export (client req 2026-08-26, Part 34).

@@ -282,6 +282,45 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     );
   }
 
+  // A deliberate multi-plot sheet (client req 2026-08-26, Part 33a) can
+  // legitimately carry hundreds of points — many separate SMALL real lots,
+  // each contributing a handful of corners, which declutterLabels below
+  // handles. A single implicit plot (not useMultiPlot) with hundreds of
+  // points is a different, pathological case: ONE "lot" that is actually a
+  // raw multi-lot point file run through Run COGO Computation as one
+  // traverse (client req 2026-08-30, "Testing1": 1026 points, "1 polygon
+  // (s)") — no amount of label-layout math turns a thousand-row single
+  // boundary into a legible one-page working plan, so this is caught before
+  // the layout math runs, same guard as SgDiagram.tsx.
+  const MAX_SINGLE_PLOT_POINTS = 150;
+  if (!useMultiPlot && points.length > MAX_SINGLE_PLOT_POINTS) {
+    return (
+      <svg
+        ref={ref}
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: "100%", height: "auto", background: "white", fontFamily: "'Courier New', Courier, monospace" }}
+      >
+        <rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} fill="white" stroke="black" strokeWidth={1.5} />
+        <text x={VB_W / 2} y={VB_H / 2 - 40} textAnchor="middle" fontSize={16} fontWeight="bold" fill="#dc2626">
+          Too many points for one lot ({points.length})
+        </text>
+        <text x={VB_W / 2} y={VB_H / 2 - 10} textAnchor="middle" fontSize={12} fill="#333">
+          A single lot's working plan normally has a handful to a few dozen beacons.
+        </text>
+        <text x={VB_W / 2} y={VB_H / 2 + 12} textAnchor="middle" fontSize={12} fill="#333">
+          This usually means a raw, multi-lot point file was run through
+        </text>
+        <text x={VB_W / 2} y={VB_H / 2 + 34} textAnchor="middle" fontSize={12} fill="#333">
+          "Run COGO Computation" as one traverse instead of separate lots.
+        </text>
+        <text x={VB_W / 2} y={VB_H / 2 + 64} textAnchor="middle" fontSize={12} fontWeight="bold" fill="#111">
+          Use "Auto-Detect Rectangular Lots" in COGO, then add lot numbers here.
+        </text>
+      </svg>
+    );
+  }
+
   // ---- Figure transform (north-up, fit to drawing panel) ----
   // h shrunk from 420 (client req 2026-08-26, Part 29d "label both sides") —
   // the newly-added bottom-edge grid labels need clearance below the panel
