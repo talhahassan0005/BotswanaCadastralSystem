@@ -2,6 +2,7 @@
 
 import { forwardRef, type MouseEvent, type PointerEvent } from "react";
 import { clampWords, clampToLines } from "@/lib/wrapSvgText";
+import { declutterLabels } from "@/lib/labelLayout";
 import {
   computeDiagramLayout,
   avg,
@@ -431,33 +432,47 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       ) : (
         <polygon points={rotatedPolyPoints} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
       )}
-      {points.map((p, i) => {
-        const bx = fx(p.east, p.north), by = fy(p.east, p.north);
-        // Point the label along this vertex's own angle bisector (away from
+      {(() => {
+        // Point the label along each vertex's own angle bisector (away from
         // its two neighbors), verified with the same inside/outside test as
         // the side-distance labels — more reliable than a flat centroid
         // direction on a concave corner (client req 2026-08-21), where it
         // could point toward the interior and collide with a nearby side
-        // label instead of clearing the figure.
-        const prev = points[(i - 1 + points.length) % points.length];
-        const next = points[(i + 1) % points.length];
-        const px = fx(prev.east, prev.north), py = fy(prev.east, prev.north);
-        const qx = fx(next.east, next.north), qy = fy(next.east, next.north);
-        const d1x = bx - px, d1y = by - py, l1 = Math.hypot(d1x, d1y) || 1;
-        const d2x = bx - qx, d2y = by - qy, l2 = Math.hypot(d2x, d2y) || 1;
-        let dx = d1x / l1 + d2x / l2, dy = d1y / l1 + d2y / l2;
-        const dl = Math.hypot(dx, dy) || 1;
-        dx /= dl; dy /= dl;
-        const probe = 10;
-        if (rotInsidePoly(bx + dx * probe, by + dy * probe)) { dx = -dx; dy = -dy; }
-        const lx = bx + dx * 40, ly = by + dy * 40;
-        return (
-          <g key={`bcn${i}`}>
-            <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
-            <text x={lx} y={ly + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
-          </g>
-        );
-      })}
+        // label instead of clearing the figure. Used as the PREFERRED first
+        // spot for decluttering (client req 2026-08-30) — a boundary with
+        // hundreds of beacons close together (e.g. a General Plan's whole
+        // outer ring, or a stress-test import) otherwise piles every label
+        // on top of the next; every point's dot still always renders even
+        // where its label gets nudged or, as a last resort, hidden.
+        const candidates = points.map((p, i) => {
+          const bx = fx(p.east, p.north), by = fy(p.east, p.north);
+          const prev = points[(i - 1 + points.length) % points.length];
+          const next = points[(i + 1) % points.length];
+          const px = fx(prev.east, prev.north), py = fy(prev.east, prev.north);
+          const qx = fx(next.east, next.north), qy = fy(next.east, next.north);
+          const d1x = bx - px, d1y = by - py, l1 = Math.hypot(d1x, d1y) || 1;
+          const d2x = bx - qx, d2y = by - qy, l2 = Math.hypot(d2x, d2y) || 1;
+          let dx = d1x / l1 + d2x / l2, dy = d1y / l1 + d2y / l2;
+          const dl = Math.hypot(dx, dy) || 1;
+          dx /= dl; dy /= dl;
+          if (rotInsidePoly(bx + dx * 10, by + dy * 10)) { dx = -dx; dy = -dy; }
+          return { id: p.name || `#${i}`, x: bx, y: by, text: p.name ?? "", fontSize: FS_BEACON_HEAD, preferDx: dx * 40, preferDy: dy * 40 };
+        });
+        const placements = declutterLabels(candidates);
+        return points.map((p, i) => {
+          const bx = fx(p.east, p.north), by = fy(p.east, p.north);
+          const pl = placements[i];
+          return (
+            <g key={`bcn${i}`}>
+              <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
+              {pl.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#999" strokeWidth={0.5} />}
+              {!pl.hidden && (
+                <text x={pl.labelX} y={pl.labelY + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
+              )}
+            </g>
+          );
+        });
+      })()}
       {/* Side distances are NOT drawn on the figure itself by default
           (client req 2026-08-23) — they're already tabulated in the SIDES
           METRES column of the top table; repeating them on the boundary

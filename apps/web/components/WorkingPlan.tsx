@@ -3,6 +3,7 @@
 import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
 import { dedupePoints } from "@/lib/plots";
+import { declutterLabels } from "@/lib/labelLayout";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -364,6 +365,39 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     };
   });
 
+  // Beacon labels: decluttered (client req 2026-08-30) — a fixed offset per
+  // label is fine for a handful of points, but a multi-plot sheet built from
+  // a large real subdivision (hundreds of beacons close together, e.g. via
+  // Auto-Detect Rectangular Lots) turns that into a solid mass of overlapping
+  // text. A point with a saved manual offset (dragged by hand, Part 29a)
+  // stays exactly where the user put it and is never auto-moved/hidden;
+  // every other label gets nudged to the nearest clear spot, or hidden as a
+  // last resort — its dot always still renders regardless. Preserves the old
+  // default direction (away from the drawing centroid) as the first spot
+  // tried, so nothing visibly moves unless it actually collides.
+  const beaconPlacements = declutterLabels(
+    allPoints.map((p, i) => {
+      const bx = fx(p.east, p.north), by = fy(p.east, p.north);
+      const ddx = bx - cx, ddy = by - cy;
+      const len = Math.hypot(ddx, ddy) || 1;
+      const id = p.name || `#${i}`;
+      const manual = p.name ? labelOffsets?.[p.name] : undefined;
+      const scale = manual?.scale ?? 1;
+      const base = { dx: (ddx / len) * 16, dy: (ddy / len) * 16 };
+      return {
+        id,
+        x: bx,
+        y: by,
+        text: p.name ?? "",
+        fontSize: 10 * scale,
+        preferDx: base.dx,
+        preferDy: base.dy,
+        ...(manual ? { pinnedDx: base.dx + manual.dx, pinnedDy: base.dy + manual.dy } : {}),
+      };
+    })
+  );
+  const beaconPlacementById = new Map(beaconPlacements.map((pl) => [pl.id, pl]));
+
   // ---- Coordinate grid (blue, nice intervals across the figure bounds) ----
   const stepE = niceStep(spanE);
   const stepN = niceStep(spanN);
@@ -575,32 +609,37 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           two adjoining plots gets exactly one dot + one label (Part 33a). */}
       {allPoints.map((p, i) => {
         const bx = fx(p.east, p.north), by = fy(p.east, p.north);
-        const dx = bx - cx, dy = by - cy;
-        const len = Math.hypot(dx, dy) || 1;
+        const id = p.name || `#${i}`;
+        const pl = beaconPlacementById.get(id);
         const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0, scale: 1 };
         const scale = off.scale ?? 1;
         const fs = 10 * scale;
-        const lx = bx + (dx / len) * 16 + off.dx;
-        const ly = by + (dy / len) * 16 + off.dy;
+        const lx = pl?.labelX ?? bx;
+        const ly = pl?.labelY ?? by;
         const isSel = !!p.name && selectedLabel === p.name;
         const boxW = 10 * scale, boxH = 7 * scale;
         return (
           <g key={`b${i}`}>
             <circle cx={bx} cy={by} r={2.8} fill="white" stroke="black" strokeWidth={1.1} />
-            <text
-              x={lx} y={ly + 3}
-              textAnchor="middle"
-              fontSize={fs}
-              fontWeight="bold"
-              fill={isSel ? "#dc2626" : "#000"}
-              style={{ cursor: p.name ? (isSel ? "move" : "pointer") : "default" }}
-              onClick={(e) => { e.stopPropagation(); if (p.name) onLabelClick?.(p.name, e); }}
-              onPointerDown={(e) => { if (isSel && p.name) { e.stopPropagation(); onLabelPointerDown?.(p.name, e); } }}
-              onPointerMove={(e) => { if (p.name) onLabelPointerMove?.(p.name, e); }}
-              onPointerUp={(e) => { if (p.name) onLabelPointerUp?.(p.name, e); }}
-            >
-              {p.name}
-            </text>
+            {pl?.leader && (
+              <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />
+            )}
+            {(!pl?.hidden || isSel) && (
+              <text
+                x={lx} y={ly + 3}
+                textAnchor="middle"
+                fontSize={fs}
+                fontWeight="bold"
+                fill={isSel ? "#dc2626" : "#000"}
+                style={{ cursor: p.name ? (isSel ? "move" : "pointer") : "default" }}
+                onClick={(e) => { e.stopPropagation(); if (p.name) onLabelClick?.(p.name, e); }}
+                onPointerDown={(e) => { if (isSel && p.name) { e.stopPropagation(); onLabelPointerDown?.(p.name, e); } }}
+                onPointerMove={(e) => { if (p.name) onLabelPointerMove?.(p.name, e); }}
+                onPointerUp={(e) => { if (p.name) onLabelPointerUp?.(p.name, e); }}
+              >
+                {p.name}
+              </text>
+            )}
             {isSel && (
               <>
                 <rect

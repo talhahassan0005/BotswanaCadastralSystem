@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, findBlockCorners, findOuterBoundary, sameWorldPoint, type Plot } from "@/lib/plots";
+import { declutterLabels } from "@/lib/labelLayout";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -852,12 +853,39 @@ export function GeneralPlanView() {
             </g>
           );
         })}
-        {groupUsedBeacons.map((b) => (
-          <g key={b.id}>
-            <circle cx={t.sx(b.east, b.north)} cy={t.sy(b.east, b.north)} r={2.6} fill="#0f172a" />
-            <text x={t.sx(b.east, b.north) + 4} y={t.sy(b.east, b.north) - 3} fontSize={8} fill="#334155">{b.id}</text>
-          </g>
-        ))}
+        {(() => {
+          // Decluttered (client req 2026-08-30) — a sheet with dozens/hundreds
+          // of lots (e.g. Auto-Detect Rectangular Lots on a real subdivision)
+          // has that many boundary beacons close together; a fixed +4,-3
+          // offset per label then piles every one on top of the next. Every
+          // beacon's dot still always renders regardless of what happens to
+          // its label.
+          const placements = declutterLabels(
+            groupUsedBeacons.map((b) => ({
+              id: b.id,
+              x: t.sx(b.east, b.north),
+              y: t.sy(b.east, b.north),
+              text: b.id,
+              fontSize: 8,
+              preferDx: 4,
+              preferDy: -3,
+            }))
+          );
+          const byId = new Map(placements.map((pl) => [pl.id, pl]));
+          return groupUsedBeacons.map((b) => {
+            const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
+            const pl = byId.get(b.id);
+            return (
+              <g key={b.id}>
+                <circle cx={bx} cy={by} r={2.6} fill="#0f172a" />
+                {pl?.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#cbd5e1" strokeWidth={0.5} />}
+                {!pl?.hidden && (
+                  <text x={pl?.labelX ?? bx + 4} y={pl?.labelY ?? by - 3} fontSize={8} fill="#334155">{b.id}</text>
+                )}
+              </g>
+            );
+          });
+        })()}
         {groupUsedBeacons.length === 0 && (
           <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
         )}
