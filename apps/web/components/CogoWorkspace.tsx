@@ -995,14 +995,26 @@ export function CogoWorkspace({
   }
   function autoDetectLots(startNumber: string) {
     const trimmed = startNumber.trim();
-    let start: number;
-    if (!trimmed) {
-      start = suggestedNextLotStart();
-    } else {
-      const parsed = parseInt(trimmed, 10);
-      if (!Number.isFinite(parsed)) { window.alert("That starting lot number isn't valid — enter a whole number, or leave it blank to use a default."); return; }
-      start = parsed;
+    const typedStart = trimmed ? parseInt(trimmed, 10) : null;
+    if (trimmed && !Number.isFinite(typedStart)) {
+      window.alert("That starting lot number isn't valid — enter a whole number, or leave it blank to use a default.");
+      return;
     }
+    // Running this a second time on the same canvas re-detects the SAME
+    // rectangles and, with a fresh start number, saves them all again under
+    // new numbers — silently doubling every lot (client req 2026-08-30: two
+    // runs left 532 lots where the data only holds 266, so every sheet drew
+    // each lot twice, stacked). Offer to replace instead of piling up.
+    const replaceExisting =
+      cogoPlots.length > 0 &&
+      window.confirm(
+        `This project already has ${cogoPlots.length} numbered lot(s).\n\n` +
+        `OK = replace them with the newly detected lots (recommended — re-running on the same points otherwise saves a duplicate copy of every lot under new numbers).\n` +
+        `Cancel = keep the existing ones and add these alongside.`
+      );
+    // A blank field continues past the highest existing lot number — but when
+    // replacing those, there's nothing left to continue past, so start at 1.
+    const start = typedStart ?? (replaceExisting ? 1 : suggestedNextLotStart());
     const source = visible.map((p) => ({ name: p.name || null, east: p.east, north: p.north }));
     const { lots, usedPointCount } = detectRectangularLots(source);
     if (!lots.length) {
@@ -1019,7 +1031,8 @@ export function CogoWorkspace({
     });
     const newPlots: CogoPlot[] = ordered.map((lot, i) => ({ number: String(start + i), fig: buildFigureFromPoints(lot.points) }));
     const importedSet = new Set(newPlots.map((p) => p.number));
-    setCogoPlots([...cogoPlots.filter((p) => !importedSet.has(p.number)), ...newPlots]);
+    const kept = replaceExisting ? [] : cogoPlots.filter((p) => !importedSet.has(p.number));
+    setCogoPlots([...kept, ...newPlots]);
     const leftover = source.length - usedPointCount;
     // Flag lots much bigger than the typical detected lot — the elementary-
     // rectangle check rejects most false positives, but a beacon that's
@@ -2768,6 +2781,25 @@ export function CogoWorkspace({
             >
               Auto-Detect Rectangular Lots
             </button>
+            {/* The only way to undo a bad/duplicated Auto-Detect run — plots
+                are saved project-wide (cogoPlots), so an unwanted set would
+                otherwise keep showing on every General/Working Plan sheet
+                with nothing in the UI to remove them (client req
+                2026-08-30). */}
+            {cogoPlots.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete all ${cogoPlots.length} numbered lot(s) from this project?\n\nThe points on the canvas are NOT deleted — only the numbered lots built from them, so you can re-run Auto-Detect cleanly.`)) {
+                    setCogoPlots([]);
+                  }
+                }}
+                className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
+                title="Removes every numbered lot saved in this project (the canvas points themselves stay)"
+              >
+                Clear All Lots ({cogoPlots.length})
+              </button>
+            )}
             {draftTool === "addpoint" && !coordEntry && (
               <button type="button" onClick={coordEntryOpen} className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
                 By Coordinates
