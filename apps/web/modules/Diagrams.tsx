@@ -1063,6 +1063,22 @@ export function Diagrams() {
             {forcePicker && fig && points.length >= 3 && (
               <Button variant="ghost" onClick={() => setForcePicker(false)}>← Back to current diagram</Button>
             )}
+            {/* Once a specific lot has ever been loaded here (by number or by
+                picking a Parcels-tab lot), `diagramFigure` stays set in the
+                project forever — nothing else clears it, not even COGO's own
+                "Clear Result" or re-running a fresh traverse (client req
+                2026-08-30: a small 10-point test project kept showing a
+                much larger, stale figure loaded here much earlier in the
+                same project). This is the actual reset for that — falls
+                back to whatever's currently on the COGO canvas. */}
+            {diagramFigure && cogoResult && (
+              <Button
+                variant="ghost"
+                onClick={() => { setDiagramFigure(null); setSelParcelId(null); setForcePicker(false); }}
+              >
+                Use current {cogoTabLabel(config.discipline)} result instead
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setActiveTab("parcels")}>Go to Parcels</Button>
             <Button variant="ghost" onClick={() => setActiveTab("cogo")}>Go to {cogoTabLabel(config.discipline)}</Button>
           </div>
@@ -1089,7 +1105,15 @@ export function Diagrams() {
             <div className="min-w-[200px]">
               <Select
                 value={selParcelId ?? ""}
-                onChange={(v) => setSelParcelId(v || null)}
+                onChange={(v) => {
+                  setSelParcelId(v || null);
+                  // Picking the blank "traverse figure" option must actually
+                  // show the live COGO result, not silently keep whatever lot
+                  // was loaded here earlier (client req 2026-08-30) — before
+                  // this, `diagramFigure` (which wins over `cogoResult` in the
+                  // fallback chain) was never cleared by this selection.
+                  if (!v) setDiagramFigure(null);
+                }}
                 options={[{ value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
               />
             </div>
