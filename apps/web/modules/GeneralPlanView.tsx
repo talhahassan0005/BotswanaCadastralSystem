@@ -698,9 +698,21 @@ export function GeneralPlanView() {
     if (!nums.length) return `SHEET ${i + 1}: ${g.length} plot(s)`;
     return `SHEET ${i + 1}: Lots ${Math.min(...nums)}-${Math.max(...nums)}`;
   });
+  // The Sheet Index lists one line per layout sheet — unbounded, it pushed
+  // everything below it (Lot Numbers table, Block Corner Table) off the
+  // bottom of the sheet once a layout produced many sheets (client req
+  // 2026-08-30). Capped, with the rest summarised on one line.
+  const MAX_SHEET_INDEX_LINES = 10;
+  const shownSheetIndex =
+    sheetIndexLines.length > MAX_SHEET_INDEX_LINES
+      ? [
+          ...sheetIndexLines.slice(0, MAX_SHEET_INDEX_LINES - 1),
+          `… +${sheetIndexLines.length - (MAX_SHEET_INDEX_LINES - 1)} more sheet(s)`,
+        ]
+      : sheetIndexLines;
   const panelRows: { text: string; heading?: boolean }[] = [
     { text: "SHEET INDEX", heading: true },
-    ...sheetIndexLines.map((text) => ({ text })),
+    ...shownSheetIndex.map((text) => ({ text })),
     { text: "BEACON DESCRIPTION", heading: true },
     { text: meta.beaconDescription || "—" },
     { text: "SPLAY INFORMATION", heading: true },
@@ -734,8 +746,27 @@ export function GeneralPlanView() {
   // sheet. Reserves room below for the TOTAL line, and for the Block Corner
   // Table only when there actually is one (no point shrinking the lot table
   // to make room for a section that won't render).
-  const bcReserve = blockCorners.length > 0 ? 70 + blockCorners.length * 13 : 30;
-  const rowsPerCol = Math.max(1, Math.floor((H - 20 - bcReserve - (lotTableTop + 34)) / lotRowH) + 1);
+  // Both right-hand tables have to end above the bottom band (the outer-
+  // boundary traverse on sheet 1, its back-reference on the others), not just
+  // above the page edge — client req 2026-08-30: at real subdivision density
+  // the Block Corner Table ran straight off the sheet.
+  const rightColTop = lotTableTop + 34;
+  const rightColBottom = FY1 + 20;
+  const rightColH = Math.max(0, rightColBottom - rightColTop);
+  const BC_ROW_H = 13;
+  // What the Block Corner Table would need if every corner were listed,
+  // clamped to at most half the column so the Lot Numbers table above always
+  // keeps usable room no matter how many corners the layout produces.
+  const bcReserve =
+    blockCorners.length > 0
+      ? Math.min(70 + blockCorners.length * BC_ROW_H, Math.floor(rightColH * 0.5))
+      : 30;
+  // Room the lot table needs BELOW its last row: the "SHEET TOTAL" line
+  // (+16) and, when the sheet holds more lots than fit, the "+N more" note
+  // (+32). Without reserving these the table's own footer ran past the frame
+  // even when the rows themselves fit (client req 2026-08-30).
+  const LOT_FOOTER_H = 36;
+  const rowsPerCol = Math.max(1, Math.floor((rightColH - bcReserve - LOT_FOOTER_H) / lotRowH));
   const maxLotRows = rowsPerCol * 2;
   const colAx = 690, colBx = 835, sqmOffset = 65;
   const lotPairHeader = (x: number, y: number) => (
@@ -1045,6 +1076,18 @@ export function GeneralPlanView() {
                 than printing an empty section. */}
             {groupBlockCorners.length > 0 && (() => {
               const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+              // Only as many rows as actually fit above the bottom band —
+              // this table was previously uncapped and ran off the sheet once
+              // a real layout produced more than a handful of block corners
+              // (client req 2026-08-30). Same "+N more … see digital
+              // schedule" overflow note the Lot Numbers table above uses.
+              const bcRowsFit = Math.max(0, Math.floor((rightColBottom - (bcTop + 56)) / BC_ROW_H));
+              // Not even the heading fits — drop the section entirely rather
+              // than spilling it past the frame; the corners stay in the DXF
+              // and the digital record either way.
+              if (bcTop + 56 > rightColBottom) return null;
+              const bcOverflow = groupBlockCorners.length > bcRowsFit;
+              const bcShown = groupBlockCorners.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
               return (
                 <>
                   <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
@@ -1053,8 +1096,8 @@ export function GeneralPlanView() {
                   <text x={690} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Point</text>
                   <text x={745} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Y</text>
                   <text x={845} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">X</text>
-                  {groupBlockCorners.map((bc, k) => {
-                    const y = bcTop + 56 + k * 13;
+                  {bcShown.map((bc, k) => {
+                    const y = bcTop + 56 + k * BC_ROW_H;
                     return (
                       <g key={bc.id}>
                         <text x={690} y={y} fontSize={8.5} fill="#0f172a">{bc.id}</text>
@@ -1063,6 +1106,11 @@ export function GeneralPlanView() {
                       </g>
                     );
                   })}
+                  {groupBlockCorners.length > bcShown.length && (
+                    <text x={690} y={bcTop + 56 + bcShown.length * BC_ROW_H} fontSize={8} fill="#94a3b8">
+                      +{groupBlockCorners.length - bcShown.length} more corner(s) — see digital schedule
+                    </text>
+                  )}
                 </>
               );
             })()}
