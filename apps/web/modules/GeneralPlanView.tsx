@@ -133,8 +133,14 @@ export function GeneralPlanView() {
   // (client req 2026-08-27, §2d/Part 4 "multi-sheet splitting") — a fixed
   // per-sheet plot cap rather than a true geographic split (the app has no
   // notion of a physical cut line through the drawing), each sheet
-  // independently fitted/scaled to its own subset of plots.
-  const PLOTS_PER_SHEET = 40;
+  // independently fitted/scaled to its own subset of plots. 40 (the original
+  // value) split a real ~500-lot subdivision into 25+ sparse sheets instead
+  // of the reference GC-122 sheet's own 2 dense ones (~213-260 lots each,
+  // client req 2026-08-30) — each sheet is a fixed-size page that already
+  // fit-to-bounds scales to whatever it's given (via computeTransform), so
+  // there's no rendering reason to cap this low; raised to match what the
+  // reference actually does with a real subdivision.
+  const PLOTS_PER_SHEET = 300;
   const sortedPlots = useMemo(
     () => [...cogoPlots].sort((a, b) => comparePointNames(a.number, b.number)),
     [cogoPlots]
@@ -879,7 +885,11 @@ export function GeneralPlanView() {
           <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
           <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
         </g>
-        {/* parcels */}
+        {/* parcels — plot-number font shrinks as more plots share one sheet
+            (client req 2026-08-30) — a fixed 10px label was sized for a
+            handful of large lots; at real subdivision density (hundreds of
+            small lots on one sheet, matching the reference) that same size
+            overflows a lot's own tiny cell into its neighbours. */}
         {groupSchedule.map(({ p, i }) => {
           const pts = p.fig.points;
           if (pts.length < 3) return null;
@@ -887,10 +897,11 @@ export function GeneralPlanView() {
           const cx = pts.reduce((a, pp) => a + t.sx(pp.east, pp.north), 0) / pts.length;
           const cy = pts.reduce((a, pp) => a + t.sy(pp.east, pp.north), 0) / pts.length;
           const col = PALETTE[i % PALETTE.length];
+          const plotFS = groupPlots.length > 150 ? 4.5 : groupPlots.length > 60 ? 6.5 : groupPlots.length > 20 ? 8.5 : 10;
           return (
             <g key={p.number}>
               <polygon points={d} fill={col} fillOpacity={0.13} stroke={col} strokeWidth={1.4} />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={700} fill={col}>{p.number}</text>
+              <text x={cx} y={cy} textAnchor="middle" fontSize={plotFS} fontWeight={700} fill={col}>{p.number}</text>
             </g>
           );
         })}
