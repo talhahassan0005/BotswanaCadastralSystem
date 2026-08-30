@@ -124,6 +124,23 @@ export function CogoEngine() {
       } else if (coordPoints.length >= 3) {
         // Coordinate-only import (X,Y[,Z]) — no bearings/distances needed. Build the
         // figure directly from the points (sides via inverse, exact closure).
+        // A raw subdivision beacon list (hundreds of points, no lot-grouping
+        // column) computed straight through here becomes one meaningless
+        // giant "traverse" chaining every point in file order — the same
+        // mistake keeps recurring across projects (client req 2026-08-31:
+        // repeatedly landing on a 1026-point mega-figure instead of using
+        // Auto-Detect Rectangular Lots first) — so this catches it BEFORE
+        // computing, not after, while there's still a real choice to make.
+        const MANY_COORD_POINTS = 60;
+        if (coordPoints.length > MANY_COORD_POINTS) {
+          const proceed = window.confirm(
+            `${coordPoints.length} points with no bearings/distances — this looks like a raw beacon list for MANY separate lots, not one traverse.\n\n` +
+            `Computing this as-is will chain every point into one meaningless giant "lot".\n\n` +
+            `Cancel, then use "Auto-Detect Rectangular Lots" in the work station below instead (it builds real, separate numbered lots from exactly this kind of file).\n\n` +
+            `Click OK only if you really do mean this as one single closed figure.`
+          );
+          if (!proceed) { setRunning(false); return; }
+        }
         result = await apiJson<CogoResult>("/cogo/coordinates", {
           points: coordPoints,
           type: config.traverseType,
