@@ -10,7 +10,15 @@
  * only ever adjusts where a LABEL sits (nudging it to a nearby clear spot,
  * or hiding it as a last resort) — it never touches point geometry; callers
  * must always draw every point's dot/marker regardless of what happens here.
+ *
+ * Collision queries run on RBush (client req 2026-08-31: "library use karo
+ * na scratch se na kaam karo") — a small, widely-used R-tree spatial index —
+ * instead of a hand-rolled grid bucket; everything about WHERE a label goes
+ * (offset search order, hide-as-last-resort, pinned/manual positions) stays
+ * local, since no generic spatial-index library knows any of that.
  */
+
+import RBush from "rbush";
 
 export interface LabelCandidate {
   id: string;
@@ -49,58 +57,22 @@ export interface PlacedLabel {
   leader: boolean;
 }
 
-interface Box { minX: number; minY: number; maxX: number; maxY: number; }
+interface LabelBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 /** Text width has no cheap exact answer without a DOM measurement — this
  *  monospace-ish estimate (the app's own SVG labels are all fixed-width or
  *  bold-narrow fonts) is close enough for collision purposes; a slightly
  *  generous estimate is safer here than an optimistic one that lets real
  *  text spill past its box. */
-function textBox(x: number, y: number, text: string, fontSize: number): Box {
+function textBox(x: number, y: number, text: string, fontSize: number): LabelBox {
   const w = Math.max(text.length, 1) * fontSize * 0.62;
   const h = fontSize * 1.3;
   return { minX: x - w / 2 - 1, minY: y - h, maxX: x + w / 2 + 1, maxY: y + 2 };
-}
-
-function boxesOverlap(a: Box, b: Box): boolean {
-  return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
-}
-
-/** Grid-bucketed spatial index so collision checks for N labels stay close
- *  to O(N) instead of O(N^2) — cell size matched to a typical label's
- *  footprint so a query only touches a handful of neighbouring cells. */
-class SpatialGrid {
-  private cell: number;
-  private buckets = new Map<string, Box[]>();
-  constructor(cellSize: number) {
-    this.cell = Math.max(cellSize, 1);
-  }
-  private keysFor(b: Box): string[] {
-    const x0 = Math.floor(b.minX / this.cell), x1 = Math.floor(b.maxX / this.cell);
-    const y0 = Math.floor(b.minY / this.cell), y1 = Math.floor(b.maxY / this.cell);
-    const keys: string[] = [];
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.push(`${x},${y}`);
-    return keys;
-  }
-  insert(b: Box) {
-    for (const k of this.keysFor(b)) {
-      if (!this.buckets.has(k)) this.buckets.set(k, []);
-      this.buckets.get(k)!.push(b);
-    }
-  }
-  collides(b: Box): boolean {
-    const seen = new Set<Box>();
-    for (const k of this.keysFor(b)) {
-      const list = this.buckets.get(k);
-      if (!list) continue;
-      for (const other of list) {
-        if (seen.has(other)) continue;
-        seen.add(other);
-        if (boxesOverlap(b, other)) return true;
-      }
-    }
-    return false;
-  }
 }
 
 /** Candidate offsets tried for a colliding label, spiralling outward from
@@ -127,15 +99,14 @@ function offsetRing(fontSize: number, preferDx: number, preferDy: number): { dx:
  *  offset or are hidden if nothing in the search ring is clear. */
 export function declutterLabels(candidates: LabelCandidate[]): PlacedLabel[] {
   if (!candidates.length) return [];
-  const avgFont = candidates.reduce((s, c) => s + c.fontSize, 0) / candidates.length;
-  const grid = new SpatialGrid(avgFont * 3);
+  const tree = new RBush<LabelBox>();
   const placed: PlacedLabel[] = [];
   const pinned = candidates.filter((c) => c.pinnedDx != null || c.pinnedDy != null);
   const auto = candidates.filter((c) => c.pinnedDx == null && c.pinnedDy == null);
 
   for (const c of pinned) {
     const lx = c.x + (c.pinnedDx ?? 0), ly = c.y + (c.pinnedDy ?? 0);
-    grid.insert(textBox(lx, ly, c.text, c.fontSize));
+    tree.insert(textBox(lx, ly, c.text, c.fontSize));
     placed.push({
       id: c.id, text: c.text, fontSize: c.fontSize, x: c.x, y: c.y,
       labelX: lx, labelY: ly, hidden: false,
@@ -149,11 +120,10 @@ export function declutterLabels(candidates: LabelCandidate[]): PlacedLabel[] {
     for (const off of ring) {
       const x = c.x + off.dx, y = c.y + off.dy;
       const box = textBox(x, y, c.text, c.fontSize);
-      if (!grid.collides(box)) {
-        found = { x, y };
-        grid.insert(box);
-        break;
-      }
+      if (tree.collides(box)) continue;
+      found = { x, y };
+      tree.insert(box);
+      break;
     }
     if (found) {
       placed.push({
