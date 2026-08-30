@@ -7,7 +7,15 @@
  *   - comma or semicolon or tab/whitespace delimiters
  *   - European decimal comma ("93 205,88") and grouped thousands
  *   - header rows in any column order (fuzzy-matched by name)
+ *
+ * Field splitting/quote-handling is delegated to PapaParse (RFC4180-correct —
+ * handles `"L11"`-style quoted cells, embedded delimiters inside quotes,
+ * etc. properly; a hand-rolled `line.split(",")` doesn't) — everything
+ * survey-specific (which delimiter a line actually uses, bearing vs.
+ * description detection, European decimal-comma numbers, header aliasing)
+ * stays local, since no generic CSV library knows any of that.
  */
+import Papa from "papaparse";
 
 export interface ParsedRow {
   index: number;
@@ -69,27 +77,25 @@ function parseNum(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Strip a single layer of matching quotes CAD/Excel exports wrap cells in
- *  (e.g. `"L11"` -> `L11`) so beacon IDs don't end up with literal quote marks. */
-function unquote(cell: string): string {
-  const t = cell.trim();
-  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === "'" && t[t.length - 1] === "'"))) {
-    return t.slice(1, -1).trim();
-  }
-  return t;
-}
-
+/** A lone `'` isn't a real quote character here often enough (e.g. a DMS
+ *  value like `36'15"`) that treating it as one would corrupt data — only
+ *  `"` is trusted as a quote/escape char for the single-quote-free bulk of
+ *  survey exports; PapaParse still splits `'`-containing cells correctly,
+ *  it just won't strip a leading/trailing `'` as a quote mark. */
 function splitLine(line: string): string[] {
   // Delimiter precedence: an explicit ';' or tab wins over comma, so European
   // files ("A;93205,88;2464520,65" — semicolon delimiter + decimal comma) split
   // correctly instead of breaking on the decimal comma. Comma is the fallback
-  // delimiter only when no ';'/tab is present.
-  if (line.includes(";")) return line.split(";").map((c) => unquote(c));
-  if (line.includes("\t")) return line.split("\t").map((c) => unquote(c));
-  if (line.includes(",") && line.split(",").length >= line.split(/\s+/).length) {
-    return line.split(",").map((c) => unquote(c));
-  }
-  return line.split(/\s{2,}|\s/).map((c) => unquote(c)).filter(Boolean);
+  // delimiter only when no ';'/tab is present; plain whitespace only when
+  // none of the delimited forms apply (PapaParse has no whitespace mode).
+  let delimiter: string;
+  if (line.includes(";")) delimiter = ";";
+  else if (line.includes("\t")) delimiter = "\t";
+  else if (line.includes(",") && line.split(",").length >= line.split(/\s+/).length) delimiter = ",";
+  else return line.split(/\s{2,}|\s/).map((c) => c.trim()).filter(Boolean);
+
+  const parsed = Papa.parse<string[]>(line, { delimiter, quoteChar: '"' }).data;
+  return (parsed[0] ?? []).map((c) => c.trim());
 }
 
 /** Heuristic: does this text look like a binary / non-text file?
