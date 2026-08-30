@@ -19,7 +19,12 @@ import { dedupePoints } from "@/lib/plots";
 export function WorkingPlanView() {
   const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput, importResult, cogoPlots } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
-  const fig = diagramFigure ?? cogoResult;
+  // Falls back to the raw COGO canvas traverse only when there are no
+  // numbered plots to pick from at all (client req 2026-08-31: opening
+  // Working Plan straight after Auto-Detect Rectangular Lots, with no plot
+  // added to the sheet yet, silently rendered the entire raw import as one
+  // "lot" instead of showing the empty state's own "Add a plot" picker).
+  const fig = diagramFigure ?? (cogoPlots.length > 0 ? null : cogoResult);
   // Live pixel<->survey-coordinate conversion for whatever's currently drawn
   // (client req 2026-08-28: "Also download Dxf") — handed over by
   // WorkingPlan's own onTransform, same mechanism Diagrams.tsx already uses

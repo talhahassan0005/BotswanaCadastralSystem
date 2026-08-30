@@ -130,8 +130,14 @@ export function Diagrams() {
     };
   }, [pdoc, selParcelId]);
 
-  // Prefer the picked lot, then a parcel sent from Parcels, then the COGO traverse.
-  const fig = parcelFigure ?? diagramFigure ?? cogoResult;
+  // Prefer the picked lot, then a parcel sent from Parcels, then the raw COGO
+  // traverse — but only when there are no numbered lots to pick from at all.
+  // Once the project has numbered plots (client req 2026-08-31: opening
+  // Diagrams straight after Auto-Detect Rectangular Lots, with nothing
+  // picked yet, silently rendered the entire raw import as one "lot"
+  // instead of asking which one), falling back to the whole canvas traverse
+  // is never the right default — show the lot picker instead.
+  const fig = parcelFigure ?? diagramFigure ?? (cogoPlots.length > 0 ? null : cogoResult);
 
   // Beacons that exist but are NOT on the selected lot's boundary — shown on the
   // diagram as marks (dot + label) but kept OUT of the traverse (client request).

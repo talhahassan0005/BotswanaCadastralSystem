@@ -13,7 +13,6 @@ import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 
-const PALETTE = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
 const COORDS_PER_SHEET = 48;
 const W = 1000;
 const H = 707; // A4 landscape ratio
@@ -937,23 +936,25 @@ export function GeneralPlanView() {
           <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
           <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
         </g>
-        {/* parcels — plot-number font shrinks as more plots share one sheet
-            (client req 2026-08-30) — a fixed 10px label was sized for a
-            handful of large lots; at real subdivision density (hundreds of
-            small lots on one sheet, matching the reference) that same size
-            overflows a lot's own tiny cell into its neighbours. */}
+        {/* parcels — plain black outline, no fill (client req 2026-08-31:
+            "colorful ku hai ur simple lines ku nahi" — matching the GC-122
+            reference's own monochrome line drawing exactly, not a colour
+            per lot). Line/plot-number weight both shrink as more plots
+            share one sheet — a 1.4px line and 10px label sized for a
+            handful of large lots turns into a solid black smear once
+            hundreds of small lots share the same sheet. */}
         {groupSchedule.map(({ p, i }) => {
           const pts = p.fig.points;
           if (pts.length < 3) return null;
           const d = pts.map((pp) => `${t.sx(pp.east, pp.north)},${t.sy(pp.east, pp.north)}`).join(" ");
           const cx = pts.reduce((a, pp) => a + t.sx(pp.east, pp.north), 0) / pts.length;
           const cy = pts.reduce((a, pp) => a + t.sy(pp.east, pp.north), 0) / pts.length;
-          const col = PALETTE[i % PALETTE.length];
           const plotFS = groupPlots.length > 150 ? 4.5 : groupPlots.length > 60 ? 6.5 : groupPlots.length > 20 ? 8.5 : 10;
+          const lineW = groupPlots.length > 150 ? 0.5 : groupPlots.length > 60 ? 0.7 : 1;
           return (
             <g key={p.number}>
-              <polygon points={d} fill={col} fillOpacity={0.13} stroke={col} strokeWidth={1.4} />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={plotFS} fontWeight={700} fill={col}>{p.number}</text>
+              <polygon points={d} fill="none" stroke="#0f172a" strokeWidth={lineW} strokeLinejoin="round" />
+              <text x={cx} y={cy} textAnchor="middle" fontSize={plotFS} fontWeight={700} fill="#0f172a">{p.number}</text>
             </g>
           );
         })}
