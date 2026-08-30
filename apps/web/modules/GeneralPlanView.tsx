@@ -176,6 +176,11 @@ export function GeneralPlanView() {
   if (meta.parentLotNumber.trim()) extraTitleLines.push(`PORTIONS OF LOT ${meta.parentLotNumber.trim()} ${meta.name}`);
   if (sheetMode === "general" && meta.parentDsmNo.trim()) extraTitleLines.push(`VIDE DIAGRAM DSM NO. ${meta.parentDsmNo.trim()} ANNEXED TO`);
   if (meta.tribalArea.trim()) extraTitleLines.push(`SITUATE AT ${(meta.location || meta.name).trim()} IN THE ${meta.tribalArea.trim()} TRIBAL AREA`);
+  // Scale moved up into the heading itself (client req 2026-08-31, matching
+  // the GC-122/WP_CH reference — "SCALE 1:1000" is the title's own last
+  // line, not a separate caption under the drawing) — always shown, unlike
+  // the three lines above which only appear once their field is filled in.
+  extraTitleLines.push(`SCALE 1:${meta.scale.toLocaleString()}`);
   const TITLE_EXTRA_LINE_H = 13;
   const FX0 = 30, FY0 = 90 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = 660, FY1 = H - 150;
   const pad = 30;
@@ -473,7 +478,11 @@ export function GeneralPlanView() {
         const dE = b.east - a.east, dN = b.north - a.north;
         const segLen = Math.hypot(dE, dN) || 1;
         let pE = -dN / segLen, pN = dE / segLen;
-        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+        // Points back toward the plot's own centroid — INSIDE the lot
+        // (client req 2026-08-31 redline: "move the distance and bearing
+        // text to inside" — it previously pointed outward, away from the
+        // centroid, sitting past the boundary in the road/margin).
+        if (pE * (mE - cE) + pN * (mN - cN) > 0) { pE = -pE; pN = -pN; }
         const off = Math.min(14, Math.max(3, segLen * 0.08)); // just off the line, matching the reference's tight offset
         const [brg, dist] = inverse({ east: a.east, north: a.north }, { east: b.east, north: b.north });
         out.push({
@@ -586,13 +595,14 @@ export function GeneralPlanView() {
       11, "middle"
     );
     extraTitleLines.forEach((ln, i) => text(W / 2, 54 + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
-    text(regX + regW, 18, `GC-${meta.gcNo || "—"}`, 9, "end");
-    text(regX + 6, 60, `DSM No: ${meta.dsmNo || "—"}`, 8);
-    text(regX + 6, 129, "Surveyed in", 8);
-    text(regX + regW - 6, 129, meta.surveyedIn || "—", 8, "end");
-    text(regX + 6, 142, "By me", 8);
-    text(regX + regW - 6, 142, meta.surveyor || "—", 8, "end");
-    text(regX + regW - 6, 153, "Land Surveyor", 7, "end");
+    text(regX, 18, `GC-${meta.gcNo || "—"}`, 9);
+    text(regX + regW, 18, `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
+    text(regX + 6, regY + 24, `DSM No: ${meta.dsmNo || "—"}`, 9.5);
+    text(regX + 6, regY + 100, "Surveyed in", 8);
+    text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
+    text(regX + 6, regY + 114, "By me", 8);
+    text(regX + regW - 6, regY + 114, meta.surveyor || "—", 8, "end");
+    text(regX + regW - 6, regY + 126, "Land Surveyor", 7, "end");
     text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
 
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
@@ -657,7 +667,7 @@ export function GeneralPlanView() {
   // the border instead of outside it like the reference. FRAME_R/FRAME_B are
   // the border's right/bottom edges.
   const FRAME_M = 24, FRAME_X = FRAME_M, FRAME_Y = FRAME_M, FRAME_R = W - FRAME_M, FRAME_B = H - FRAME_M;
-  const TICK = 7; // grid-tick length, projecting outward from the border into the margin
+  const TICK = 10; // grid-tick length (client req 2026-08-31: "increase ... to be visible" — was 7)
   /** One row of evenly-spaced tick marks along a border edge, projecting
    *  outward (into the margin) rather than inward onto the drawing. */
   function edgeTicks(fixed: number, from: number, to: number, count: number, horizontal: boolean, out: number) {
@@ -666,8 +676,8 @@ export function GeneralPlanView() {
       const t = from + ((to - from) * i) / count;
       lines.push(
         horizontal
-          ? <line key={i} x1={t} y1={fixed} x2={t} y2={fixed + out} stroke="#0f172a" strokeWidth={0.6} />
-          : <line key={i} x1={fixed} y1={t} x2={fixed + out} y2={t} stroke="#0f172a" strokeWidth={0.6} />
+          ? <line key={i} x1={t} y1={fixed} x2={t} y2={fixed + out} stroke="#0f172a" strokeWidth={1} />
+          : <line key={i} x1={fixed} y1={t} x2={fixed + out} y2={t} stroke="#0f172a" strokeWidth={1} />
       );
     }
     return lines;
@@ -678,9 +688,16 @@ export function GeneralPlanView() {
   // Approved/Director-of-Surveys signature block, and Surveyed-in/surveyor
   // details — replaces the old bare "Sheet N of M" caption and the informal
   // Approved box that used to sit at the bottom of the parcel-schedule panel.
-  // Sized to sit inside the wider frame above (right edge 6 units short of
-  // FRAME_R, client req 2026-08-28).
-  const regX = 790, regW = 180;
+  // A true 10cm-by-10cm square sitting exactly at the frame's own top-right
+  // corner (client req 2026-08-31 redline: "make the corner box 10cm by
+  // 10cm, place the box exactly at the corner") — previously a wide
+  // rectangle with a small gap from the corner. GC-No/SHEET No move out of
+  // the box entirely, onto one line directly above it (same redline: "move
+  // GC number" / "move sheet numbering" — the reference has both above the
+  // box, not GC above and Sheet No as the box's own first row).
+  const regSize = 145;
+  const regX = FRAME_R - regSize, regY = FRAME_Y;
+  const regW = regSize;
 
   // Right-side reference panel (client req 2026-08-27, §2e): Sheet Index,
   // Beacon Description, Splay Information, Ped Way — sits between the
@@ -782,10 +799,15 @@ export function GeneralPlanView() {
           must be inside the frame and be visible" — the first version had
           these pointing outward into the page margin, which the client
           confirmed is wrong). */}
-      {edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK)}
+      {/* Top and right edges stop short of the registration box's own
+          footprint (client req 2026-08-31: "remove the grid markers" once
+          the box sits exactly at that corner — tick marks and the box border
+          would otherwise land on top of each other). Count scaled down to
+          match the shorter span so spacing stays even. */}
+      {edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK)}
       {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK)}
       {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK)}
-      {edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
+      {edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       {/* Title heading — select/move/resize (client req 2026-08-28: "ye
           client khud drag kar ke kahi bi place kar sake ur resize bi kar
@@ -838,11 +860,12 @@ export function GeneralPlanView() {
         );
       })()}
 
-      {/* "GC-No" sits OUTSIDE the border, in the top margin (client req
-          2026-08-28: "check what's within the frame and what is outside") —
-          everything below (SHEET No/DSM No/Approved/Director/Surveyed in)
-          stays INSIDE it. */}
-      <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+      {/* GC-No and SHEET No sit OUTSIDE the box, side by side directly above
+          it (client req 2026-08-31 redline: "move GC number" / "move sheet
+          numbering" — the box itself now starts with DSM No, not a Sheet No
+          row). */}
+      <text x={regX} y={18} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+      <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
       {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
           screenshot circling this whole box): no "G.P. No." row here (that
           field stays editable for other diagrams' own cross-reference, just
@@ -851,19 +874,17 @@ export function GeneralPlanView() {
           actual signature; "Surveyed in"/"By me" each pair a label on the
           left with its value right-aligned on the same row, and "Land
           Surveyor" sits alone on the row under the surveyor's name. */}
-      <rect x={regX} y={30} width={regW} height={133} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-      <text x={regX + regW / 2} y={42} textAnchor="middle" fontSize={9} fontWeight={700}>SHEET No - {no} of {sheetCount}</text>
-      <line x1={regX} y1={47} x2={regX + regW} y2={47} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={61} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
-      <line x1={regX} y1={66} x2={regX + regW} y2={66} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={80} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
-      <text x={regX + 6} y={108} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
-      <line x1={regX} y1={116} x2={regX + regW} y2={116} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={129} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
-      <text x={regX + regW - 6} y={129} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
-      <text x={regX + 6} y={142} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
-      <text x={regX + regW - 6} y={142} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-      <text x={regX + regW - 6} y={153} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+      <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+      <text x={regX + 6} y={regY + 24} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+      <line x1={regX} y1={regY + 30} x2={regX + regW} y2={regY + 30} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={regY + 46} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
+      <text x={regX + 6} y={regY + 76} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
+      <line x1={regX} y1={regY + 86} x2={regX + regW} y2={regY + 86} stroke="#0f172a" strokeWidth={0.4} />
+      <text x={regX + 6} y={regY + 100} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
+      <text x={regX + regW - 6} y={regY + 100} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
+      <text x={regX + 6} y={regY + 114} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
+      <text x={regX + regW - 6} y={regY + 114} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+      <text x={regX + regW - 6} y={regY + 126} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
 
       {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
           outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
@@ -1022,7 +1043,6 @@ export function GeneralPlanView() {
             <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north) + 9} textAnchor="middle" fontSize={7} fill="#334155">{d.bearing}</text>
           </g>
         ))}
-        <text x={(FX0 + FX1) / 2} y={FY1 + 14} textAnchor="middle" fontSize={11} fontWeight={700}>SCALE 1:{meta.scale.toLocaleString()}</text>
         {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
         {panelRows.map((row, i) => (
           <text
@@ -1145,9 +1165,16 @@ export function GeneralPlanView() {
                   <text x={700} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
                 </>
               ) : (
+                // The outer-boundary traverse table itself needs one clean
+                // connected ring to walk — when the layout doesn't form one
+                // (a gap, an unmatched edge), just the total area still
+                // prints, without the technical explanation of why the
+                // table above it is empty (client req 2026-08-31: crossed
+                // out on the reference redline, "remove the other
+                // statement").
                 cogoPlots.length > 0 && (
-                  <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">
-                    Outer boundary not traced (plots don&apos;t form one simple connected layout) — TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
+                  <text x={30} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">
+                    TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
                   </text>
                 )
               )
