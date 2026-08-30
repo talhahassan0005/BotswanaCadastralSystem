@@ -133,23 +133,47 @@ export interface DetectedLot {
  * scanning every point for every query — a real subdivision file this is
  * built for (hundreds to low thousands of beacons) turns an O(n²) scan into
  * O(n log n), which matters once files grow past what a single client's
- * test data has exercised so far. */
-export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: DetectedLot[]; usedPointCount: number } {
-  const pts = points.filter((p) => Number.isFinite(p.east) && Number.isFinite(p.north));
-  interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: PlotPoint }
+ * test data has exercised so far.
+ *
+ * A single real subdivision file is rarely ONE consistent grid, though —
+ * different blocks follow different road alignments, not true north, so
+ * they sit at slightly different rotations from each other (client req
+ * 2026-08-31, confirmed against the real Charleshill file: one block is
+ * exactly axis-aligned, an adjoining one sits at a consistent -2.6°, and a
+ * pure axis-aligned pass silently drops every point in the tilted block to
+ * "leftover"). This runs the axis-aligned pass above repeatedly: pass 1 at
+ * 0° (identical to, and a strict superset of, the plain axis-aligned
+ * behaviour — critical so nothing already working regresses), then for
+ * whatever's left un-detected, estimates that remainder's own dominant tilt
+ * from real nearest-neighbour pairs, de-rotates just that remainder around
+ * its own centroid (via the existing `rotateAroundCentroid`, same
+ * convention used everywhere else rotation happens in this app), reruns the
+ * same detector on it, and maps any newly-found lots' points back to their
+ * REAL (never-rotated) coordinates before returning — rotation here is
+ * purely an internal detection aid, exactly as `rotateWorldPoint`'s own doc
+ * comment already establishes for display use. Repeats until nothing more
+ * is found or a pass cap is hit, so a file with several differently-tilted
+ * blocks gets each one in turn without assuming a single global angle. */
+const MAX_ROTATION_PASSES = 8;
+const MIN_DETECTABLE_ANGLE = 0.2; // degrees — below this, treat as already axis-aligned (float dust)
+const ANGLE_NEIGHBOUR_MIN_D = 3; // metres — plausible lot-edge length range used only to estimate tilt
+const ANGLE_NEIGHBOUR_MAX_D = 60;
+
+/** One axis-aligned detection pass — the exact original algorithm, just
+ *  generic over any point shape so a rotated (temporary) copy can carry a
+ *  back-reference to its real-world original alongside it. */
+function detectAxisAlignedPass<T extends PlotPoint>(pts: T[], tol: number): { lots: T[][]; used: Set<T> } {
+  interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: T }
   const tree = new RBush<PtBox>();
   tree.load(pts.map((p) => ({ minX: p.east, minY: p.north, maxX: p.east, maxY: p.north, p })));
 
-  // Nearest point strictly beyond `from` along `axis`, within `tol` of the
-  // other axis — same semantics as the original linear scan, just scoped to
-  // an RBush query box instead of every point in the file.
-  function nearest(from: PlotPoint, axis: "east" | "north", dir: 1 | -1): PlotPoint | null {
+  function nearest(from: T, axis: "east" | "north", dir: 1 | -1): T | null {
     const inf = Infinity;
     const box =
       axis === "east"
         ? { minX: dir === 1 ? from.east + tol : -inf, maxX: dir === 1 ? inf : from.east - tol, minY: from.north - tol, maxY: from.north + tol }
         : { minX: from.east - tol, maxX: from.east + tol, minY: dir === 1 ? from.north + tol : -inf, maxY: dir === 1 ? inf : from.north - tol };
-    let best: PlotPoint | null = null;
+    let best: T | null = null;
     let bestDelta = Infinity;
     for (const c of tree.search(box)) {
       if (c.p === from) continue;
@@ -160,8 +184,8 @@ export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: 
     return best;
   }
 
-  const lots: DetectedLot[] = [];
-  const used = new Set<PlotPoint>();
+  const lots: T[][] = [];
+  const used = new Set<T>();
 
   for (const p of pts) {
     const right = nearest(p, "east", 1);
@@ -174,11 +198,98 @@ export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: 
     // exactly these same two edge points, not skip past a missing beacon.
     if (nearest(corner, "east", -1) !== up || nearest(corner, "north", -1) !== right) continue;
 
-    lots.push({ points: [p, right, corner, up] });
+    lots.push([p, right, corner, up]);
     used.add(p); used.add(right); used.add(corner); used.add(up);
   }
 
-  return { lots, usedPointCount: used.size };
+  return { lots, used };
+}
+
+/** Estimates a point set's own dominant tilt from real nearest-neighbour
+ *  pairs (distance-bounded to plausible lot-edge lengths, so an outer-
+ *  boundary point's far-away nearest neighbour doesn't skew it) — folded
+ *  into (-45°, 45°] so a "row" pair and the perpendicular "column" pair
+ *  vote for the SAME angle, then the median taken (robust against the
+ *  minority of leftover points that aren't part of any grid at all, e.g.
+ *  splayed corners or block corners). Returns null when there's too little
+ *  data to trust, or the set already reads as axis-aligned. */
+function estimateDominantAngle(points: PlotPoint[]): number | null {
+  if (points.length < 4) return null;
+  interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: PlotPoint }
+  const tree = new RBush<PtBox>();
+  tree.load(points.map((p) => ({ minX: p.east, minY: p.north, maxX: p.east, maxY: p.north, p })));
+
+  const angles: number[] = [];
+  for (const p of points) {
+    const box = {
+      minX: p.east - ANGLE_NEIGHBOUR_MAX_D, minY: p.north - ANGLE_NEIGHBOUR_MAX_D,
+      maxX: p.east + ANGLE_NEIGHBOUR_MAX_D, maxY: p.north + ANGLE_NEIGHBOUR_MAX_D,
+    };
+    let best: PlotPoint | null = null;
+    let bestD = Infinity;
+    for (const c of tree.search(box)) {
+      if (c.p === p) continue;
+      const d = Math.hypot(c.p.east - p.east, c.p.north - p.north);
+      if (d < ANGLE_NEIGHBOUR_MIN_D || d > ANGLE_NEIGHBOUR_MAX_D) continue;
+      if (d < bestD) { bestD = d; best = c.p; }
+    }
+    if (!best) continue;
+    let deg = (Math.atan2(best.north - p.north, best.east - p.east) * 180) / Math.PI;
+    deg = ((deg % 90) + 90) % 90; // fold row/column pairs onto the same representative angle
+    if (deg > 45) deg -= 90; // smallest-magnitude deviation from either axis
+    angles.push(deg);
+  }
+  if (angles.length < 4) return null;
+  angles.sort((a, b) => a - b);
+  const median = angles[Math.floor(angles.length / 2)];
+  return Math.abs(median) < MIN_DETECTABLE_ANGLE ? null : median;
+}
+
+export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: DetectedLot[]; usedPointCount: number } {
+  interface Working extends PlotPoint { __orig: PlotPoint }
+  let remaining: Working[] = points
+    .filter((p) => Number.isFinite(p.east) && Number.isFinite(p.north))
+    .map((p) => ({ ...p, __orig: p }));
+
+  const lots: DetectedLot[] = [];
+  const usedOriginal = new Set<PlotPoint>();
+
+  // Pass 1 is always angle 0 — identical to, and a strict superset of, the
+  // plain axis-aligned detector (nothing already working can regress).
+  let angle = 0;
+  for (let pass = 0; pass < MAX_ROTATION_PASSES && remaining.length >= 4; pass++) {
+    // rotateAroundCentroid returns the input UNCHANGED (same references)
+    // when angleDeg is falsy — so pass 1 (angle 0) runs detection on the
+    // exact same Working objects as `remaining`, byte-for-byte the old
+    // behaviour, not a rotated copy of it.
+    const rotated = rotateAroundCentroid(remaining, angle);
+    const { lots: foundGroups } = detectAxisAlignedPass(rotated, tol);
+
+    if (foundGroups.length === 0) {
+      // Nothing at this angle — try the remainder's own dominant tilt
+      // instead of giving up after only ever trying 0°.
+      const nextAngle = estimateDominantAngle(remaining);
+      if (nextAngle == null || Math.abs(nextAngle - angle) < MIN_DETECTABLE_ANGLE) break;
+      angle = nextAngle;
+      continue;
+    }
+
+    // foundGroups' points are the ROTATED copies detectAxisAlignedPass
+    // actually saw (fresh objects whenever angle is non-zero —
+    // rotateAroundCentroid never mutates `remaining` in place), so they
+    // can't be matched against `remaining`'s own Working objects by
+    // reference. `__orig` is the one identity that survives rotation (a
+    // plain spread, so it's copied through unchanged) — filter by THAT.
+    const usedOrigThisPass = new Set<PlotPoint>();
+    for (const group of foundGroups) {
+      lots.push({ points: group.map((wp) => wp.__orig) });
+      for (const wp of group) { usedOriginal.add(wp.__orig); usedOrigThisPass.add(wp.__orig); }
+    }
+    remaining = remaining.filter((wp) => !usedOrigThisPass.has(wp.__orig));
+    angle = estimateDominantAngle(remaining) ?? 0;
+  }
+
+  return { lots, usedPointCount: usedOriginal.size };
 }
 
 export interface BlockCorner {
