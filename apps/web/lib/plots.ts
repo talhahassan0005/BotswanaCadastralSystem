@@ -3,6 +3,7 @@
  * sheet (General Plan, Working Plan) — kept here so both modules operate on
  * the exact same logic instead of two independently-drifting copies.
  */
+import RBush from "rbush";
 
 export interface PlotPoint {
   name: string | null;
@@ -125,20 +126,36 @@ export interface DetectedLot {
  *  way (outer parent-boundary beacons, block corners, splayed/chamfered
  *  corner lots) are simply left out — `usedPointCount` tells the caller how
  *  many of `points` were consumed, so the rest can be reported as needing
- *  manual placement with the Polygon tool. */
+ *  manual placement with the Polygon tool.
+ *
+ * Neighbour/corner lookups run through an RBush spatial index (client req
+ * 2026-08-31: "optimize karo", "library use karo scratch se na") instead of
+ * scanning every point for every query — a real subdivision file this is
+ * built for (hundreds to low thousands of beacons) turns an O(n²) scan into
+ * O(n log n), which matters once files grow past what a single client's
+ * test data has exercised so far. */
 export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: DetectedLot[]; usedPointCount: number } {
   const pts = points.filter((p) => Number.isFinite(p.east) && Number.isFinite(p.north));
+  interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: PlotPoint }
+  const tree = new RBush<PtBox>();
+  tree.load(pts.map((p) => ({ minX: p.east, minY: p.north, maxX: p.east, maxY: p.north, p })));
 
+  // Nearest point strictly beyond `from` along `axis`, within `tol` of the
+  // other axis — same semantics as the original linear scan, just scoped to
+  // an RBush query box instead of every point in the file.
   function nearest(from: PlotPoint, axis: "east" | "north", dir: 1 | -1): PlotPoint | null {
-    const other = axis === "east" ? "north" : "east";
+    const inf = Infinity;
+    const box =
+      axis === "east"
+        ? { minX: dir === 1 ? from.east + tol : -inf, maxX: dir === 1 ? inf : from.east - tol, minY: from.north - tol, maxY: from.north + tol }
+        : { minX: from.east - tol, maxX: from.east + tol, minY: dir === 1 ? from.north + tol : -inf, maxY: dir === 1 ? inf : from.north - tol };
     let best: PlotPoint | null = null;
     let bestDelta = Infinity;
-    for (const q of pts) {
-      if (q === from) continue;
-      if (Math.abs(q[other] - from[other]) > tol) continue;
-      const delta = (q[axis] - from[axis]) * dir;
+    for (const c of tree.search(box)) {
+      if (c.p === from) continue;
+      const delta = (c.p[axis] - from[axis]) * dir;
       if (delta <= tol) continue; // wrong side, or effectively the same point
-      if (delta < bestDelta) { bestDelta = delta; best = q; }
+      if (delta < bestDelta) { bestDelta = delta; best = c.p; }
     }
     return best;
   }
@@ -150,9 +167,8 @@ export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: 
     const right = nearest(p, "east", 1);
     const up = nearest(p, "north", 1);
     if (!right || !up) continue;
-    const corner = pts.find(
-      (q) => q !== p && q !== right && q !== up && Math.abs(q.east - right.east) <= tol && Math.abs(q.north - up.north) <= tol
-    );
+    const cornerBox = { minX: right.east - tol, minY: up.north - tol, maxX: right.east + tol, maxY: up.north + tol };
+    const corner = tree.search(cornerBox).map((c) => c.p).find((q) => q !== p && q !== right && q !== up);
     if (!corner) continue;
     // Elementary-face check: walking back from the corner must land on
     // exactly these same two edge points, not skip past a missing beacon.
