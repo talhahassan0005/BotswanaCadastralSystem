@@ -617,8 +617,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           a handful of large lots; at real multi-plot density (hundreds of
           tiny lots) both were bigger than the lots themselves). */}
       {(() => {
-        const figLineW = plotPolygons.length > 150 ? 0.35 : plotPolygons.length > 60 ? 0.6 : 1.6;
-        const plotNumFS = plotPolygons.length > 150 ? 4 : plotPolygons.length > 60 ? 6 : 12;
+        // Kept in sync with GeneralPlanView.tsx's plotFS/lineW tiers exactly
+        // (client req 2026-09-01: "jese General Plan mein plots clear hain
+        // aur font size jaisa hai, waise hi Working Plan mein hona chahiye"
+        // — the two had drifted to different tier values across separate
+        // rounds of shrinking one or the other).
+        const figLineW = plotPolygons.length > 150 ? 0.5 : plotPolygons.length > 60 ? 0.7 : 1;
+        const plotNumFS = plotPolygons.length > 150 ? 3 : plotPolygons.length > 60 ? 4.5 : plotPolygons.length > 20 ? 6 : 8;
         return (
           <>
             {plotPolygons.map((pp, i) => (

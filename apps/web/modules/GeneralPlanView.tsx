@@ -145,8 +145,20 @@ export function GeneralPlanView() {
   );
   const layoutGroups = useMemo(() => {
     if (!sortedPlots.length) return [[] as typeof sortedPlots];
+    // BALANCED split, not a fixed cap-then-remainder slice (client req
+    // 2026-09-01: "jese Sheet 2 mein hai... same Sheet 1 mein bhi hona
+    // chahiye" — 327 lots at a 300 cap produced 300 + 27, so Sheet 1's
+    // density-tiered font/line-weight (tuned per-sheet from its own plot
+    // count) came out visibly smaller/denser than Sheet 2's, even though
+    // both are the same layout). Same number of sheets as before (still
+    // driven by PLOTS_PER_SHEET), but every sheet gets as close to an equal
+    // share of the total as possible, matching the reference's own fairly
+    // even split (257/169 lots across its 2 sheets, not one packed sheet
+    // and one nearly-empty one).
+    const sheetsNeeded = Math.ceil(sortedPlots.length / PLOTS_PER_SHEET);
+    const perSheet = Math.ceil(sortedPlots.length / sheetsNeeded);
     const groups: (typeof sortedPlots)[] = [];
-    for (let i = 0; i < sortedPlots.length; i += PLOTS_PER_SHEET) groups.push(sortedPlots.slice(i, i + PLOTS_PER_SHEET));
+    for (let i = 0; i < sortedPlots.length; i += perSheet) groups.push(sortedPlots.slice(i, i + perSheet));
     return groups;
   }, [sortedPlots]);
   const layoutSheetCount = layoutGroups.length;
