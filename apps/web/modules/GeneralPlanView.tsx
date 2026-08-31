@@ -977,12 +977,19 @@ export function GeneralPlanView() {
             }))
           );
           const byId = new Map(placements.map((pl) => [pl.id, pl]));
+          // Small hollow circle, matching standard survey-diagram convention
+          // (client req 2026-08-31 — reference sheets never use a solid
+          // filled dot); radius shrinks with beacon density the same way
+          // the plot-number font/line-weight already do, so a real
+          // subdivision's hundreds of shared corner beacons don't merge
+          // into a solid mass.
+          const beaconR = groupUsedBeacons.length > 400 ? 1.2 : groupUsedBeacons.length > 150 ? 1.8 : 2.6;
           return groupUsedBeacons.map((b) => {
             const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
             const pl = byId.get(b.id);
             return (
               <g key={b.id}>
-                <circle cx={bx} cy={by} r={2.6} fill="#0f172a" />
+                <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.5, beaconR * 0.45)} />
                 {pl?.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#cbd5e1" strokeWidth={0.5} />}
                 {!pl?.hidden && (
                   <text x={pl?.labelX ?? bx + 4} y={pl?.labelY ?? by - 3} fontSize={8} fill="#334155">{b.id}</text>

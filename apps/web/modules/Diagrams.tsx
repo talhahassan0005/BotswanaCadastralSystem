@@ -111,6 +111,12 @@ export function Diagrams() {
   // the Traverse panel's Calculate) is saved to the project by that number.
   const [plotNumberInput, setPlotNumberInput] = useState("");
   const [plotNumberError, setPlotNumberError] = useState<string | null>(null);
+  // Lets the user SEE which numbers actually exist instead of only typing
+  // one blind (client req 2026-08-31) — filters cogoPlots as-you-type,
+  // capped so a 300+ lot project doesn't dump every number on screen at
+  // once before the user narrows it down.
+  const [lotSearchQuery, setLotSearchQuery] = useState("");
+  const LOT_SEARCH_MAX_SHOWN = 60;
   // Once a lot's diagram is loaded there was no way back to the "choose a
   // lot" screen to pick a different one (client req 2026-08-24) — the "Lot /
   // parcel" dropdown further down only lets you switch between existing
@@ -1051,6 +1057,49 @@ export function Diagrams() {
             <Button onClick={loadPlotByNumber} disabled={!plotNumberInput.trim()}>Load</Button>
           </div>
           {plotNumberError && <p className="mx-auto mt-2 max-w-xs text-xs text-red-600">{plotNumberError}</p>}
+
+          {cogoPlots.length > 0 && (() => {
+            const q = lotSearchQuery.trim().toLowerCase();
+            const matches = cogoPlots.filter((p) => !q || p.number.toLowerCase().includes(q));
+            const shown = matches.slice(0, LOT_SEARCH_MAX_SHOWN);
+            return (
+              <div className="mx-auto mt-4 max-w-xs text-left">
+                <p className="text-sm text-slate-500">
+                  Or search {cogoTabLabel(config.discipline)}'s {cogoPlots.length} numbered lot(s):
+                </p>
+                <Input value={lotSearchQuery} onChange={setLotSearchQuery} placeholder="Search lot numbers…" />
+                <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  {shown.length === 0 ? (
+                    <span className="text-xs text-slate-400">No lot number matches "{lotSearchQuery}".</span>
+                  ) : (
+                    shown.map((p) => (
+                      <button
+                        key={p.number}
+                        type="button"
+                        onClick={() => {
+                          setPlotNumberInput(p.number);
+                          setSelParcelId(null);
+                          setActiveCogoLotNumber(p.number);
+                          setDiagramFigure(p.fig);
+                          setForcePicker(false);
+                          const suggested = suggestDiagramScale(p.fig.points);
+                          setMeta((m) => ({ ...m, lotName: p.number.toUpperCase(), scale: suggested }));
+                        }}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:border-brand hover:text-brand-dark"
+                      >
+                        {p.number}
+                      </button>
+                    ))
+                  )}
+                </div>
+                {matches.length > LOT_SEARCH_MAX_SHOWN && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    +{matches.length - LOT_SEARCH_MAX_SHOWN} more — narrow the search to see them.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           <p className="my-4 text-xs uppercase tracking-wide text-slate-300">or</p>
 

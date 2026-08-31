@@ -633,8 +633,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           end up with labels sitting on top of each other). Click to
           select, then drag; a selected label gets a dashed handle box.
           Uses `allPoints` (deduped across plots) so a point shared between
-          two adjoining plots gets exactly one dot + one label (Part 33a). */}
-      {allPoints.map((p, i) => {
+          two adjoining plots gets exactly one dot + one label (Part 33a).
+          Already an open (hollow) circle, matching survey-diagram
+          convention — radius now also shrinks with beacon density (client
+          req 2026-08-31) so a real multi-plot sheet's hundreds of shared
+          corner beacons stay individually distinguishable. */}
+      {(() => {
+      const beaconR = allPoints.length > 400 ? 1.4 : allPoints.length > 150 ? 2 : 2.8;
+      return allPoints.map((p, i) => {
         const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         const id = p.name || `#${i}`;
         const pl = beaconPlacementById.get(id);
@@ -647,7 +653,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const boxW = 10 * scale, boxH = 7 * scale;
         return (
           <g key={`b${i}`}>
-            <circle cx={bx} cy={by} r={2.8} fill="white" stroke="black" strokeWidth={1.1} />
+            <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)} />
             {pl?.leader && (
               <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />
             )}
@@ -690,7 +696,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
             )}
           </g>
         );
-      })}
+      });
+      })()}
 
       {/* ---------- Manual extension lines + text notes from Diagrams (read-only) ---------- */}
       {(manualAnnotations ?? []).map((a) => (

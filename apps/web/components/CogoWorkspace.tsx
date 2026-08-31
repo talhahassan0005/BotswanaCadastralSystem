@@ -2232,12 +2232,27 @@ export function CogoWorkspace({
                 Import points, or use "Add point" to place one here
               </text>
             ) : (
+              // Small hollow circle, matching standard survey-diagram
+              // convention (client req 2026-08-31: reference sheets never
+              // use a solid filled dot) — was a solid green fill large
+              // enough that a real subdivision's worth of points (hundreds,
+              // close together) visually merged into one solid mass,
+              // burying the boundary lines and labels underneath. Radius
+              // also shrinks as the canvas gets denser, on the same
+              // reasoning as the label-declutter/plot-line-weight scaling
+              // already applied in General Plan.
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
+                const r = visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2;
                 return (
                   <g key={p.id}>
-                    <circle cx={x} cy={y} r={isSel ? 6 : 4} fill={isSel ? "#dc2626" : "#059669"} />
+                    <circle
+                      cx={x} cy={y} r={isSel ? 6 : r}
+                      fill={isSel ? "#dc2626" : "white"}
+                      stroke={isSel ? "none" : "#059669"}
+                      strokeWidth={isSel ? 0 : Math.max(0.6, r * 0.4)}
+                    />
                     {showPointNames && (
                       <text x={x + 7} y={y - 6} className="fill-slate-700 text-[11px] font-medium">
                         {p.name}
