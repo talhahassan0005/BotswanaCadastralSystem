@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, findBlockCorners, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
+import { declutterLabels } from "@/lib/labelLayout";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -274,6 +275,13 @@ export function GeneralPlanView() {
   // Plain click-to-place free text (spec Part 4), reusing SgDiagram's
   // ManualText type/pattern rather than inventing a new one.
   const [addingRoadLabel, setAddingRoadLabel] = useState(false);
+  // "REMAINDER OF CADASTRE"-style boundary labels stayed manual-only after
+  // the earlier auto-suggestion feature was removed for producing too many
+  // false positives (client req 2026-08-28) — but no "Add Boundary Label"
+  // button was ever added to replace it, so meta.boundaryLabels had no way
+  // to ever get a first entry at all (client req 2026-08-31: "REMAINDER OF
+  // CADASTRE" missing — it wasn't just unlabelled, it was unreachable).
+  const [addingBoundaryLabel, setAddingBoundaryLabel] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<{ id: string; kind: "road" | "boundary" } | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; kind: "road" | "boundary"; x: number; y: number; value: string; angle: number } | null>(null);
   const [draggingLabel, setDraggingLabel] = useState<{ id: string; kind: "road" | "boundary" } | null>(null);
@@ -326,15 +334,16 @@ export function GeneralPlanView() {
   }, [draggingTitle]);
 
   useEffect(() => {
-    if (!textPrompt && !addingRoadLabel) return;
+    if (!textPrompt && !addingRoadLabel && !addingBoundaryLabel) return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       setTextPrompt(null);
       setAddingRoadLabel(false);
+      setAddingBoundaryLabel(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [textPrompt, addingRoadLabel]);
+  }, [textPrompt, addingRoadLabel, addingBoundaryLabel]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = refs.current[activeGroupIdx];
@@ -351,6 +360,16 @@ export function GeneralPlanView() {
       const p = toSvgPoint(e);
       setTextPrompt({ id: null, kind: "road", x: p.x, y: p.y, value: "", angle: 0 });
       setAddingRoadLabel(false);
+      return;
+    }
+    if (addingBoundaryLabel) {
+      const p = toSvgPoint(e);
+      // Pre-fills the wording when the parent lot is known (client req
+      // 2026-08-31) — still requires the user to click a real position and
+      // confirm/edit in the prompt, same manual placement as before.
+      const suggested = meta.parentLotNumber.trim() ? `REMAINDER OF CADASTRE ${meta.parentLotNumber.trim()}` : "";
+      setTextPrompt({ id: null, kind: "boundary", x: p.x, y: p.y, value: suggested, angle: 0 });
+      setAddingBoundaryLabel(false);
       return;
     }
     setSelectedLabel(null);
@@ -925,7 +944,7 @@ export function GeneralPlanView() {
         ref={(el) => { refs.current[groupIdx] = el; }}
         viewBox={`0 0 ${W} ${H}`}
         className="w-full bg-white"
-        style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel ? "crosshair" : "default" }}
+        style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
         onClick={handleCanvasClick}
       >
         {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`)}
@@ -971,6 +990,28 @@ export function GeneralPlanView() {
         {groupUsedBeacons.length === 0 && (
           <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
         )}
+        {/* Block-corner ("B<n>") labels on the drawing itself, matching the
+            Block Corner Table's own numbering (client req 2026-08-31) —
+            unlike ordinary beacon IDs (never shown on the drawing, see
+            above), the reference DOES print these at the small number of
+            genuine block corners. Only the label + a small marker tick; the
+            splay bearing/distance value the reference also shows at these
+            corners (e.g. "272.04.30 / 17.13") isn't rendered — that's the
+            actual splay-CUT corner's own bearing/distance, which needs the
+            splay-cut point itself, and detectRectangularLots explicitly
+            doesn't produce one for a chamfered corner (see its own doc
+            comment) — there's no real geometry here to compute that number
+            from without guessing, so it's left off rather than shown wrong. */}
+        {groupBlockCorners.map((bc) => {
+          const bx = t.sx(bc.east, bc.north), by = t.sy(bc.east, bc.north);
+          return (
+            <g key={`bc-${bc.id}`}>
+              <line x1={bx - 3} y1={by} x2={bx + 3} y2={by} stroke="#0f172a" strokeWidth={0.8} />
+              <line x1={bx} y1={by - 3} x2={bx} y2={by + 3} stroke="#0f172a" strokeWidth={0.8} />
+              <text x={bx + 4} y={by - 3} fontSize={7} fontWeight={600} fill="#0f172a">{bc.id}</text>
+            </g>
+          );
+        })}
         {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
         {sheetRoadLabels.map((tt) => (
           <text
@@ -1025,12 +1066,41 @@ export function GeneralPlanView() {
         {(() => {
           const dimFS = sheetDimLabels.length > 150 ? 3.2 : sheetDimLabels.length > 60 ? 4.5 : 7;
           const dimGap = dimFS + 2;
-          return sheetDimLabels.map((d) => (
-            <g key={d.id} transform={`rotate(${d.angle + rotation} ${t.sx(d.east, d.north)} ${t.sy(d.east, d.north)})`}>
-              <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north)} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
-              <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north) + dimGap} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.bearing}</text>
-            </g>
-          ));
+          // Verified against the real 376-lot file (client req 2026-08-31,
+          // "shared-edge labels drawn twice"): the shared-edge exclusion
+          // above already produces zero duplicate/near-duplicate positions
+          // — the reported pile-up is genuine density (600+ distinct
+          // road-facing edges across the layout), not a dedup bug. Still
+          // routed through the same declutter utility as every other label
+          // set as a defensive measure: two DISTINCT nearby edges' labels
+          // can still visually collide at this density even with correct
+          // dedup, and this guarantees no two SHOWN labels overlap
+          // regardless. Candidate box height approximates the stacked
+          // distance+bearing pair (not just one line); collision boxes
+          // don't account for the label's own rotation, same simplification
+          // used for every other rotated label in this app.
+          const dimPlacements = declutterLabels(
+            sheetDimLabels.map((d) => ({
+              id: d.id,
+              x: t.sx(d.east, d.north),
+              y: t.sy(d.east, d.north),
+              text: d.distance.length >= d.bearing.length ? d.distance : d.bearing,
+              fontSize: dimFS * 2.2,
+            }))
+          );
+          const dimById = new Map(dimPlacements.map((pl) => [pl.id, pl]));
+          return sheetDimLabels.map((d) => {
+            const pl = dimById.get(d.id);
+            if (pl?.hidden) return null;
+            const lx = pl?.labelX ?? t.sx(d.east, d.north);
+            const ly = pl?.labelY ?? t.sy(d.east, d.north);
+            return (
+              <g key={d.id} transform={`rotate(${d.angle + rotation} ${lx} ${ly})`}>
+                <text x={lx} y={ly} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
+                <text x={lx} y={ly + dimGap} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.bearing}</text>
+              </g>
+            );
+          });
         })()}
         {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
         {panelRows.map((row, i) => (
@@ -1371,10 +1441,22 @@ export function GeneralPlanView() {
               variant={addingRoadLabel ? "primary" : "ghost"}
               onClick={() => {
                 setAddingRoadLabel((v) => !v);
+                setAddingBoundaryLabel(false);
                 setSelectedLabel(null);
               }}
             >
               {addingRoadLabel ? "Click where it should go…" : "Add Road Label"}
+            </Button>
+            <Button
+              variant={addingBoundaryLabel ? "primary" : "ghost"}
+              onClick={() => {
+                setAddingBoundaryLabel((v) => !v);
+                setAddingRoadLabel(false);
+                setSelectedLabel(null);
+              }}
+              title='For labels like "REMAINDER OF CADASTRE 243" along a boundary — pre-fills the parent lot number from "Portions of Lot" above if set'
+            >
+              {addingBoundaryLabel ? "Click where it should go…" : "Add Boundary Label"}
             </Button>
             {selectedLabel && (
               <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
