@@ -611,21 +611,32 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       </g>
 
       {/* ---------- Figure — one polygon per included plot ---------- */}
-      {plotPolygons.map((pp, i) => (
-        <polygon key={`fig${i}`} points={pp.poly} fill="none" stroke="black" strokeWidth={1.6} strokeLinejoin="round" />
-      ))}
-
-      {/* Side distances are intentionally NOT shown on the working plan (client request). */}
-
-      {/* Each plot's number, centred inside its own polygon (client req
-          2026-08-26, Part 33c) — only in multi-plot mode; a single-plot sheet
-          already names the lot in the title. */}
-      {useMultiPlot &&
-        plotPolygons.map((pp, i) => (
-          <text key={`pn${i}`} x={pp.labelX} y={pp.labelY} textAnchor="middle" fontSize={12} fontWeight="bold">
-            {pp.number}
-          </text>
-        ))}
+      {/* Line weight and label sizes shrink as more plots share one sheet
+          (client req 2026-08-31: "lines ka font kam karo aur numbers ka
+          bhi" — a fixed 1.6px outline and 12px plot number were sized for
+          a handful of large lots; at real multi-plot density (hundreds of
+          tiny lots) both were bigger than the lots themselves). */}
+      {(() => {
+        const figLineW = plotPolygons.length > 150 ? 0.35 : plotPolygons.length > 60 ? 0.6 : 1.6;
+        const plotNumFS = plotPolygons.length > 150 ? 4 : plotPolygons.length > 60 ? 6 : 12;
+        return (
+          <>
+            {plotPolygons.map((pp, i) => (
+              <polygon key={`fig${i}`} points={pp.poly} fill="none" stroke="black" strokeWidth={figLineW} strokeLinejoin="round" />
+            ))}
+            {/* Side distances are intentionally NOT shown on the working plan (client request). */}
+            {/* Each plot's number, centred inside its own polygon (client req
+                2026-08-26, Part 33c) — only in multi-plot mode; a single-plot
+                sheet already names the lot in the title. */}
+            {useMultiPlot &&
+              plotPolygons.map((pp, i) => (
+                <text key={`pn${i}`} x={pp.labelX} y={pp.labelY} textAnchor="middle" fontSize={plotNumFS} fontWeight="bold">
+                  {pp.number}
+                </text>
+              ))}
+          </>
+        );
+      })()}
 
       {/* Beacons: open circles + bold, DRAGGABLE labels placed outside the
           figure (client req 2026-08-26, Part 29a: "snap/click on the text
@@ -647,13 +658,19 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       // a boundary line meeting another line doesn't already show. A sparse
       // single-lot sheet (the normal case) is unaffected.
       const showDot = allPoints.length <= 250;
+      // Base label size shrinks with beacon density too (client req
+      // 2026-08-31: "numbers ka bhi [font kam karo]") — a manual per-point
+      // labelOffsets scale (from the existing drag-to-resize handles) still
+      // multiplies on top, so a label someone already resized by hand keeps
+      // that correction relative to the new smaller base.
+      const baseFS = allPoints.length > 400 ? 4.5 : allPoints.length > 150 ? 6.5 : 10;
       return allPoints.map((p, i) => {
         const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         const id = p.name || `#${i}`;
         const pl = beaconPlacementById.get(id);
         const off = (p.name && labelOffsets?.[p.name]) || { dx: 0, dy: 0, scale: 1 };
         const scale = off.scale ?? 1;
-        const fs = 10 * scale;
+        const fs = baseFS * scale;
         const lx = pl?.labelX ?? bx;
         const ly = pl?.labelY ?? by;
         const isSel = !!p.name && selectedLabel === p.name;

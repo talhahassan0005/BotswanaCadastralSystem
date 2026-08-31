@@ -965,13 +965,17 @@ export function GeneralPlanView() {
           // offset per label then piles every one on top of the next. Every
           // beacon's dot still always renders regardless of what happens to
           // its label.
+          // Beacon-label font shrinks with density too (client req
+          // 2026-08-31: "numbers ka bhi [font kam karo]") — same tiers as
+          // the plot-number font/line-weight above.
+          const beaconFS = groupUsedBeacons.length > 400 ? 4.5 : groupUsedBeacons.length > 150 ? 6 : 8;
           const placements = declutterLabels(
             groupUsedBeacons.map((b) => ({
               id: b.id,
               x: t.sx(b.east, b.north),
               y: t.sy(b.east, b.north),
               text: b.id,
-              fontSize: 8,
+              fontSize: beaconFS,
               preferDx: 4,
               preferDy: -3,
             }))
@@ -996,7 +1000,7 @@ export function GeneralPlanView() {
                 {showDot && <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.5, beaconR * 0.45)} />}
                 {pl?.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#cbd5e1" strokeWidth={0.5} />}
                 {!pl?.hidden && (
-                  <text x={pl?.labelX ?? bx + 4} y={pl?.labelY ?? by - 3} fontSize={8} fill="#334155">{b.id}</text>
+                  <text x={pl?.labelX ?? bx + 4} y={pl?.labelY ?? by - 3} fontSize={beaconFS} fill="#334155">{b.id}</text>
                 )}
               </g>
             );
