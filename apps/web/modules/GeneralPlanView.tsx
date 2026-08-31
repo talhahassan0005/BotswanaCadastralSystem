@@ -1052,13 +1052,24 @@ export function GeneralPlanView() {
         ))}
         {/* Distance/bearing labels along road-facing edges (client req
             2026-08-28) — auto-computed, not draggable, so no click/pointer
-            handlers unlike the manual labels above. */}
-        {sheetDimLabels.map((d) => (
-          <g key={d.id} transform={`rotate(${d.angle + rotation} ${t.sx(d.east, d.north)} ${t.sy(d.east, d.north)})`}>
-            <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north)} textAnchor="middle" fontSize={7} fill="#334155">{d.distance}</text>
-            <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north) + 9} textAnchor="middle" fontSize={7} fill="#334155">{d.bearing}</text>
-          </g>
-        ))}
+            handlers unlike the manual labels above. Font shrinks with how
+            many of these are on the sheet (client req 2026-08-31: this was
+            the actual biggest source of clutter in the reported screenshot
+            — a fixed 7px size wasn't scaled at all, unlike the beacon/plot-
+            number labels fixed earlier — at real density hundreds of these
+            crowded the whole sheet regardless of how small the OTHER labels
+            were made). Line gap between the distance/bearing pair scales
+            down with it so they don't collide once the font shrinks. */}
+        {(() => {
+          const dimFS = sheetDimLabels.length > 150 ? 3.2 : sheetDimLabels.length > 60 ? 4.5 : 7;
+          const dimGap = dimFS + 2;
+          return sheetDimLabels.map((d) => (
+            <g key={d.id} transform={`rotate(${d.angle + rotation} ${t.sx(d.east, d.north)} ${t.sy(d.east, d.north)})`}>
+              <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north)} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
+              <text x={t.sx(d.east, d.north)} y={t.sy(d.east, d.north) + dimGap} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.bearing}</text>
+            </g>
+          ));
+        })()}
         {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
         {panelRows.map((row, i) => (
           <text
