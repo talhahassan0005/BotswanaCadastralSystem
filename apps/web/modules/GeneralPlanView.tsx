@@ -966,7 +966,10 @@ export function GeneralPlanView() {
           const d = pts.map((pp) => `${t.sx(pp.east, pp.north)},${t.sy(pp.east, pp.north)}`).join(" ");
           const cx = pts.reduce((a, pp) => a + t.sx(pp.east, pp.north), 0) / pts.length;
           const cy = pts.reduce((a, pp) => a + t.sy(pp.east, pp.north), 0) / pts.length;
-          const plotFS = groupPlots.length > 150 ? 4.5 : groupPlots.length > 60 ? 6.5 : groupPlots.length > 20 ? 8.5 : 10;
+          // Reduced again (client req 2026-09-01: "counting numbers ka font
+          // bara hai") — still legible at real density without dominating
+          // the tiny lot cells the way the previous tiers still did.
+          const plotFS = groupPlots.length > 150 ? 3 : groupPlots.length > 60 ? 4.5 : groupPlots.length > 20 ? 6 : 8;
           const lineW = groupPlots.length > 150 ? 0.5 : groupPlots.length > 60 ? 0.7 : 1;
           return (
             <g key={p.number}>
@@ -1007,7 +1010,9 @@ export function GeneralPlanView() {
           // than, the lot number it sat on top of) — a "distinctly
           // secondary, small annotation" per the reference, not a fixed
           // size competing with plotFS above.
-          const bcFS = groupPlots.length > 150 ? 3 : groupPlots.length > 60 ? 4 : groupPlots.length > 20 ? 5 : 6;
+          // Kept proportionally below the (also-reduced) plotFS tiers above
+          // at every density level, not just most of them.
+          const bcFS = groupPlots.length > 150 ? 2 : groupPlots.length > 60 ? 3 : groupPlots.length > 20 ? 4 : 5;
           return groupBlockCorners.map((bc) => {
             const bx = t.sx(bc.east, bc.north), by = t.sy(bc.east, bc.north);
             // A block corner (by definition, findBlockCorners) is where 3+

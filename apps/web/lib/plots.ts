@@ -158,6 +158,19 @@ const MAX_ROTATION_PASSES = 8;
 const MIN_DETECTABLE_ANGLE = 0.2; // degrees — below this, treat as already axis-aligned (float dust)
 const ANGLE_NEIGHBOUR_MIN_D = 3; // metres — plausible lot-edge length range used only to estimate tilt
 const ANGLE_NEIGHBOUR_MAX_D = 60;
+// A road-edge/pedway strip running the length of a whole block can have 4
+// corners that satisfy the elementary-rectangle check just as validly as a
+// real lot does (client req 2026-09-01: verified against the real 1026-
+// point file — 43 of 376 "lots" were 3m-wide, up to 183m-long slivers,
+// nowhere near any real building lot's proportions, visible as thin strips
+// squeezed in among the real grid and badly distorting the whole sheet's
+// scale). No real lot in this kind of subdivision is this narrow or this
+// elongated, so these two sanity bounds reject a candidate before it's ever
+// accepted — its points stay available for whatever real rectangle (or
+// manual Polygon-tool placement) they actually belong to, rather than being
+// consumed by a false one.
+const MIN_LOT_SIDE = 5; // metres
+const MAX_LOT_ASPECT_RATIO = 6; // longest side / shortest side
 
 /** One axis-aligned detection pass — the exact original algorithm, just
  *  generic over any point shape so a rotated (temporary) copy can carry a
@@ -197,6 +210,14 @@ function detectAxisAlignedPass<T extends PlotPoint>(pts: T[], tol: number): { lo
     // Elementary-face check: walking back from the corner must land on
     // exactly these same two edge points, not skip past a missing beacon.
     if (nearest(corner, "east", -1) !== up || nearest(corner, "north", -1) !== right) continue;
+
+    // Sliver/road-strip rejection — see MIN_LOT_SIDE/MAX_LOT_ASPECT_RATIO's
+    // own comment above.
+    const sideEast = Math.abs(right.east - p.east);
+    const sideNorth = Math.abs(up.north - p.north);
+    const shortSide = Math.min(sideEast, sideNorth);
+    const longSide = Math.max(sideEast, sideNorth);
+    if (shortSide < MIN_LOT_SIDE || longSide / shortSide > MAX_LOT_ASPECT_RATIO) continue;
 
     lots.push([p, right, corner, up]);
     used.add(p); used.add(right); used.add(corner); used.add(up);
