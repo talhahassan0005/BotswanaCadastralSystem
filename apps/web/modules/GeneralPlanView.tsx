@@ -623,14 +623,19 @@ export function GeneralPlanView() {
       11, "middle"
     );
     extraTitleLines.forEach((ln, i) => text(W / 2, 54 + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
-    text(regX, 18, `GC-${meta.gcNo || "—"}`, 9);
-    text(regX + regW, 18, `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
-    text(regX + 6, regY + 24, `DSM No: ${meta.dsmNo || "—"}`, 9.5);
-    text(regX + 6, regY + 100, "Surveyed in", 8);
-    text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
-    text(regX + 6, regY + 114, "By me", 8);
-    text(regX + regW - 6, regY + 114, meta.surveyor || "—", 8, "end");
-    text(regX + regW - 6, regY + 126, "Land Surveyor", 7, "end");
+    // Registration box (GC-No/SHEET-No/DSM-No/Surveyed-in/By-me/Land-Surveyor)
+    // stays in sync with the SVG preview above — General Plan only, absent
+    // from the real Working Plan reference sheet.
+    if (sheetMode === "general") {
+      text(regX, 18, `GC-${meta.gcNo || "—"}`, 9);
+      text(regX + regW, 18, `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
+      text(regX + 6, regY + 24, `DSM No: ${meta.dsmNo || "—"}`, 9.5);
+      text(regX + 6, regY + 100, "Surveyed in", 8);
+      text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
+      text(regX + 6, regY + 114, "By me", 8);
+      text(regX + regW - 6, regY + 114, meta.surveyor || "—", 8, "end");
+      text(regX + regW - 6, regY + 126, "Land Surveyor", 7, "end");
+    }
     text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
 
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
@@ -755,9 +760,12 @@ export function GeneralPlanView() {
           `… +${sheetIndexLines.length - (MAX_SHEET_INDEX_LINES - 1)} more sheet(s)`,
         ]
       : sheetIndexLines;
+  // "SHEET INDEX" is a General Plan thing only — verified against the real
+  // WP_CH.pdf reference text (client req 2026-09-01): it never appears on
+  // the Working Plan reference sheet at all, only Beacon Description/Splay
+  // Information/Ped Way do.
   const panelRows: { text: string; heading?: boolean }[] = [
-    { text: "SHEET INDEX", heading: true },
-    ...shownSheetIndex.map((text) => ({ text })),
+    ...(sheetMode === "general" ? [{ text: "SHEET INDEX", heading: true }, ...shownSheetIndex.map((text) => ({ text }))] : []),
     { text: "BEACON DESCRIPTION", heading: true },
     { text: meta.beaconDescription || "—" },
     { text: "SPLAY INFORMATION", heading: true },
@@ -832,10 +840,17 @@ export function GeneralPlanView() {
           the box sits exactly at that corner — tick marks and the box border
           would otherwise land on top of each other). Count scaled down to
           match the shorter span so spacing stays even. */}
-      {edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK)}
+      {/* Full-length ticks in Working Plan mode (client req 2026-09-01) — the
+          gap that avoids the registration box's footprint only makes sense
+          when that box is actually drawn (General Plan only, see below). */}
+      {sheetMode === "general"
+        ? edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK)
+        : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK)}
       {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK)}
       {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK)}
-      {edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK)}
+      {sheetMode === "general"
+        ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK)
+        : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       {/* Title heading — select/move/resize (client req 2026-08-28: "ye
           client khud drag kar ke kahi bi place kar sake ur resize bi kar
@@ -888,31 +903,44 @@ export function GeneralPlanView() {
         );
       })()}
 
-      {/* GC-No and SHEET No sit OUTSIDE the box, side by side directly above
-          it (client req 2026-08-31 redline: "move GC number" / "move sheet
-          numbering" — the box itself now starts with DSM No, not a Sheet No
-          row). */}
-      <text x={regX} y={18} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-      <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
-      {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
-          screenshot circling this whole box): no "G.P. No." row here (that
-          field stays editable for other diagrams' own cross-reference, just
-          not printed in this box); a real blank gap — not a drawn line —
-          between "Approved" and "Director of Surveys and Mapping" for the
-          actual signature; "Surveyed in"/"By me" each pair a label on the
-          left with its value right-aligned on the same row, and "Land
-          Surveyor" sits alone on the row under the surveyor's name. */}
-      <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-      <text x={regX + 6} y={regY + 24} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
-      <line x1={regX} y1={regY + 30} x2={regX + regW} y2={regY + 30} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={regY + 46} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
-      <text x={regX + 6} y={regY + 76} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
-      <line x1={regX} y1={regY + 86} x2={regX + regW} y2={regY + 86} stroke="#0f172a" strokeWidth={0.4} />
-      <text x={regX + 6} y={regY + 100} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
-      <text x={regX + regW - 6} y={regY + 100} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
-      <text x={regX + 6} y={regY + 114} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
-      <text x={regX + regW - 6} y={regY + 114} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-      <text x={regX + regW - 6} y={regY + 126} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+      {/* GC-No/SHEET-No/DSM-No/Approved/Director-of-Surveys registration box
+          is a GENERAL PLAN thing only — verified against the real WP_CH.pdf
+          reference text (client req 2026-09-01, "100% samples jese format
+          chahiye... na kuch extra ho"): none of "GC", "DSM No", "Approved",
+          "Director of Surveys", or "SHEET No" appear anywhere on the
+          Working Plan reference sheet at all. A Working Plan is the
+          surveyor's own working sketch (covered by the certification box
+          below in "working" mode instead); only the formally REGISTERED
+          General Plan carries the government approval block. */}
+      {sheetMode === "general" && (
+        <>
+          {/* GC-No and SHEET No sit OUTSIDE the box, side by side directly above
+              it (client req 2026-08-31 redline: "move GC number" / "move sheet
+              numbering" — the box itself now starts with DSM No, not a Sheet No
+              row). */}
+          <text x={regX} y={18} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+          <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
+          {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
+              screenshot circling this whole box): no "G.P. No." row here (that
+              field stays editable for other diagrams' own cross-reference, just
+              not printed in this box); a real blank gap — not a drawn line —
+              between "Approved" and "Director of Surveys and Mapping" for the
+              actual signature; "Surveyed in"/"By me" each pair a label on the
+              left with its value right-aligned on the same row, and "Land
+              Surveyor" sits alone on the row under the surveyor's name. */}
+          <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+          <text x={regX + 6} y={regY + 24} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+          <line x1={regX} y1={regY + 30} x2={regX + regW} y2={regY + 30} stroke="#0f172a" strokeWidth={0.4} />
+          <text x={regX + 6} y={regY + 46} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
+          <text x={regX + 6} y={regY + 76} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
+          <line x1={regX} y1={regY + 86} x2={regX + regW} y2={regY + 86} stroke="#0f172a" strokeWidth={0.4} />
+          <text x={regX + 6} y={regY + 100} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
+          <text x={regX + regW - 6} y={regY + 100} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
+          <text x={regX + 6} y={regY + 114} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
+          <text x={regX + regW - 6} y={regY + 114} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+          <text x={regX + regW - 6} y={regY + 126} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+        </>
+      )}
 
       {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
           outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
