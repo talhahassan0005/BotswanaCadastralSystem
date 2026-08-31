@@ -640,6 +640,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           corner beacons stay individually distinguishable. */}
       {(() => {
       const beaconR = allPoints.length > 400 ? 1.4 : allPoints.length > 150 ? 2 : 2.8;
+      // At real multi-plot density (client req 2026-08-31: "white dots ko
+      // remove karo") hundreds of small hollow circles packed this tight
+      // still read as visual noise/texture even shrunk — the polygon edges
+      // already mark every corner, so past this point the dot adds nothing
+      // a boundary line meeting another line doesn't already show. A sparse
+      // single-lot sheet (the normal case) is unaffected.
+      const showDot = allPoints.length <= 250;
       return allPoints.map((p, i) => {
         const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         const id = p.name || `#${i}`;
@@ -653,7 +660,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const boxW = 10 * scale, boxH = 7 * scale;
         return (
           <g key={`b${i}`}>
-            <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)} />
+            {showDot && <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)} />}
             {pl?.leader && (
               <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />
             )}
