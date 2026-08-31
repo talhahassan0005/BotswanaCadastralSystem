@@ -95,6 +95,15 @@ export function Diagrams() {
   const pdoc = parcelDoc as ParcelDoc | null;
   const parcels = useMemo(() => pdoc?.parcels ?? [], [pdoc]);
   const [selParcelId, setSelParcelId] = useState<string | null>(null);
+  // Which cogoPlots-sourced lot (Auto-Detect / numbered-in-COGO) is
+  // currently loaded, if any — tracked separately from `selParcelId` (which
+  // only ever means a Parcels-tab pdoc.parcels entry) so the "Lot / parcel"
+  // dropdown below can show and switch between EITHER source correctly
+  // (client req 2026-08-31: the dropdown only ever listed pdoc.parcels
+  // entries, so a cogoPlots lot sharing a number with an unrelated Parcels-
+  // tab entry — e.g. both called "1" — silently rendered the wrong, stale
+  // geometry once picked from there).
+  const [activeCogoLotNumber, setActiveCogoLotNumber] = useState<string | null>(null);
   // Load a lot by the number typed in COGO (client req 2026-08-21) — an
   // alternative to picking a Parcels-tab lot or clicking a plot on the
   // Cadastral canvas: every polygon that's been given a Lot/Erf number
@@ -1018,6 +1027,7 @@ export function Diagrams() {
     }
     setPlotNumberError(null);
     setSelParcelId(null); // a typed-in plot always wins over a Parcels-tab pick
+    setActiveCogoLotNumber(plot.number);
     setDiagramFigure(plot.fig);
     setForcePicker(false);
     const suggested = suggestDiagramScale(plot.fig.points);
@@ -1105,27 +1115,57 @@ export function Diagrams() {
           loaded by typing its number, leaving no way back at all (client
           req 2026-08-24). */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-        {parcels.length > 0 && (
-          <>
-            <span className="text-sm font-medium text-slate-600">Lot / parcel:</span>
-            <div className="min-w-[200px]">
-              <Select
-                value={selParcelId ?? ""}
-                onChange={(v) => {
-                  setSelParcelId(v || null);
-                  // Picking the blank "traverse figure" option must actually
-                  // show the live COGO result, not silently keep whatever lot
-                  // was loaded here earlier (client req 2026-08-30) — before
-                  // this, `diagramFigure` (which wins over `cogoResult` in the
-                  // fallback chain) was never cleared by this selection.
-                  if (!v) setDiagramFigure(null);
-                }}
-                options={[{ value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" }, ...parcels.map((p) => ({ value: p.id, label: p.number || "(unnamed)" }))]}
-              />
-            </div>
-            {selParcelId && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}
-          </>
-        )}
+        {(cogoPlots.length > 0 || parcels.length > 0) && (() => {
+          // cogoPlots (Auto-Detect / numbered-in-COGO) is the freshly
+          // detected, authoritative geometry — when a number exists in BOTH
+          // sources, the pdoc.parcels entry is dropped from the list
+          // entirely rather than offered as a second, conflicting "1"
+          // (client req 2026-08-31: picking a Parcels-tab entry that shared
+          // a number with an Auto-Detect lot silently rendered the wrong,
+          // stale geometry — a 13-sided figure instead of a clean rectangle).
+          const cogoNumbersLower = new Set(cogoPlots.map((p) => p.number.trim().toLowerCase()));
+          const cogoOptions = cogoPlots.map((p) => ({ value: `cogo:${p.number}`, label: `${p.number} (Cadastral)` }));
+          const parcelOptions = parcels
+            .filter((p) => !p.number || !cogoNumbersLower.has(p.number.trim().toLowerCase()))
+            .map((p) => ({ value: p.id, label: `${p.number || "(unnamed)"} (Parcels)` }));
+          const dropdownValue = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "";
+          return (
+            <>
+              <span className="text-sm font-medium text-slate-600">Lot / parcel:</span>
+              <div className="min-w-[200px]">
+                <Select
+                  value={dropdownValue}
+                  onChange={(v) => {
+                    if (v.startsWith("cogo:")) {
+                      const plot = cogoPlots.find((p) => p.number === v.slice(5));
+                      if (!plot) return;
+                      setSelParcelId(null);
+                      setActiveCogoLotNumber(plot.number);
+                      setDiagramFigure(plot.fig);
+                      const suggested = suggestDiagramScale(plot.fig.points);
+                      setMeta((m) => ({ ...m, lotName: plot.number.toUpperCase(), scale: suggested }));
+                      return;
+                    }
+                    setSelParcelId(v || null);
+                    setActiveCogoLotNumber(null);
+                    // Picking the blank "traverse figure" option must actually
+                    // show the live COGO result, not silently keep whatever lot
+                    // was loaded here earlier (client req 2026-08-30) — before
+                    // this, `diagramFigure` (which wins over `cogoResult` in the
+                    // fallback chain) was never cleared by this selection.
+                    if (!v) setDiagramFigure(null);
+                  }}
+                  options={[
+                    { value: "", label: cogoResult ? `${cogoTabLabel(config.discipline)} traverse figure` : "— pick a lot —" },
+                    ...cogoOptions,
+                    ...parcelOptions,
+                  ]}
+                />
+              </div>
+              {(selParcelId || activeCogoLotNumber) && <span className="text-xs text-slate-400">drawing this lot · {fig.area_ha.toFixed(4)} ha</span>}
+            </>
+          );
+        })()}
         <div className="ml-auto">
           <Button variant="ghost" onClick={() => setForcePicker(true)}>← Change Lot</Button>
         </div>

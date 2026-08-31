@@ -206,6 +206,14 @@ export function WorkingPlanView() {
   function removePlot(n: string) {
     setPlotNumbers((list) => list.filter((x) => x !== n));
   }
+  // Adding hundreds of Auto-Detect-produced lots one number at a time isn't
+  // realistic (client req 2026-08-31) — General Plan already reads every
+  // numbered lot from cogoPlots automatically; this is the same "load
+  // everything" action for Working Plan's multi-plot sheet.
+  function loadAllPlots() {
+    setPlotNumberError(null);
+    setPlotNumbers(cogoPlots.map((p) => p.number));
+  }
 
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
@@ -514,6 +522,7 @@ export function WorkingPlanView() {
                 </div>
               </Field>
               {plotNumberError && <p className="mt-1 text-xs text-red-600">{plotNumberError}</p>}
+              <Button variant="ghost" onClick={loadAllPlots}>Load all {cogoPlots.length} lots</Button>
             </div>
           )}
         </div>
@@ -560,6 +569,7 @@ export function WorkingPlanView() {
                 onKeyDown={(e) => { if (e.key === "Enter") addPlot(); }}
               />
               <Button onClick={addPlot}>Add plot</Button>
+              <Button variant="ghost" onClick={loadAllPlots}>Load all {cogoPlots.length} lots</Button>
             </div>
             {plotNumberError && <p className="mt-1 text-xs text-red-600">{plotNumberError}</p>}
             {plotNumbers.length > 0 && (

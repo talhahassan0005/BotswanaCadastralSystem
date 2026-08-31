@@ -1321,7 +1321,17 @@ export function GeneralPlanView() {
           <Button variant="ghost" onClick={printAll}>Print all sheets / PDF</Button>
           <span className="ml-2 inline-flex items-center gap-2 text-sm">
             <Button variant="ghost" onClick={() => setSheet((x) => Math.max(0, x - 1))} disabled={sheet === 0}>← Prev</Button>
-            <span className="text-slate-600">Sheet {sheet + 1} of {sheetCount}</span>
+            {/* Distinguishes the drawing sheets from the coordinate-schedule
+                appendix pages (client req 2026-08-31) — "Sheet 1 of 12" reads
+                as 12 drawing sheets when really it's 1 layout sheet + 11
+                beacon-coordinate list pages (every distinct beacon needs a
+                row somewhere; COORDS_PER_SHEET=48 rows/page), which isn't a
+                pagination bug, just an unlabelled appendix. */}
+            <span className="text-slate-600">
+              {sheet < layoutSheetCount
+                ? `Layout Sheet ${sheet + 1} of ${layoutSheetCount}`
+                : `Coordinate Schedule ${sheet - layoutSheetCount + 1} of ${coordChunks.length}`}
+            </span>
             <Button variant="ghost" onClick={() => setSheet((x) => Math.min(sheetCount - 1, x + 1))} disabled={sheet >= sheetCount - 1}>Next →</Button>
           </span>
         </div>
