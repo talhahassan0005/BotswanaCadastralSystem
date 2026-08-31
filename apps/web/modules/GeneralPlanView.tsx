@@ -5,7 +5,6 @@ import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, findBlockCorners, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
-import { declutterLabels } from "@/lib/labelLayout";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -958,54 +957,17 @@ export function GeneralPlanView() {
             </g>
           );
         })}
-        {(() => {
-          // Decluttered (client req 2026-08-30) — a sheet with dozens/hundreds
-          // of lots (e.g. Auto-Detect Rectangular Lots on a real subdivision)
-          // has that many boundary beacons close together; a fixed +4,-3
-          // offset per label then piles every one on top of the next. Every
-          // beacon's dot still always renders regardless of what happens to
-          // its label.
-          // Beacon-label font shrinks with density too (client req
-          // 2026-08-31: "numbers ka bhi [font kam karo]") — same tiers as
-          // the plot-number font/line-weight above.
-          const beaconFS = groupUsedBeacons.length > 400 ? 4.5 : groupUsedBeacons.length > 150 ? 6 : 8;
-          const placements = declutterLabels(
-            groupUsedBeacons.map((b) => ({
-              id: b.id,
-              x: t.sx(b.east, b.north),
-              y: t.sy(b.east, b.north),
-              text: b.id,
-              fontSize: beaconFS,
-              preferDx: 4,
-              preferDy: -3,
-            }))
-          );
-          const byId = new Map(placements.map((pl) => [pl.id, pl]));
-          // Small hollow circle, matching standard survey-diagram convention
-          // (client req 2026-08-31 — reference sheets never use a solid
-          // filled dot); radius shrinks with beacon density the same way
-          // the plot-number font/line-weight already do, so a real
-          // subdivision's hundreds of shared corner beacons don't merge
-          // into a solid mass.
-          const beaconR = groupUsedBeacons.length > 400 ? 1.2 : groupUsedBeacons.length > 150 ? 1.8 : 2.6;
-          // Past this many beacons on one sheet, even a shrunk hollow circle
-          // packs into visual noise (client req 2026-08-31: "white dots ko
-          // remove karo") — the polygon edges already mark every corner.
-          const showDot = groupUsedBeacons.length <= 250;
-          return groupUsedBeacons.map((b) => {
-            const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
-            const pl = byId.get(b.id);
-            return (
-              <g key={b.id}>
-                {showDot && <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.5, beaconR * 0.45)} />}
-                {pl?.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#cbd5e1" strokeWidth={0.5} />}
-                {!pl?.hidden && (
-                  <text x={pl?.labelX ?? bx + 4} y={pl?.labelY ?? by - 3} fontSize={beaconFS} fill="#334155">{b.id}</text>
-                )}
-              </g>
-            );
-          });
-        })()}
+        {/* Beacon/point IDs are NEVER printed on the drawing itself in the
+            reference sheet (client req 2026-08-31, confirmed against
+            SHEET1_CH.pdf) — only the lot number centred in each polygon and
+            the side-length/bearing labels along the edges. That real
+            coordinate/ID data belongs solely in the Block Corner Table
+            below. Previously rendered here as a dot + decluttered label +
+            leader line; removed entirely rather than just hidden — the
+            leader lines (drawn whenever a label had to be nudged away from
+            its point) were themselves the "diagonal crosshatch" artefact
+            reported crossing through multiple lots at real density, so
+            this fixes both the point-ID clutter and that artefact at once. */}
         {groupUsedBeacons.length === 0 && (
           <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
         )}
