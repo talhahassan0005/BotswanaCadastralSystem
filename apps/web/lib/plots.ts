@@ -171,6 +171,16 @@ const ANGLE_NEIGHBOUR_MAX_D = 60;
 // consumed by a false one.
 const MIN_LOT_SIDE = 5; // metres
 const MAX_LOT_ASPECT_RATIO = 6; // longest side / shortest side
+// Absolute cap on a side's length, independent of aspect ratio. A moderately
+// elongated (ratio <= 6) but still very long rectangle can still be a false
+// road-strip match rather than a real lot — verified on real client data
+// (Charleshill 1026-point file): every genuine lot's longest side is <= 38m,
+// then there's a clean gap with NOTHING between ~38m and ~90m before the next
+// (false-positive) cluster starts. 60m sits in that gap with margin on both
+// sides. These false positives were the direct cause of a reported bug: long
+// stray lines cutting straight through several unrelated rows on the General
+// Plan sheet.
+const MAX_LOT_SIDE = 60; // metres
 
 /** One axis-aligned detection pass — the exact original algorithm, just
  *  generic over any point shape so a rotated (temporary) copy can carry a
@@ -217,7 +227,7 @@ function detectAxisAlignedPass<T extends PlotPoint>(pts: T[], tol: number): { lo
     const sideNorth = Math.abs(up.north - p.north);
     const shortSide = Math.min(sideEast, sideNorth);
     const longSide = Math.max(sideEast, sideNorth);
-    if (shortSide < MIN_LOT_SIDE || longSide / shortSide > MAX_LOT_ASPECT_RATIO) continue;
+    if (shortSide < MIN_LOT_SIDE || longSide > MAX_LOT_SIDE || longSide / shortSide > MAX_LOT_ASPECT_RATIO) continue;
 
     lots.push([p, right, corner, up]);
     used.add(p); used.add(right); used.add(corner); used.add(up);

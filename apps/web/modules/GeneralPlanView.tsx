@@ -30,7 +30,7 @@ interface GpBeacon { id: string; east: number; north: number }
  *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
  *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
+  const { cogoPlots, config, setConfig, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
@@ -1505,6 +1505,13 @@ export function GeneralPlanView() {
             {selectedLabel && (
               <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
             )}
+            <Button
+              variant="ghost"
+              onClick={() => setConfig({ displayRotation: ((config.displayRotation ?? 0) + 90) % 360 })}
+              title="Each sheet is scaled to fill the page as much as possible, but a real subdivision's own shape (taller than wide, or vice versa) doesn't always match the landscape page — rotating the drawing 90° at a time can close that gap and use more of the sheet."
+            >
+              Rotate 90°
+            </Button>
             <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text.</span>
           </div>
         )}
