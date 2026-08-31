@@ -5,7 +5,6 @@ import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, findBlockCorners, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
-import { declutterLabels } from "@/lib/labelLayout";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -1002,16 +1001,51 @@ export function GeneralPlanView() {
             doesn't produce one for a chamfered corner (see its own doc
             comment) — there's no real geometry here to compute that number
             from without guessing, so it's left off rather than shown wrong. */}
-        {groupBlockCorners.map((bc) => {
-          const bx = t.sx(bc.east, bc.north), by = t.sy(bc.east, bc.north);
-          return (
-            <g key={`bc-${bc.id}`}>
-              <line x1={bx - 3} y1={by} x2={bx + 3} y2={by} stroke="#0f172a" strokeWidth={0.8} />
-              <line x1={bx} y1={by - 3} x2={bx} y2={by + 3} stroke="#0f172a" strokeWidth={0.8} />
-              <text x={bx + 4} y={by - 3} fontSize={7} fontWeight={600} fill="#0f172a">{bc.id}</text>
-            </g>
-          );
-        })}
+        {(() => {
+          // Smaller than the lot-number font at every density tier (client
+          // req 2026-08-31: "BC1" was rendering as large as, or larger
+          // than, the lot number it sat on top of) — a "distinctly
+          // secondary, small annotation" per the reference, not a fixed
+          // size competing with plotFS above.
+          const bcFS = groupPlots.length > 150 ? 3 : groupPlots.length > 60 ? 4 : groupPlots.length > 20 ? 5 : 6;
+          return groupBlockCorners.map((bc) => {
+            const bx = t.sx(bc.east, bc.north), by = t.sy(bc.east, bc.north);
+            // A block corner (by definition, findBlockCorners) is where 3+
+            // lots meet — those lots' own centroids (where their numbers
+            // print) sit only a few pixels away at real density, which is
+            // why a small fixed offset still landed the label on top of a
+            // lot number (client req 2026-08-31). Offsetting AWAY from the
+            // average of every touching lot's centroid pushes it toward the
+            // road/gap side instead, the same "push away from what's
+            // nearby" logic already used for the edge dimension labels
+            // (just the opposite direction — those point inward, this
+            // point outward).
+            let sumCx = 0, sumCy = 0, n = 0;
+            for (const p of groupPlots) {
+              if (!p.fig.points.some((pt) => sameWorldPoint(pt, bc))) continue;
+              const pts = p.fig.points.map((pt) => ({ x: t.sx(pt.east, pt.north), y: t.sy(pt.east, pt.north) }));
+              sumCx += pts.reduce((a, pp) => a + pp.x, 0) / pts.length;
+              sumCy += pts.reduce((a, pp) => a + pp.y, 0) / pts.length;
+              n++;
+            }
+            let dx = 1, dy = -1;
+            if (n > 0) {
+              dx = bx - sumCx / n;
+              dy = by - sumCy / n;
+              const len = Math.hypot(dx, dy) || 1;
+              dx /= len; dy /= len;
+            }
+            const off = bcFS * 1.8;
+            const lx = bx + dx * off, ly = by + dy * off;
+            return (
+              <g key={`bc-${bc.id}`}>
+                <line x1={bx - 3} y1={by} x2={bx + 3} y2={by} stroke="#0f172a" strokeWidth={0.8} />
+                <line x1={bx} y1={by - 3} x2={bx} y2={by + 3} stroke="#0f172a" strokeWidth={0.8} />
+                <text x={lx} y={ly} textAnchor="middle" fontSize={bcFS} fontWeight={600} fill="#0f172a">{bc.id}</text>
+              </g>
+            );
+          });
+        })()}
         {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
         {sheetRoadLabels.map((tt) => (
           <text
@@ -1064,36 +1098,29 @@ export function GeneralPlanView() {
             were made). Line gap between the distance/bearing pair scales
             down with it so they don't collide once the font shrinks. */}
         {(() => {
-          const dimFS = sheetDimLabels.length > 150 ? 3.2 : sheetDimLabels.length > 60 ? 4.5 : 7;
-          const dimGap = dimFS + 2;
           // Verified against the real 376-lot file (client req 2026-08-31,
           // "shared-edge labels drawn twice"): the shared-edge exclusion
           // above already produces zero duplicate/near-duplicate positions
-          // — the reported pile-up is genuine density (600+ distinct
-          // road-facing edges across the layout), not a dedup bug. Still
-          // routed through the same declutter utility as every other label
-          // set as a defensive measure: two DISTINCT nearby edges' labels
-          // can still visually collide at this density even with correct
-          // dedup, and this guarantees no two SHOWN labels overlap
-          // regardless. Candidate box height approximates the stacked
-          // distance+bearing pair (not just one line); collision boxes
-          // don't account for the label's own rotation, same simplification
-          // used for every other rotated label in this app.
-          const dimPlacements = declutterLabels(
-            sheetDimLabels.map((d) => ({
-              id: d.id,
-              x: t.sx(d.east, d.north),
-              y: t.sy(d.east, d.north),
-              text: d.distance.length >= d.bearing.length ? d.distance : d.bearing,
-              fontSize: dimFS * 2.2,
-            }))
-          );
-          const dimById = new Map(dimPlacements.map((pl) => [pl.id, pl]));
+          // — the reported pile-up was genuine density (600+ distinct
+          // road-facing edges across the layout), not a dedup bug.
+          //
+          // A declutter pass was added on top of that (now reverted) —
+          // passing an inflated fontSize to approximate the stacked
+          // distance+bearing pair's real height also inflated the WIDTH
+          // estimate declutterLabels derives from the same number (client
+          // req 2026-08-31 follow-up: labels showing up "floating" tens of
+          // metres from any real edge). With every candidate box reading
+          // far wider than the actual text, ordinary crowding made the ring
+          // search keep escalating outward past nearby collisions into
+          // empty space well away from the true anchor. Reverted to plain
+          // anchored rendering at the real edge midpoint — the font-size
+          // tiering (further reduced here, client req 2026-08-31 "reduce
+          // font size generally") is what actually resolves legibility at
+          // density; decluttering wasn't needed and wasn't safe as wired.
+          const dimFS = sheetDimLabels.length > 150 ? 2.2 : sheetDimLabels.length > 60 ? 3 : 4.5;
+          const dimGap = dimFS + 1.5;
           return sheetDimLabels.map((d) => {
-            const pl = dimById.get(d.id);
-            if (pl?.hidden) return null;
-            const lx = pl?.labelX ?? t.sx(d.east, d.north);
-            const ly = pl?.labelY ?? t.sy(d.east, d.north);
+            const lx = t.sx(d.east, d.north), ly = t.sy(d.east, d.north);
             return (
               <g key={d.id} transform={`rotate(${d.angle + rotation} ${lx} ${ly})`}>
                 <text x={lx} y={ly} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
