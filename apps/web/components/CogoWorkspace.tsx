@@ -2245,6 +2245,17 @@ export function CogoWorkspace({
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
                 const r = visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2;
+                // Point-name labels never shrank with density the way the dot
+                // radius above already does (client req 2026-09-01: "cadastral
+                // per mess show ho raha hai jese... genral plan per... wasey ku
+                // cadastral per nahi" — a fixed 11px label on every one of a
+                // real subdivision's 1000+ points is unreadable overlapping
+                // text, the same problem General Plan/Working Plan already
+                // solved with their own density tiers). "Show/hide point names"
+                // still fully turns these off when even the smallest tier is
+                // too much for a given project.
+                const nameFS = visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11;
+                const nameOff = visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7;
                 return (
                   <g key={p.id}>
                     <circle
@@ -2254,7 +2265,7 @@ export function CogoWorkspace({
                       strokeWidth={isSel ? 0 : Math.max(0.6, r * 0.4)}
                     />
                     {showPointNames && (
-                      <text x={x + 7} y={y - 6} className="fill-slate-700 text-[11px] font-medium">
+                      <text x={x + nameOff} y={y - nameOff} fontSize={nameFS} className="fill-slate-700 font-medium">
                         {p.name}
                       </text>
                     )}
