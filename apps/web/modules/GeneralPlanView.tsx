@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { dedupePoints, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
+import { dedupePoints, dropClosingDuplicate, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtCoord, fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -96,7 +96,7 @@ export function GeneralPlanView() {
   );
 
   const gpPlots = useMemo<Plot[]>(
-    () => cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })),
+    () => cogoPlots.map((p) => ({ number: p.number, points: dropClosingDuplicate(p.fig.points) })),
     [cogoPlots]
   );
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
@@ -278,6 +278,7 @@ export function GeneralPlanView() {
   const FRAME_SCALE_Y = (FRAME_B - FRAME_Y) / (OLD_FRAME_B - OLD_FRAME_Y);
   const mapX = (x: number) => FRAME_X + (x - OLD_FRAME_X) * FRAME_SCALE_X;
   const mapY = (y: number) => FRAME_Y + (y - OLD_FRAME_Y) * FRAME_SCALE_Y;
+  const TITLE_Y1 = mapY(34);
   const TITLE_OF_Y = mapY(49), TITLE_LINE2_Y = mapY(66);
   const FX0 = mapX(30), FY0 = mapY(102) + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
   const pad = 30;
@@ -375,7 +376,7 @@ export function GeneralPlanView() {
   const activeGroupIdx = Math.min(sheet, layoutSheetCount - 1);
   const activeUsedBeacons = useMemo<GpBeacon[]>(
     () =>
-      dedupePoints(layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points })))
+      dedupePoints(layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: dropClosingDuplicate(p.fig.points) })))
         .filter((p): p is { name: string; east: number; north: number } => !!p.name)
         .map((p) => ({ id: p.name, east: p.east, north: p.north })),
     [layoutGroups, activeGroupIdx]
@@ -774,7 +775,7 @@ export function GeneralPlanView() {
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
-    text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, 19, "middle");
+    text(W / 2, TITLE_Y1, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, 19, "middle");
     text(W / 2, TITLE_OF_Y, "OF", 11, "middle");
     text(
       W / 2, TITLE_LINE2_Y,
@@ -799,7 +800,7 @@ export function GeneralPlanView() {
     }
     text(mapX(W - 20), mapY(H - 16), `SR No: ${meta.srNo || "—"}`, 9, "end");
 
-    const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
+    const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: dropClosingDuplicate(p.fig.points) }));
     for (const p of groupGpPlots) {
       if (p.points.length < 2) continue;
       polylines.push({
@@ -1080,7 +1081,7 @@ export function GeneralPlanView() {
           sake"), same offset pattern as WorkingPlan.tsx's own title block. */}
       {(() => {
         const ts = meta.titleOffset.scale ?? 1;
-        const tBoxTop = 18, tBoxBottom = TITLE_LINE2_Y + 8 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
+        const tBoxTop = mapY(18), tBoxBottom = TITLE_LINE2_Y + 8 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
         // "LOTS 14183-14608 CHARLESHILL" once plots are numbered — layout
         // name sits on THIS line, next to the lot range (client req
         // 2026-09-01 redline: "move CharlesHill to be next to Plot
@@ -1103,7 +1104,7 @@ export function GeneralPlanView() {
                 2026-09-01 redline: "move Of to be under General Plan"),
                 matching the GC-122/WP_CH reference exactly instead of
                 running "GENERAL PLAN OF {name}" together on one line. */}
-            <text x={W / 2} y={34} textAnchor="middle" fontSize={19 * ts} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
+            <text x={W / 2} y={TITLE_Y1} textAnchor="middle" fontSize={19 * ts} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
               {sheetMode === "working" ? "WORKING PLAN" : "GENERAL PLAN"}
             </text>
             <text x={W / 2} y={TITLE_OF_Y} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
@@ -1191,7 +1192,7 @@ export function GeneralPlanView() {
   // table + grand total (whole-layout concepts) render only on sheet 1.
   function renderLayoutSheet(groupIdx: number) {
     const groupPlots = layoutGroups[groupIdx];
-    const groupGpPlots: Plot[] = groupPlots.map((p) => ({ number: p.number, points: p.fig.points }));
+    const groupGpPlots: Plot[] = groupPlots.map((p) => ({ number: p.number, points: dropClosingDuplicate(p.fig.points) }));
     const groupUsedBeacons: GpBeacon[] = dedupePoints(groupGpPlots)
       .filter((p): p is { name: string; east: number; north: number } => !!p.name)
       .map((p) => ({ id: p.name, east: p.east, north: p.north }));

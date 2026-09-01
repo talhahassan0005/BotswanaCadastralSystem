@@ -107,6 +107,20 @@ export function sameWorldPoint(
   return Math.abs(a.east - b.east) < tol && Math.abs(a.north - b.north) < tol;
 }
 
+/** Drops a redundant closing vertex equal to the first point (client req
+ *  2026-09-02: a "0.00 / 00.00.00" distance+bearing label was still showing
+ *  at lot corners after buildFigureFromPoints (CogoWorkspace.tsx) was fixed
+ *  to strip this at SAVE time — that only prevents the bug in NEWLY saved
+ *  plots; any plot saved before that fix still carries the duplicate point
+ *  in its stored fig.points, since a code fix doesn't retroactively clean
+ *  already-saved data). Every consumer that treats a plot's point list as
+ *  an implicitly-closed ring via `pts[(i+1) % pts.length]` — General Plan's
+ *  edge-dimension labels chief among them — needs this applied at READ
+ *  time too, not just at the one place data gets saved. */
+export function dropClosingDuplicate<T extends PlotPoint>(points: T[]): T[] {
+  return points.length >= 2 && sameWorldPoint(points[0], points[points.length - 1]) ? points.slice(0, -1) : points;
+}
+
 export interface DetectedLot {
   points: PlotPoint[];
 }
