@@ -192,7 +192,13 @@ export function GeneralPlanView() {
   // the three lines above which only appear once their field is filled in.
   extraTitleLines.push(`SCALE 1:${meta.scale.toLocaleString()}`);
   const TITLE_EXTRA_LINE_H = 13;
-  const FX0 = 30, FY0 = 90 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = 660, FY1 = H - 150;
+  // "OF" now runs on its own line under the main "GENERAL PLAN"/"WORKING
+  // PLAN" heading (client req 2026-09-01 redline), pushing the "LOTS ...
+  // {name}" line down from y=54 to y=66 — FY0's base shifts by the same 12
+  // units so the drawing area still starts exactly as far below the title
+  // as it did before this line moved.
+  const TITLE_OF_Y = 49, TITLE_LINE2_Y = 66;
+  const FX0 = 30, FY0 = 102 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = 660, FY1 = H - 150;
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
   // fit-to-bounds projection below, spinning the drawing around the centre
@@ -614,15 +620,16 @@ export function GeneralPlanView() {
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
-    text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN OF ${meta.name}`, 19, "middle");
+    text(W / 2, 34, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, 19, "middle");
+    text(W / 2, TITLE_OF_Y, "OF", 11, "middle");
     text(
-      W / 2, 54,
+      W / 2, TITLE_LINE2_Y,
       lotRangeText
-        ? `LOTS ${lotRangeText}`
-        : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.location ? ` — ${meta.location}` : ""}`,
+        ? `LOTS ${lotRangeText} ${meta.name}`
+        : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}${meta.location ? ` — ${meta.location}` : ""}`,
       11, "middle"
     );
-    extraTitleLines.forEach((ln, i) => text(W / 2, 54 + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
+    extraTitleLines.forEach((ln, i) => text(W / 2, TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
     // Registration box (GC-No/SHEET-No/DSM-No/Surveyed-in/By-me/Land-Surveyor)
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
@@ -901,11 +908,16 @@ export function GeneralPlanView() {
           sake"), same offset pattern as WorkingPlan.tsx's own title block. */}
       {(() => {
         const ts = meta.titleOffset.scale ?? 1;
-        const tBoxTop = 18, tBoxBottom = 62 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
-        // "LOTS 14183-14608" once plots are numbered (matching the reference
-        // exactly), falling back to the original "Layout of N parcel(s)"
-        // wording when there's nothing numbered yet to range over.
-        const line2 = lotRangeText ? `LOTS ${lotRangeText}` : `${label}${meta.location ? ` — ${meta.location}` : ""}`;
+        const tBoxTop = 18, tBoxBottom = TITLE_LINE2_Y + 8 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
+        // "LOTS 14183-14608 CHARLESHILL" once plots are numbered — layout
+        // name sits on THIS line, next to the lot range (client req
+        // 2026-09-01 redline: "move CharlesHill to be next to Plot
+        // numbers"), matching the GC-122 reference exactly. Falls back to
+        // the original "Layout of N parcel(s)" wording (still with the name
+        // appended) when there's nothing numbered yet to range over.
+        const line2 = lotRangeText
+          ? `LOTS ${lotRangeText} ${meta.name}`
+          : `${label}${meta.name ? ` ${meta.name}` : ""}${meta.location ? ` — ${meta.location}` : ""}`;
         return (
           <g
             transform={`translate(${meta.titleOffset.dx},${meta.titleOffset.dy})`}
@@ -915,14 +927,21 @@ export function GeneralPlanView() {
             onPointerMove={handleTitlePointerMove}
             onPointerUp={handleTitlePointerUp}
           >
+            {/* "OF" on its own line under the main heading (client req
+                2026-09-01 redline: "move Of to be under General Plan"),
+                matching the GC-122/WP_CH reference exactly instead of
+                running "GENERAL PLAN OF {name}" together on one line. */}
             <text x={W / 2} y={34} textAnchor="middle" fontSize={19 * ts} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
-              {sheetMode === "working" ? "WORKING PLAN OF" : "GENERAL PLAN OF"} {meta.name}
+              {sheetMode === "working" ? "WORKING PLAN" : "GENERAL PLAN"}
             </text>
-            <text x={W / 2} y={54} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+            <text x={W / 2} y={TITLE_OF_Y} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+              OF
+            </text>
+            <text x={W / 2} y={TITLE_LINE2_Y} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
               {line2}
             </text>
             {extraTitleLines.map((ln, i) => (
-              <text key={i} x={W / 2} y={54 + (i + 1) * TITLE_EXTRA_LINE_H} textAnchor="middle" fontSize={10 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+              <text key={i} x={W / 2} y={TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H} textAnchor="middle" fontSize={10 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
                 {ln}
               </text>
             ))}
