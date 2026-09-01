@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { dedupePoints, findBlockCorners, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
+import { dedupePoints, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
-import { fmtSystem, toDotted } from "@/lib/diagramLayout";
+import { fmtCoord, fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
@@ -587,12 +587,6 @@ export function GeneralPlanView() {
     return out;
   }, [gpPlots, flip]);
 
-  // Block corners (client req 2026-08-27, §2g) — points where 3+ distinct
-  // plots' boundaries converge (see findBlockCorners' own comment for why
-  // that's the only usable signal without a Road/Block entity in the data
-  // model). Labelled BC1, BC2… by discovery order (stable across renders
-  // since gpPlots' own order is stable).
-  const blockCorners = useMemo(() => findBlockCorners(gpPlots), [gpPlots]);
 
   // Bottom traverse table (client req 2026-08-27, §2h) — Sides/Directions/
   // Co-ordinates for the OUTER boundary of the whole layout (every plot
@@ -905,12 +899,12 @@ export function GeneralPlanView() {
   const rightColBottom = FY1 + 20;
   const rightColH = Math.max(0, rightColBottom - rightColTop);
   const BC_ROW_H = 13;
-  // What the Block Corner Table would need if every corner were listed,
-  // clamped to at most half the column so the Lot Numbers table above always
-  // keeps usable room no matter how many corners the layout produces.
+  // What the Block Corner Table would need if every beacon were listed,
+  // clamped to at most half the column so the Lot Areas table above always
+  // keeps usable room no matter how many beacons the layout produces.
   const bcReserve =
-    blockCorners.length > 0
-      ? Math.min(70 + blockCorners.length * BC_ROW_H, Math.floor(rightColH * 0.5))
+    usedBeacons.length > 0
+      ? Math.min(70 + usedBeacons.length * BC_ROW_H, Math.floor(rightColH * 0.5))
       : 30;
   // Room the lot table needs BELOW its last row: the "SHEET TOTAL" line
   // (+16) and, when the sheet holds more lots than fit, the "+N more" note
@@ -1088,9 +1082,6 @@ export function GeneralPlanView() {
     const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
     const groupTotalHa = groupPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
-    const groupBlockCorners = blockCorners.filter(
-      (bc) => bc.east >= t.bounds.minX - 0.01 && bc.east <= t.bounds.maxX + 0.01 && bc.north >= t.bounds.minY - 0.01 && bc.north <= t.bounds.maxY + 0.01
-    );
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
     // placed on a different sheet's own bounding box would otherwise project
@@ -1156,65 +1147,6 @@ export function GeneralPlanView() {
         {groupUsedBeacons.length === 0 && (
           <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
         )}
-        {/* Block-corner ("B<n>") labels on the drawing itself, matching the
-            Block Corner Table's own numbering (client req 2026-08-31) —
-            unlike ordinary beacon IDs (never shown on the drawing, see
-            above), the reference DOES print these at the small number of
-            genuine block corners. Only the label + a small marker tick; the
-            splay bearing/distance value the reference also shows at these
-            corners (e.g. "272.04.30 / 17.13") isn't rendered — that's the
-            actual splay-CUT corner's own bearing/distance, which needs the
-            splay-cut point itself, and detectRectangularLots explicitly
-            doesn't produce one for a chamfered corner (see its own doc
-            comment) — there's no real geometry here to compute that number
-            from without guessing, so it's left off rather than shown wrong. */}
-        {(() => {
-          // Smaller than the lot-number font at every density tier (client
-          // req 2026-08-31: "BC1" was rendering as large as, or larger
-          // than, the lot number it sat on top of) — a "distinctly
-          // secondary, small annotation" per the reference, not a fixed
-          // size competing with plotFS above.
-          // Kept proportionally below the (also-reduced) plotFS tiers above
-          // at every density level, not just most of them.
-          const bcFS = groupPlots.length > 150 ? 2 : groupPlots.length > 60 ? 3 : groupPlots.length > 20 ? 4 : 5;
-          return groupBlockCorners.map((bc) => {
-            const bx = t.sx(bc.east, bc.north), by = t.sy(bc.east, bc.north);
-            // A block corner (by definition, findBlockCorners) is where 3+
-            // lots meet — those lots' own centroids (where their numbers
-            // print) sit only a few pixels away at real density, which is
-            // why a small fixed offset still landed the label on top of a
-            // lot number (client req 2026-08-31). Offsetting AWAY from the
-            // average of every touching lot's centroid pushes it toward the
-            // road/gap side instead, the same "push away from what's
-            // nearby" logic already used for the edge dimension labels
-            // (just the opposite direction — those point inward, this
-            // point outward).
-            let sumCx = 0, sumCy = 0, n = 0;
-            for (const p of groupPlots) {
-              if (!p.fig.points.some((pt) => sameWorldPoint(pt, bc))) continue;
-              const pts = p.fig.points.map((pt) => ({ x: t.sx(pt.east, pt.north), y: t.sy(pt.east, pt.north) }));
-              sumCx += pts.reduce((a, pp) => a + pp.x, 0) / pts.length;
-              sumCy += pts.reduce((a, pp) => a + pp.y, 0) / pts.length;
-              n++;
-            }
-            let dx = 1, dy = -1;
-            if (n > 0) {
-              dx = bx - sumCx / n;
-              dy = by - sumCy / n;
-              const len = Math.hypot(dx, dy) || 1;
-              dx /= len; dy /= len;
-            }
-            const off = bcFS * 1.8;
-            const lx = bx + dx * off, ly = by + dy * off;
-            return (
-              <g key={`bc-${bc.id}`}>
-                <line x1={bx - 3} y1={by} x2={bx + 3} y2={by} stroke="#0f172a" strokeWidth={0.8} />
-                <line x1={bx} y1={by - 3} x2={bx} y2={by + 3} stroke="#0f172a" strokeWidth={0.8} />
-                <text x={lx} y={ly} textAnchor="middle" fontSize={bcFS} fontWeight={600} fill="#0f172a">{bc.id}</text>
-              </g>
-            );
-          });
-        })()}
         {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
         {sheetRoadLabels.map((tt) => (
           <text
@@ -1383,41 +1315,54 @@ export function GeneralPlanView() {
             {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
                 own corners only; omitted entirely when none qualify, rather
                 than printing an empty section. */}
-            {groupBlockCorners.length > 0 && (() => {
+            {/* Block Corner Table (client req 2026-08-27, §2g; corrected
+                2026-09-01 — client screenshot of the real reference sheet:
+                "Block corner table shows coordinates of all points/beacons
+                used to make polygons", not a special 3-plots-meet subset.
+                findBlockCorners()/the on-drawing "BC1"/"BC2" markers were
+                both built on that wrong assumption before any reference for
+                this specific table existed to check against, and have been
+                removed — this now lists every beacon actually used to build
+                this sheet's own lots, same set `groupUsedBeacons` already
+                computes for the drawing itself. */}
+            {groupUsedBeacons.length > 0 && (() => {
               const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
               // Only as many rows as actually fit above the bottom band —
               // this table was previously uncapped and ran off the sheet once
-              // a real layout produced more than a handful of block corners
-              // (client req 2026-08-30). Same "+N more … see digital
-              // schedule" overflow note the Lot Numbers table above uses.
+              // a real layout produced more beacons than fit (client req
+              // 2026-08-30). Same "+N more … see digital schedule" overflow
+              // note the Lot Areas table above uses — every beacon still
+              // appears in full on the paginated Coordinate Schedule pages.
               const bcRowsFit = Math.max(0, Math.floor((rightColBottom - (bcTop + 56)) / BC_ROW_H));
               // Not even the heading fits — drop the section entirely rather
-              // than spilling it past the frame; the corners stay in the DXF
-              // and the digital record either way.
+              // than spilling it past the frame; the coordinates stay in the
+              // DXF and the digital record either way.
               if (bcTop + 56 > rightColBottom) return null;
-              const bcOverflow = groupBlockCorners.length > bcRowsFit;
-              const bcShown = groupBlockCorners.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
+              const bcSorted = [...groupUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
+              const bcOverflow = bcSorted.length > bcRowsFit;
+              const bcShown = bcSorted.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
               return (
                 <>
                   <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
-                  <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES</text>
-                  <text x={690} y={bcTop + 28} fontSize={8} fill="#475569">CONSTANTS &nbsp; Y: +0.00 &nbsp; X: +0.00</text>
-                  <text x={690} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Point</text>
-                  <text x={745} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">Y</text>
-                  <text x={845} y={bcTop + 42} fontSize={9} fontWeight={600} fill="#475569">X</text>
-                  {bcShown.map((bc, k) => {
+                  <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={745} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
+                  <text x={845} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">X</text>
+                  <text x={690} y={bcTop + 42} fontSize={8} fill="#475569">CONSTANTS</text>
+                  <text x={745} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
+                  <text x={845} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
+                  {bcShown.map((b, k) => {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
-                      <g key={bc.id}>
-                        <text x={690} y={y} fontSize={8.5} fill="#0f172a">{bc.id}</text>
-                        <text x={745} y={y} fontSize={8.5} fill="#0f172a">{bc.east.toFixed(2)}</text>
-                        <text x={845} y={y} fontSize={8.5} fill="#0f172a">{bc.north.toFixed(2)}</text>
+                      <g key={b.id}>
+                        <text x={690} y={y} fontSize={8.5} fill="#0f172a">{b.id}</text>
+                        <text x={745} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.east)}</text>
+                        <text x={845} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.north)}</text>
                       </g>
                     );
                   })}
-                  {groupBlockCorners.length > bcShown.length && (
+                  {bcSorted.length > bcShown.length && (
                     <text x={690} y={bcTop + 56 + bcShown.length * BC_ROW_H} fontSize={8} fill="#94a3b8">
-                      +{groupBlockCorners.length - bcShown.length} more corner(s) — see digital schedule
+                      +{bcSorted.length - bcShown.length} more beacon(s) — see digital schedule
                     </text>
                   )}
                 </>

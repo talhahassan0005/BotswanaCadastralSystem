@@ -323,37 +323,6 @@ export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: 
   return { lots, usedPointCount: usedOriginal.size };
 }
 
-export interface BlockCorner {
-  id: string;
-  east: number;
-  north: number;
-  /** How many distinct plots' boundaries touch this point. */
-  plotCount: number;
-}
-
-/** A "block corner" — where the road/block grid turns — has no dedicated
- *  entity anywhere in the app's data model (there's no Road/Block concept at
- *  all). The only geometric signal available is: a point where 3+ DISTINCT
- *  plots' boundaries all have a vertex is where multiple blocks/road edges
- *  converge; an ordinary shared edge between just two adjoining lots is not
- *  (client req 2026-08-27, spec Part 2g/4). */
-export function findBlockCorners(plots: Plot[]): BlockCorner[] {
-  const groups: { east: number; north: number; plotNumbers: Set<string> }[] = [];
-  for (const plot of plots) {
-    for (const p of plot.points) {
-      let g = groups.find((g) => sameWorldPoint(g, p));
-      if (!g) {
-        g = { east: p.east, north: p.north, plotNumbers: new Set() };
-        groups.push(g);
-      }
-      g.plotNumbers.add(plot.number);
-    }
-  }
-  return groups
-    .filter((g) => g.plotNumbers.size >= 3)
-    .map((g, i) => ({ id: `BC${i + 1}`, east: g.east, north: g.north, plotCount: g.plotNumbers.size }));
-}
-
 /** Traces the single outer ring of the union of `plots` — every plot edge
  *  with no matching edge on any other plot (see `sameWorldPoint`) is an
  *  "outer" edge of the whole layout; walking those in sequence traces its
