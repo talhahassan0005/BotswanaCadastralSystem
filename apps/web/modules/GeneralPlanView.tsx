@@ -40,6 +40,42 @@ export function GeneralPlanView() {
   // page zoom/scroll.
   const [gpZoom, setGpZoom] = useState(1);
   const GP_ZOOM_MIN = 0.4, GP_ZOOM_MAX = 3;
+  // Pan (client req 2026-09-02: "pan with down press the scroll button") —
+  // press-and-hold the mouse's middle/scroll-wheel button and drag, the same
+  // convention CAD viewers use. Drives the zoom box's own scrollLeft/Top
+  // directly rather than a separate offset state, since overflow-auto
+  // already gives it real scrollable range once gpZoom > 1.
+  const panBoxRef = useRef<HTMLDivElement | null>(null);
+  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  function handlePanMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.button !== 1) return; // middle button only — left click still selects/places labels normally
+    e.preventDefault();
+    const box = panBoxRef.current;
+    if (!box) return;
+    panStartRef.current = { x: e.clientX, y: e.clientY, scrollLeft: box.scrollLeft, scrollTop: box.scrollTop };
+    setIsPanning(true);
+  }
+  useEffect(() => {
+    if (!isPanning) return;
+    function onMove(e: MouseEvent) {
+      const start = panStartRef.current;
+      const box = panBoxRef.current;
+      if (!start || !box) return;
+      box.scrollLeft = start.scrollLeft - (e.clientX - start.x);
+      box.scrollTop = start.scrollTop - (e.clientY - start.y);
+    }
+    function onUp() {
+      panStartRef.current = null;
+      setIsPanning(false);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isPanning]);
   // GP's own Working Plan variant (client req 2026-08-27/28, spec Part 3):
   // same drawing + descriptive block, but the Lot Numbers/Block Corner/
   // traverse tables are dropped in favour of an inset reference-mark sketch
@@ -1685,14 +1721,17 @@ export function GeneralPlanView() {
             event stops it from also scrolling the page itself (client req
             2026-09-01: "without moving the whole window"). overflow-auto lets the
             user pan around the sheet with the browser's own scrollbars once
-            zoomed past what fits. */}
+            zoomed past what fits, or via middle-mouse-button drag (client req
+            2026-09-02) below. */}
         <div
+          ref={panBoxRef}
           className="overflow-auto rounded border border-slate-100"
-          style={{ maxHeight: "82vh" }}
+          style={{ maxHeight: "82vh", cursor: isPanning ? "grabbing" : undefined }}
           onWheel={(e) => {
             e.preventDefault();
             setGpZoom((z) => Math.max(GP_ZOOM_MIN, Math.min(GP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
           }}
+          onMouseDown={handlePanMouseDown}
         >
         <div className="relative mx-auto max-w-5xl" style={{ transform: `scale(${gpZoom})`, transformOrigin: "top center" }}>
           {layoutGroups.map((_, idx) => (
