@@ -16,7 +16,7 @@ import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore, type CogoPlot } from "@/lib/store";
-import { detectRectangularLots } from "@/lib/plots";
+import { detectRectangularLots, sameWorldPoint } from "@/lib/plots";
 import type { CogoLeg, CogoResult } from "@/lib/types";
 import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
@@ -897,7 +897,24 @@ export function CogoWorkspace({
    *  of any closed ring of points — shared by the canvas "Diagram" pick tool
    *  and by savePlotNumber below (client req 2026-08-21) so a plot numbered
    *  anywhere in the work station can be loaded by that number later. */
-  function buildFigureFromPoints(pts: { name: string | null; east: number; north: number }[]): CogoResult {
+  function buildFigureFromPoints(ptsIn: { name: string | null; east: number; north: number }[]): CogoResult {
+    // Drop a redundant closing vertex equal to the first point (client req
+    // 2026-09-01, screenshot: a stray "0.00 / 00.00.00" distance+bearing
+    // label at the exact top corner of every lot in a row). Every consumer
+    // of `pts` here — this function's own legs/area, and General Plan's
+    // edge-dimension labels, Block Corner detection, DXF export — treats the
+    // list as an IMPLICITLY closed ring via `pts[(i+1) % pts.length]`, so a
+    // literal duplicate last-point-equals-first-point produces a genuine
+    // extra zero-length, zero-bearing "edge" at that corner instead of just
+    // marking the shape closed. Whatever provided this ring (a polygon tool
+    // that explicitly repeats the start point to "close" it) is a reasonable
+    // convention on its own; it's this function's job to normalize it before
+    // treating the list as a ring, once, so every downstream reader — not
+    // just this one — gets a clean 4-corner rectangle.
+    const pts =
+      ptsIn.length >= 2 && sameWorldPoint(ptsIn[0], ptsIn[ptsIn.length - 1])
+        ? ptsIn.slice(0, -1)
+        : ptsIn;
     const legsOut: CogoLeg[] = pts.map((p, i) => {
       const next = pts[(i + 1) % pts.length];
       const [brg, dist] = inverse({ east: p.east, north: p.north }, { east: next.east, north: next.north });
