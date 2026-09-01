@@ -1082,6 +1082,12 @@ export function GeneralPlanView() {
     const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
     const groupTotalHa = groupPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
+    // Lot Areas table sizing — only as tall/wide as this sheet's own lot
+    // count actually needs (client req 2026-09-02: "table should only cater
+    // for available data"), not the full space-available capacity.
+    const useTwoLotCols = groupSortedPlots.length > rowsPerCol;
+    const usedLotRows = useTwoLotCols ? rowsPerCol : groupSortedPlots.length;
+    const lotBoxRight = useTwoLotCols ? tblR : vMid;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
     // placed on a different sheet's own bounding box would otherwise project
@@ -1267,50 +1273,60 @@ export function GeneralPlanView() {
           <>
             {/* Lot Areas table (client req 2026-08-27, §2f; bordered grid
                 added 2026-09-01 to match the reference sheet's own boxed
-                table exactly) — this sheet's own lots only, two side-by-side
-                "LOT No. | SQ. METRES" column-pairs, sorted by lot number. */}
-            <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
-            {(() => {
-              const boxTop = lotTableTop + 5;
-              const headerRuleY = lotTableTop + 20;
-              const boxBottom = lotTableTop + 30 + rowsPerCol * lotRowH;
-              return (
-                <>
-                  <rect x={tblL} y={boxTop} width={tblR - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={tblL} y1={headerRuleY} x2={tblR} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={vA} y1={boxTop} x2={vA} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
-                  <line x1={vMid} y1={boxTop} x2={vMid} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={vB} y1={boxTop} x2={vB} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
-                </>
-              );
-            })()}
-            {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
-            {lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
-            {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
-              const y = lotTableTop + 30 + k * lotRowH;
-              return (
-                <g key={p.number}>
-                  <text x={lotAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                  <text x={sqmAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-                </g>
-              );
-            })}
-            {groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
-              const y = lotTableTop + 30 + k * lotRowH;
-              return (
-                <g key={p.number}>
-                  <text x={lotBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                  <text x={sqmBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-                </g>
-              );
-            })}
-            <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 16} fontSize={10} fontWeight={700}>
-              {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
-            </text>
-            {groupSortedPlots.length > maxLotRows && (
-              <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 32} fontSize={9} fill="#94a3b8">
-                +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
-              </text>
+                table exactly). Sized to the ACTUAL number of lots on this
+                sheet (client req 2026-09-02, screenshot crossing out a big
+                empty second column-pair and empty rows below a 5-lot sheet:
+                "the table should only cater for available data") — the box,
+                its right edge, and its row count all shrink to fit; the
+                second "LOT No. | SQ. METRES" column-pair only appears (and
+                only then does the box widen to the full table width) once
+                there are actually more lots than fit in one column. */}
+            {groupSortedPlots.length > 0 && (
+              <>
+                <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+                {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
+                {useTwoLotCols && lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
+                {(() => {
+                  const boxTop = lotTableTop + 5;
+                  const headerRuleY = lotTableTop + 20;
+                  const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
+                  return (
+                    <>
+                      <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                      <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                      <line x1={vA} y1={boxTop} x2={vA} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                      <line x1={vMid} y1={boxTop} x2={vMid} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />
+                      {useTwoLotCols && <line x1={vB} y1={boxTop} x2={vB} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />}
+                    </>
+                  );
+                })()}
+                {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
+                  const y = lotTableTop + 30 + k * lotRowH;
+                  return (
+                    <g key={p.number}>
+                      <text x={lotAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                      <text x={sqmAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                    </g>
+                  );
+                })}
+                {useTwoLotCols && groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
+                  const y = lotTableTop + 30 + k * lotRowH;
+                  return (
+                    <g key={p.number}>
+                      <text x={lotBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                      <text x={sqmBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                    </g>
+                  );
+                })}
+                <text x={690} y={lotTableTop + 30 + usedLotRows * lotRowH + 16} fontSize={10} fontWeight={700}>
+                  {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
+                </text>
+                {groupSortedPlots.length > maxLotRows && (
+                  <text x={690} y={lotTableTop + 30 + usedLotRows * lotRowH + 32} fontSize={9} fill="#94a3b8">
+                    +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
+                  </text>
+                )}
+              </>
             )}
             {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
                 own corners only; omitted entirely when none qualify, rather
@@ -1326,7 +1342,7 @@ export function GeneralPlanView() {
                 this sheet's own lots, same set `groupUsedBeacons` already
                 computes for the drawing itself. */}
             {groupUsedBeacons.length > 0 && (() => {
-              const bcTop = lotTableTop + 30 + rowsPerCol * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+              const bcTop = lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
               // Only as many rows as actually fit above the bottom band —
               // this table was previously uncapped and ran off the sheet once
               // a real layout produced more beacons than fit (client req
