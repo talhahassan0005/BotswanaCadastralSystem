@@ -15,6 +15,10 @@ import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 const COORDS_PER_SHEET = 48;
 const W = 1000;
 const H = 707; // A4 landscape ratio
+// This sheet represents a real A0 page: W (1000 SVG units) = 118.9cm =
+// 1189mm of actual paper width. Used to draw at a true chosen plan scale
+// (client req 2026-09-02) instead of always fitting the box.
+const UNITS_PER_MM = W / 1189;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -280,7 +284,22 @@ export function GeneralPlanView() {
     const minX = xs.length ? Math.min(...xs) : 0, maxX = xs.length ? Math.max(...xs) : 0;
     const minY = ys.length ? Math.min(...ys) : 0, maxY = ys.length ? Math.max(...ys) : 0;
     const spanX = maxX - minX || 1, spanY = maxY - minY || 1;
-    const s = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
+    const fitScale = Math.min((FX1 - FX0 - 2 * pad) / spanX, (FY1 - FY0 - 2 * pad) / spanY);
+    // Draw at the actual chosen scale (client req 2026-09-02: "when i change
+    // the scale, then also the scale of the drawing changes, like you did
+    // with the diagram") — same convention diagramLayout.ts's own
+    // `10000 / meta.scale` already uses for the single-lot Diagram, adapted
+    // to THIS sheet's own units (an A0 sheet: W SVG units = 118.9cm of real
+    // paper, not that file's separate "10 units/mm" space). At plan scale
+    // 1:N, 1 real metre draws as (1000/N) mm on paper; UNITS_PER_MM converts
+    // that to this sheet's own SVG units. Falls back to fit-to-box only when
+    // no scale has been set (matching the diagram's own fallback). A real
+    // subdivision's true-scale extent can be larger than the drawing box —
+    // same as a real printed A0 sheet, the scale is chosen so the whole
+    // layout fits; if it doesn't, the sheet's own zoom-out/pan controls
+    // (client req 2026-09-01/02) reach the rest, same as the diagram relies
+    // on its own canvas pan/zoom for an oversized true-scale drawing.
+    const s = meta.scale > 0 ? (1000 / meta.scale) * UNITS_PER_MM : fitScale;
     const ox = FX0 + ((FX1 - FX0) - s * spanX) / 2;
     const oyOff = ((FY1 - FY0) - s * spanY) / 2;
     // Order matches CogoWorkspace.tsx exactly: fit -> flip (mirror x around
@@ -1140,7 +1159,12 @@ export function GeneralPlanView() {
         ref={(el) => { refs.current[groupIdx] = el; }}
         viewBox={`0 0 ${W} ${H}`}
         className="w-full bg-white"
-        style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
+        // overflow: visible (client req 2026-09-02) — a true-scale drawing
+        // (see computeTransform's own `s`) can extend past this sheet's
+        // nominal 0..W/0..H box; without this it would be silently clipped
+        // at that boundary instead of staying reachable via the zoom/pan
+        // controls above.
+        style={{ border: "1px solid #cbd5e1", overflow: "visible", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
         onClick={handleCanvasClick}
       >
         {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld)}
