@@ -120,6 +120,7 @@ export function GeneralPlanView() {
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
     panelOffsets: Record<string, { dx: number; dy: number }>;
+    lotTableCols: number;
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -168,6 +169,10 @@ export function GeneralPlanView() {
     // "pedWay"/"lotAreas"/"blockCorner"); a section with no entry here just
     // renders at its default (un-dragged) position.
     panelOffsets: {} as Record<string, { dx: number; dy: number }>,
+    // How many "LOT No. | SQ. METRES" column-pairs the Lot Areas table uses
+    // (client req 2026-09-02: "user should choose whether they want 1/2/3/4
+    // columns") — was always exactly 2 (or 1 when everything fit in one).
+    lotTableCols: 2,
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -1048,20 +1053,33 @@ export function GeneralPlanView() {
     usedBeacons.length > 0
       ? Math.min(70 + usedBeacons.length * BC_ROW_H, Math.floor(rightColH * 0.5))
       : 30;
-  // Room the lot table needs BELOW its last row: the "SHEET TOTAL" line
-  // (+16) and, when the sheet holds more lots than fit, the "+N more" note
-  // (+32). Without reserving these the table's own footer ran past the frame
-  // even when the rows themselves fit (client req 2026-08-30).
-  const LOT_FOOTER_H = 36;
+  // Room the lot table needs below its last row (client req 2026-09-02: the
+  // "SHEET TOTAL"/"TOTAL AREA" line and the "+N more lot(s)... see digital
+  // schedule" note both removed — screenshot, both crossed out, "ye jo show
+  // ho raha hai ye hattana hai bs" — a small fixed gap is all that's left
+  // to reserve here now, not room for either line's own text).
+  const LOT_FOOTER_H = 12;
   const rowsPerCol = Math.max(1, Math.floor((rightColH - bcReserve - LOT_FOOTER_H) / lotRowH));
-  const maxLotRows = rowsPerCol * 2;
+  // How many "LOT No. | SQ. METRES" column-pairs (client req 2026-09-02:
+  // "for tables i think the user should choose whether they want 1/2/3/4
+  // columns" — was always fixed at 2, or 1 when everything fit in one).
+  const lotTableCols = Math.max(1, Math.min(4, Math.round(meta.lotTableCols) || 2));
+  const maxLotRows = rowsPerCol * lotTableCols;
   // Bordered grid — outer box, header underline, and a vertical rule between
   // every column, matching the reference sheet's own boxed "LOT AREAS" table
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
   // like that" — was plain floating text with no lines at all before).
   const tblL = mapX(685), tblR = mapX(975);
-  const vA = mapX(758), vMid = mapX(832), vB = mapX(906); // vertical divider x-positions
-  const lotAR = vA - 6, sqmAR = vMid - 6, lotBR = vB - 6, sqmBR = tblR - 6; // right-aligned column edges
+  const lotColPairW = (tblR - tblL) / lotTableCols;
+  // Each column-pair's own "LOT No." sub-column gets ~42% of the pair's
+  // width, "SQ. METRES" the rest — same proportion the original fixed
+  // 2-column layout used (74 of 174 units).
+  const lotColBounds = Array.from({ length: lotTableCols }, (_, i) => {
+    const left = tblL + i * lotColPairW;
+    const right = tblL + (i + 1) * lotColPairW;
+    const divider = left + lotColPairW * 0.42;
+    return { left, right, divider, lotColR: divider - 6, sqmColR: right - 6 };
+  });
   const lotPairHeader = (lotColR: number, sqmColR: number, y: number) => (
     <>
       <text x={lotColR} y={y} textAnchor="end" fontSize={9.5} fontWeight={700} fill="#475569">LOT No.</text>
@@ -1236,13 +1254,17 @@ export function GeneralPlanView() {
     const t = computeTransform(groupUsedBeacons);
     const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
-    const groupTotalHa = groupPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
     // Lot Areas table sizing — only as tall/wide as this sheet's own lot
     // count actually needs (client req 2026-09-02: "table should only cater
     // for available data"), not the full space-available capacity.
-    const useTwoLotCols = groupSortedPlots.length > rowsPerCol;
-    const usedLotRows = useTwoLotCols ? rowsPerCol : groupSortedPlots.length;
-    const lotBoxRight = useTwoLotCols ? tblR : vMid;
+    // Only as many columns as this sheet's own lot count actually needs
+    // (client req 2026-09-02, same "only cater for available data"
+    // principle already applied to the row count) — a sheet with fewer
+    // lots than rowsPerCol never widens past its first column-pair, no
+    // matter how many columns lotTableCols allows.
+    const usedLotCols = groupSortedPlots.length === 0 ? 0 : Math.max(1, Math.min(lotTableCols, Math.ceil(groupSortedPlots.length / rowsPerCol)));
+    const usedLotRows = groupSortedPlots.length >= rowsPerCol ? rowsPerCol : groupSortedPlots.length;
+    const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
     // placed on a different sheet's own bounding box would otherwise project
@@ -1456,7 +1478,10 @@ export function GeneralPlanView() {
             {groupSortedPlots.length > 0 && (() => {
               const laX = tblL - 8, laY = lotTableTop - 20;
               const laW = lotBoxRight - tblL + 16;
-              const laH = lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 42 : 26) - lotTableTop + 20;
+              const laH = lotTableTop + 30 + usedLotRows * lotRowH + LOT_FOOTER_H - lotTableTop + 20;
+              const boxTop = lotTableTop + 5;
+              const headerRuleY = lotTableTop + 20;
+              const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
               return (
               <g {...panelDragHandlers("lotAreas")}>
                 {/* Invisible hit-area (client req 2026-09-02) — same reason
@@ -1472,48 +1497,24 @@ export function GeneralPlanView() {
                   />
                 )}
                 <text x={panelX} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
-                {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
-                {useTwoLotCols && lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
-                {(() => {
-                  const boxTop = lotTableTop + 5;
-                  const headerRuleY = lotTableTop + 20;
-                  const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
-                  return (
-                    <>
-                      <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
-                      <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                      <line x1={vA} y1={boxTop} x2={vA} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
-                      <line x1={vMid} y1={boxTop} x2={vMid} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />
-                      {useTwoLotCols && <line x1={vB} y1={boxTop} x2={vB} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />}
-                    </>
-                  );
-                })()}
-                {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
-                  const y = lotTableTop + 30 + k * lotRowH;
-                  return (
-                    <g key={p.number}>
-                      <text x={lotAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                      <text x={sqmAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-                    </g>
-                  );
-                })}
-                {useTwoLotCols && groupSortedPlots.slice(rowsPerCol, maxLotRows).map((p, k) => {
-                  const y = lotTableTop + 30 + k * lotRowH;
-                  return (
-                    <g key={p.number}>
-                      <text x={lotBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                      <text x={sqmBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-                    </g>
-                  );
-                })}
-                <text x={panelX} y={lotTableTop + 30 + usedLotRows * lotRowH + 16} fontSize={10} fontWeight={700}>
-                  {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
-                </text>
-                {groupSortedPlots.length > maxLotRows && (
-                  <text x={panelX} y={lotTableTop + 30 + usedLotRows * lotRowH + 32} fontSize={9} fill="#94a3b8">
-                    +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
-                  </text>
-                )}
+                <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                {lotColBounds.slice(0, usedLotCols).map((col, c) => (
+                  <g key={c}>
+                    {lotPairHeader(col.lotColR, col.sqmColR, lotTableTop + 16)}
+                    <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                    {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
+                    {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
+                      const y = lotTableTop + 30 + k * lotRowH;
+                      return (
+                        <g key={p.number}>
+                          <text x={col.lotColR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                          <text x={col.sqmColR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                ))}
               </g>
               );
             })()}
@@ -1531,7 +1532,10 @@ export function GeneralPlanView() {
                 this sheet's own lots, same set `groupUsedBeacons` already
                 computes for the drawing itself. */}
             {groupUsedBeacons.length > 0 && (() => {
-              const bcTop = lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 46 : 30);
+              // No "SHEET TOTAL"/"+N more" lines to clear below the table any
+              // more (client req 2026-09-02, both removed) — just a small
+              // fixed gap before the Block Corner Table's own heading.
+              const bcTop = lotTableTop + 30 + usedLotRows * lotRowH + 24;
               // Only as many rows as actually fit above the bottom band —
               // this table was previously uncapped and ran off the sheet once
               // a real layout produced more beacons than fit (client req
@@ -1829,6 +1833,21 @@ export function GeneralPlanView() {
           <button type="button" onClick={addSplayEntry} className="mt-2 text-xs font-medium text-brand underline">
             + Add corner
           </button>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Lot Areas table columns</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, lotTableCols: n }))}
+                className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </span>
         </div>
       </Card>
 
