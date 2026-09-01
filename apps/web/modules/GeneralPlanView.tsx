@@ -1080,10 +1080,20 @@ export function GeneralPlanView() {
     const divider = left + lotColPairW * 0.42;
     return { left, right, divider, lotColR: divider - 6, sqmColR: right - 6 };
   });
+  // Header/value text sized (and, past 2 columns, abbreviated) to what each
+  // column-pair's own width can actually hold (client req 2026-09-02,
+  // screenshot: picking 4 columns made "LOT No."/"SQ. METRES" overlap the
+  // next column-pair — the fixed 9.5px header was sized for a 2-column
+  // pair ~113 units wide, not a 4-column one ~57 units wide). Verified
+  // against the real column widths at each tier before picking these.
+  const lotHeaderFS = lotTableCols >= 4 ? 6.5 : lotTableCols === 3 ? 7.5 : 9.5;
+  const lotValueFS = lotTableCols >= 4 ? 7 : lotTableCols === 3 ? 8 : 9;
+  const lotLabel = lotTableCols >= 4 ? "LOT" : "LOT No.";
+  const sqmLabel = lotTableCols >= 3 ? "SQ.M" : "SQ. METRES";
   const lotPairHeader = (lotColR: number, sqmColR: number, y: number) => (
     <>
-      <text x={lotColR} y={y} textAnchor="end" fontSize={9.5} fontWeight={700} fill="#475569">LOT No.</text>
-      <text x={sqmColR} y={y} textAnchor="end" fontSize={9.5} fontWeight={700} fill="#475569">SQ. METRES</text>
+      <text x={lotColR} y={y} textAnchor="end" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{lotLabel}</text>
+      <text x={sqmColR} y={y} textAnchor="end" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{sqmLabel}</text>
     </>
   );
   // `worldAt` (only supplied by renderLayoutSheet, which has an actual
@@ -1508,8 +1518,8 @@ export function GeneralPlanView() {
                       const y = lotTableTop + 30 + k * lotRowH;
                       return (
                         <g key={p.number}>
-                          <text x={col.lotColR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                          <text x={col.sqmColR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                          <text x={col.lotColR} y={y} textAnchor="end" fontSize={lotValueFS} fill="#0f172a">{p.number || "(none)"}</text>
+                          <text x={col.sqmColR} y={y} textAnchor="end" fontSize={lotValueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
                         </g>
                       );
                     })}
