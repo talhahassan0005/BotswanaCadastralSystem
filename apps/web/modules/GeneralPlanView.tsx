@@ -700,18 +700,54 @@ export function GeneralPlanView() {
   // the border instead of outside it like the reference. FRAME_R/FRAME_B are
   // the border's right/bottom edges.
   const FRAME_M = 24, FRAME_X = FRAME_M, FRAME_Y = FRAME_M, FRAME_R = W - FRAME_M, FRAME_B = H - FRAME_M;
-  const TICK = 10; // grid-tick length (client req 2026-08-31: "increase ... to be visible" — was 7)
+  // Bigger + labelled (client req 2026-09-01, redline circling the top/left
+  // ticks: "increase size of grid marks and add labels") — a plain unlabelled
+  // tick doesn't tell a reader what coordinate it's actually at; the
+  // reference sheet's own grid marks carry their real Y/X (east/north)
+  // value. 10 -> 16 for the tick length itself.
+  const TICK = 16; // grid-tick length (client req 2026-09-01: "increase size of grid marks" — was 10)
+  const GRID_LABEL_FS = 6.5;
   /** One row of evenly-spaced tick marks along a border edge, projecting
-   *  outward (into the margin) rather than inward onto the drawing. */
-  function edgeTicks(fixed: number, from: number, to: number, count: number, horizontal: boolean, out: number) {
+   *  outward (into the margin) rather than inward onto the drawing.
+   *  `worldAt`, when given, labels each tick with the real Y (east, on
+   *  horizontal top/bottom edges) or X (north, on vertical left/right
+   *  edges) coordinate at that position — same "Y"/"X" naming the Block
+   *  Corner Table already uses for this coordinate system. */
+  function edgeTicks(
+    fixed: number, from: number, to: number, count: number, horizontal: boolean, out: number,
+    worldAt?: (px: number, py: number) => { east: number; north: number }
+  ) {
     const lines = [];
     for (let i = 0; i <= count; i++) {
       const t = from + ((to - from) * i) / count;
-      lines.push(
-        horizontal
-          ? <line key={i} x1={t} y1={fixed} x2={t} y2={fixed + out} stroke="#0f172a" strokeWidth={1} />
-          : <line key={i} x1={fixed} y1={t} x2={fixed + out} y2={t} stroke="#0f172a" strokeWidth={1} />
-      );
+      const x1 = horizontal ? t : fixed, y1 = horizontal ? fixed : t;
+      const x2 = horizontal ? t : fixed + out, y2 = horizontal ? fixed + out : t;
+      lines.push(<line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f172a" strokeWidth={1} />);
+      if (worldAt) {
+        const w = worldAt(x1, y1);
+        const val = Math.round(horizontal ? w.east : w.north);
+        const labelText = `${horizontal ? "Y" : "X"} ${val}`;
+        // `out`'s sign is the tick's own INWARD direction (into the frame —
+        // see this function's own doc comment); the label goes the other
+        // way, out in the margin the border sits in, never on top of the
+        // drawing. Vertical-edge labels are rotated to run parallel to the
+        // border, same convention as the reference sheet's own margin grid.
+        const marginDir = out > 0 ? -1 : 1;
+        const lx = horizontal ? t : fixed + marginDir * 8;
+        const ly = horizontal ? fixed + marginDir * 8 : t;
+        lines.push(
+          <text
+            key={`l${i}`}
+            x={lx} y={ly}
+            fontSize={GRID_LABEL_FS}
+            textAnchor="middle"
+            fill="#475569"
+            transform={horizontal ? undefined : `rotate(-90 ${lx} ${ly})`}
+          >
+            {labelText}
+          </text>
+        );
+      }
     }
     return lines;
   }
@@ -828,7 +864,15 @@ export function GeneralPlanView() {
       <text x={x + sqmOffset} y={y} fontSize={9.5} fontWeight={700} fill="#475569">SQ. METRES</text>
     </>
   );
-  const titleBlock = (no: number, label: string) => (
+  // `worldAt` (only supplied by renderLayoutSheet, which has an actual
+  // fit-to-bounds transform to invert — the coordinate-schedule appendix
+  // sheet below has no drawing to correlate a grid label to, so its own
+  // ticks stay unlabelled) labels just the top and left edges' ticks with
+  // their real Y/X coordinate (client req 2026-09-01 redline, circling
+  // exactly those two edges: "increase size of grid marks and add
+  // labels") — bottom/right stay plain ticks, since a bottom-edge label
+  // near the sheet's own right end would collide with "SR No" there.
+  const titleBlock = (no: number, label: string, worldAt?: (px: number, py: number) => { east: number; north: number }) => (
     <>
       {/* Grid tick marks along the border, projecting INWARD into the frame
           (client req 2026-08-28: "check grid marks on frame", then "Grids
@@ -844,10 +888,10 @@ export function GeneralPlanView() {
           gap that avoids the registration box's footprint only makes sense
           when that box is actually drawn (General Plan only, see below). */}
       {sheetMode === "general"
-        ? edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK)
-        : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK)}
+        ? edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK, worldAt)
+        : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK, worldAt)}
       {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK)}
-      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK)}
+      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK, worldAt)}
       {sheetMode === "general"
         ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK)
         : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
@@ -986,7 +1030,7 @@ export function GeneralPlanView() {
         style={{ border: "1px solid #cbd5e1", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
         onClick={handleCanvasClick}
       >
-        {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`)}
+        {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld)}
         {/* north arrow */}
         <g transform={`translate(${FX1 - 20},${FY0 + 16})`}>
           <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
