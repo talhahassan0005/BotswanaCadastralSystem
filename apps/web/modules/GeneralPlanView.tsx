@@ -1364,12 +1364,24 @@ export function GeneralPlanView() {
             block: "group these features independently... dont just group
             all of them"). Same select/drag interaction as the title
             heading, just one instance per section via panelDragHandlers. */}
-        {panelSectionLayouts.map((section) => (
+        {panelSectionLayouts.map((section) => {
+          const secX = panelX - 8, secY = section.rowYs[0] - 12;
+          const secW = 230 * FRAME_SCALE_X, secH = section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18;
+          return (
           <g key={section.id} {...panelDragHandlers(section.id)}>
+            {/* Invisible hit-area covering the whole section (client req
+                2026-09-02: "table group... drag ho kar kahi ur place nahi ho
+                raha jese heading section hota hai" — an SVG <g> has no
+                geometry of its own, so a click landing in the blank space
+                between these short, sparse text lines (unlike the much
+                denser/bolder title heading) hit nothing and fell through to
+                the canvas below, deselecting instead of selecting this
+                section). fill="transparent" (not "none") makes the whole
+                rect clickable while staying invisible. */}
+            <rect x={secX} y={secY} width={secW} height={secH} fill="transparent" />
             {selectedPanelId === section.id && (
               <rect
-                x={panelX - 8} y={section.rowYs[0] - 12}
-                width={230 * FRAME_SCALE_X} height={section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18}
+                x={secX} y={secY} width={secW} height={secH}
                 fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
                 style={{ pointerEvents: "none" }}
               />
@@ -1387,7 +1399,8 @@ export function GeneralPlanView() {
               </text>
             ))}
           </g>
-        ))}
+          );
+        })}
         {sheetMode === "general" && (
           <>
             {/* Lot Areas table (client req 2026-08-27, §2f; bordered grid
@@ -1400,13 +1413,20 @@ export function GeneralPlanView() {
                 second "LOT No. | SQ. METRES" column-pair only appears (and
                 only then does the box widen to the full table width) once
                 there are actually more lots than fit in one column. */}
-            {groupSortedPlots.length > 0 && (
+            {groupSortedPlots.length > 0 && (() => {
+              const laX = tblL - 8, laY = lotTableTop - 20;
+              const laW = lotBoxRight - tblL + 16;
+              const laH = lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 42 : 26) - lotTableTop + 20;
+              return (
               <g {...panelDragHandlers("lotAreas")}>
+                {/* Invisible hit-area (client req 2026-09-02) — same reason
+                    as the panel sections above: a bordered table is mostly
+                    blank space between its own grid lines, which a bare <g>
+                    doesn't catch clicks on. */}
+                <rect x={laX} y={laY} width={laW} height={laH} fill="transparent" />
                 {selectedPanelId === "lotAreas" && (
                   <rect
-                    x={tblL - 8} y={lotTableTop - 20}
-                    width={lotBoxRight - tblL + 16}
-                    height={lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 42 : 26) - lotTableTop + 20}
+                    x={laX} y={laY} width={laW} height={laH}
                     fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
                     style={{ pointerEvents: "none" }}
                   />
@@ -1455,7 +1475,8 @@ export function GeneralPlanView() {
                   </text>
                 )}
               </g>
-            )}
+              );
+            })()}
             {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
                 own corners only; omitted entirely when none qualify, rather
                 than printing an empty section. */}
@@ -1486,11 +1507,15 @@ export function GeneralPlanView() {
               const bcOverflow = bcSorted.length > bcRowsFit;
               const bcShown = bcSorted.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
               const bcBottom = bcTop + 56 + bcShown.length * BC_ROW_H + (bcSorted.length > bcShown.length ? 16 : 0);
+              const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
               return (
                 <g {...panelDragHandlers("blockCorner")}>
+                  {/* Invisible hit-area (client req 2026-09-02) — same reason
+                      as the Lot Areas table above. */}
+                  <rect x={bcHitX} y={bcHitY} width={bcHitW} height={bcHitH} fill="transparent" />
                   {selectedPanelId === "blockCorner" && (
                     <rect
-                      x={mapX(680)} y={bcTop - 20} width={300 * FRAME_SCALE_X} height={bcBottom - bcTop + 24}
+                      x={bcHitX} y={bcHitY} width={bcHitW} height={bcHitH}
                       fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
                       style={{ pointerEvents: "none" }}
                     />
