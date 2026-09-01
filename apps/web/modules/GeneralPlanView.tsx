@@ -795,8 +795,8 @@ export function GeneralPlanView() {
       text(regX + 6, regY + 100, "Surveyed in", 8);
       text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
       text(regX + 6, regY + 114, "By me", 8);
-      text(regX + regW - 6, regY + 114, meta.surveyor || "—", 8, "end");
-      text(regX + regW - 6, regY + 126, "Land Surveyor", 7, "end");
+      text(regX + regW - 6, regY + 138, meta.surveyor || "—", 8, "end");
+      text(regX + regW - 6, regY + 150, "Land Surveyor", 7, "end");
     }
     text(mapX(W - 20), mapY(H - 16), `SR No: ${meta.srNo || "—"}`, 9, "end");
 
@@ -923,7 +923,14 @@ export function GeneralPlanView() {
   // the box entirely, onto one line directly above it (same redline: "move
   // GC number" / "move sheet numbering" — the reference has both above the
   // box, not GC above and Sheet No as the box's own first row).
-  const regSize = 145;
+  // Grown from 145 (client req 2026-09-02: "the surveyor must sign there...
+  // move [the name] and Land Surveyor a bit down to create space" — the
+  // printed name sat directly on the same line as "By me" with no room for
+  // an actual pen signature between them, unlike the "Approved"/"Director"
+  // pair above, which already had a real blank gap for exactly this
+  // reason). Taller than the earlier "true 10cm square" redline now that a
+  // signature needs its own room; still square-ish, not stretched thin.
+  const regSize = 164;
   const regX = FRAME_R - regSize, regY = FRAME_Y;
   const regW = regSize;
 
@@ -933,7 +940,12 @@ export function GeneralPlanView() {
   // Sheet Index is a single trivial entry for now (real multi-sheet splitting
   // is a later phase); the numeric lot range is derived straight from the
   // numbered COGO plots when their numbers are numeric.
-  const panelX = mapX(690), panelTop = mapY(167); // registration block above now ends at y=163
+  // panelTop derived straight from the registration box's own bottom edge
+  // (regY + regSize) rather than an independent magic number — the box
+  // grew taller for signature room (client req 2026-09-02) and a fixed
+  // literal here would silently start overlapping it again the next time
+  // regSize changes.
+  const panelX = mapX(690), panelTop = regY + regSize + 15;
   // One line per LAYOUT sheet (client req 2026-08-27, multi-sheet split) —
   // shown identically on every sheet so a reader can find any lot's sheet
   // from any page, matching the reference's own Sheet Index panel.
@@ -1172,9 +1184,16 @@ export function GeneralPlanView() {
           <line x1={regX} y1={regY + 86} x2={regX + regW} y2={regY + 86} stroke="#0f172a" strokeWidth={0.4} />
           <text x={regX + 6} y={regY + 100} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
           <text x={regX + regW - 6} y={regY + 100} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
+          {/* "By me" own row, then a real blank gap before the printed name —
+              same convention as the Approved/Director gap above — for the
+              surveyor's actual pen signature (client req 2026-09-02,
+              screenshot: "the surveyor must sign there... move [the name]
+              and Land Surveyor a bit down to create space"). Was
+              cramming the name onto the same line as "By me" with no room
+              to sign at all. */}
           <text x={regX + 6} y={regY + 114} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
-          <text x={regX + regW - 6} y={regY + 114} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-          <text x={regX + regW - 6} y={regY + 126} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+          <text x={regX + regW - 6} y={regY + 138} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+          <text x={regX + regW - 6} y={regY + 150} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
         </>
       )}
 
