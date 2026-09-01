@@ -34,6 +34,12 @@ export function GeneralPlanView() {
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
+  // Zoom for the sheet preview only (client req 2026-09-01: "zoom this GP
+  // only with a scroll button without moving the whole window") — a plain
+  // CSS transform on the preview box, independent of the browser's own
+  // page zoom/scroll.
+  const [gpZoom, setGpZoom] = useState(1);
+  const GP_ZOOM_MIN = 0.4, GP_ZOOM_MAX = 3;
   // GP's own Working Plan variant (client req 2026-08-27/28, spec Part 3):
   // same drawing + descriptive block, but the Lot Numbers/Block Corner/
   // traverse tables are dropped in favour of an inset reference-mark sketch
@@ -1699,11 +1705,35 @@ export function GeneralPlanView() {
             >
               Rotate 90°
             </Button>
-            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text.</span>
+            {/* Zoom (client req 2026-09-01: "zoom this GP only with a scroll
+                button without moving the whole window") — mouse wheel over
+                the sheet below zooms just this preview; +/- and Reset here
+                do the same without needing to hover the sheet first. */}
+            <span className="mx-1 h-5 w-px bg-slate-200" />
+            <Button variant="ghost" onClick={() => setGpZoom((z) => Math.max(GP_ZOOM_MIN, +(z - 0.15).toFixed(2)))}>−</Button>
+            <span className="w-12 text-center text-xs text-slate-600">{Math.round(gpZoom * 100)}%</span>
+            <Button variant="ghost" onClick={() => setGpZoom((z) => Math.min(GP_ZOOM_MAX, +(z + 0.15).toFixed(2)))}>+</Button>
+            {gpZoom !== 1 && (
+              <Button variant="ghost" onClick={() => setGpZoom(1)}>Reset zoom</Button>
+            )}
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom.</span>
           </div>
         )}
-        {/* Render all sheets (so refs exist for print-all); show only the active one. */}
-        <div className="relative mx-auto max-w-5xl">
+        {/* Render all sheets (so refs exist for print-all); show only the active one.
+            Scroll-wheel zoom is scoped to this box — preventDefault on the wheel
+            event stops it from also scrolling the page itself (client req
+            2026-09-01: "without moving the whole window"). overflow-auto lets the
+            user pan around the sheet with the browser's own scrollbars once
+            zoomed past what fits. */}
+        <div
+          className="overflow-auto rounded border border-slate-100"
+          style={{ maxHeight: "82vh" }}
+          onWheel={(e) => {
+            e.preventDefault();
+            setGpZoom((z) => Math.max(GP_ZOOM_MIN, Math.min(GP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
+          }}
+        >
+        <div className="relative mx-auto max-w-5xl" style={{ transform: `scale(${gpZoom})`, transformOrigin: "top center" }}>
           {layoutGroups.map((_, idx) => (
             <div key={idx} style={{ display: sheet === idx ? "block" : "none" }}>{renderLayoutSheet(idx)}</div>
           ))}
@@ -1740,6 +1770,7 @@ export function GeneralPlanView() {
               </div>
             </div>
           )}
+        </div>
         </div>
       </Card>
     </div>
