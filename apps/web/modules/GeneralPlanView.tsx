@@ -278,9 +278,21 @@ export function GeneralPlanView() {
   const FRAME_SCALE_Y = (FRAME_B - FRAME_Y) / (OLD_FRAME_B - OLD_FRAME_Y);
   const mapX = (x: number) => FRAME_X + (x - OLD_FRAME_X) * FRAME_SCALE_X;
   const mapY = (y: number) => FRAME_Y + (y - OLD_FRAME_Y) * FRAME_SCALE_Y;
+  // Client req 2026-09-02: "general plan heading ke niche se space kam karni
+  // hai" — the gaps right under "GENERAL PLAN" (and before the drawing
+  // starts) were previously frame-scaled positions (mapY(49), mapY(66),
+  // mapY(102)), which compound the same way the rest of the template does;
+  // these three specifically are now tight, fixed row-height offsets from
+  // TITLE_Y1 instead, matching how every OTHER line-height in this file
+  // (lotRowH, BC_ROW_H, TITLE_EXTRA_LINE_H itself) is already treated as
+  // font-driven, not frame-driven. Optional lines (Portions of Lot/Tribal
+  // Area) still only add their own row, and only their own space, when
+  // actually filled in — extraTitleLines already only contains an entry
+  // for a field that's set (see where it's built above), so FY0 never
+  // reserves room for a subheading that isn't there.
   const TITLE_Y1 = mapY(34);
-  const TITLE_OF_Y = mapY(49), TITLE_LINE2_Y = mapY(66);
-  const FX0 = mapX(30), FY0 = mapY(102) + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
+  const TITLE_OF_Y = TITLE_Y1 + 13, TITLE_LINE2_Y = TITLE_OF_Y + 14;
+  const FX0 = mapX(30), FY0 = TITLE_LINE2_Y + 22 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
   // fit-to-bounds projection below, spinning the drawing around the centre
