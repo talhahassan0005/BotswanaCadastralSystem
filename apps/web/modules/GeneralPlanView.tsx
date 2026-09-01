@@ -73,6 +73,7 @@ export function GeneralPlanView() {
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
+    panelOffset: { dx: number; dy: number };
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -113,6 +114,11 @@ export function GeneralPlanView() {
     // sake") — same dx/dy/scale-offset pattern as WorkingPlan.tsx's own
     // title-block treatment.
     titleOffset: { dx: 0, dy: 0 } as { dx: number; dy: number; scale?: number },
+    // Select/move for the right-side reference panel + Lot Numbers/Block
+    // Corner tables (client req 2026-09-01: "i should be able to drag this
+    // also") — same dx/dy offset mechanism as titleOffset above, minus the
+    // resize handles (only dragging was asked for here).
+    panelOffset: { dx: 0, dy: 0 } as { dx: number; dy: number },
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -350,6 +356,48 @@ export function GeneralPlanView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingTitle]);
 
+  // Select/move for the right-side reference panel (Sheet Index/Beacon
+  // Description/Splay/Ped Way + Lot Numbers/Block Corner tables) — client
+  // req 2026-09-01: "i should be able to drag this also", same pattern as
+  // the title block above, minus resize (only dragging was asked for).
+  const [panelSelected, setPanelSelected] = useState(false);
+  const [draggingPanel, setDraggingPanel] = useState<{ startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
+  const panelDragMovedRef = useRef(false);
+  function handlePanelClick(e: ReactMouseEvent<SVGElement>) {
+    e.stopPropagation();
+    if (panelDragMovedRef.current) { panelDragMovedRef.current = false; return; }
+    setPanelSelected((s) => !s);
+  }
+  function handlePanelPointerDown(e: ReactPointerEvent<SVGElement>) {
+    if (!panelSelected) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    setDraggingPanel({ startSx: p.x, startSy: p.y, origDx: meta.panelOffset.dx, origDy: meta.panelOffset.dy });
+  }
+  function handlePanelPointerMove(e: ReactPointerEvent<SVGElement>) {
+    if (!draggingPanel) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingPanel.startSx, dy = p.y - draggingPanel.startSy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) panelDragMovedRef.current = true;
+    setMeta((m) => ({ ...m, panelOffset: { dx: draggingPanel.origDx + dx, dy: draggingPanel.origDy + dy } }));
+  }
+  function handlePanelPointerUp() {
+    setDraggingPanel(null);
+  }
+  function cancelPanelDrag() {
+    if (!draggingPanel) return;
+    setMeta((m) => ({ ...m, panelOffset: { dx: draggingPanel.origDx, dy: draggingPanel.origDy } }));
+    setDraggingPanel(null);
+  }
+  useEffect(() => {
+    if (!draggingPanel) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelPanelDrag(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingPanel]);
+
   useEffect(() => {
     if (!textPrompt && !addingRoadLabel && !addingBoundaryLabel) return;
     function onKey(e: KeyboardEvent) {
@@ -391,6 +439,7 @@ export function GeneralPlanView() {
     }
     setSelectedLabel(null);
     setTitleSelected(false);
+    setPanelSelected(false);
   }
   function labelArray(kind: "road" | "boundary") {
     return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
@@ -1237,7 +1286,27 @@ export function GeneralPlanView() {
             );
           });
         })()}
-        {/* Sheet Index / Beacon Description / Splay Information / Ped Way — same on every sheet */}
+        {/* Sheet Index / Beacon Description / Splay Information / Ped Way,
+            plus (General Plan mode) the Lot Numbers/Areas and Block Corner
+            tables below it — select/move as one group (client req
+            2026-09-01: "i should be able to drag this also"), same pattern
+            as the title heading above. */}
+        <g
+          transform={`translate(${meta.panelOffset.dx},${meta.panelOffset.dy})`}
+          style={{ cursor: panelSelected ? "move" : "pointer" }}
+          onClick={handlePanelClick}
+          onPointerDown={handlePanelPointerDown}
+          onPointerMove={handlePanelPointerMove}
+          onPointerUp={handlePanelPointerUp}
+        >
+          {panelSelected && (
+            <rect
+              x={panelX - 10} y={panelTop - 20}
+              width={300} height={Math.max(panelBottom, rightColBottom) - panelTop + 30}
+              fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+              style={{ pointerEvents: "none" }}
+            />
+          )}
         {panelRows.map((row, i) => (
           <text
             key={i}
@@ -1250,7 +1319,7 @@ export function GeneralPlanView() {
             {row.text}
           </text>
         ))}
-        {sheetMode === "general" ? (
+        {sheetMode === "general" && (
           <>
             {/* Lot Numbers / Areas table (client req 2026-08-27, §2f) — this
                 sheet's own lots only, two side-by-side "LOT No. | SQ. METRES"
@@ -1328,9 +1397,16 @@ export function GeneralPlanView() {
                 </>
               );
             })()}
-            {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
-                layout's outer boundary + grand total, sheet 1 only (it's not
-                a per-sheet concept); other sheets point back to it. */}
+          </>
+        )}
+        </g>
+        {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
+            layout's outer boundary + grand total, sheet 1 only (it's not a
+            per-sheet concept); other sheets point back to it. NOT part of
+            the draggable panel group above — this is a full-width bottom
+            band, not the right-side column. */}
+        {sheetMode === "general" ? (
+          <>
             {isFirstSheet ? (
               outerSides.length > 0 ? (
                 <>
