@@ -913,11 +913,17 @@ export function GeneralPlanView() {
   const LOT_FOOTER_H = 36;
   const rowsPerCol = Math.max(1, Math.floor((rightColH - bcReserve - LOT_FOOTER_H) / lotRowH));
   const maxLotRows = rowsPerCol * 2;
-  const colAx = 690, colBx = 835, sqmOffset = 65;
-  const lotPairHeader = (x: number, y: number) => (
+  // Bordered grid — outer box, header underline, and a vertical rule between
+  // every column, matching the reference sheet's own boxed "LOT AREAS" table
+  // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
+  // like that" — was plain floating text with no lines at all before).
+  const tblL = 685, tblR = 975;
+  const vA = 758, vMid = 832, vB = 906; // vertical divider x-positions
+  const lotAR = vA - 6, sqmAR = vMid - 6, lotBR = vB - 6, sqmBR = tblR - 6; // right-aligned column edges
+  const lotPairHeader = (lotColR: number, sqmColR: number, y: number) => (
     <>
-      <text x={x} y={y} fontSize={9.5} fontWeight={700} fill="#475569">LOT No.</text>
-      <text x={x + sqmOffset} y={y} fontSize={9.5} fontWeight={700} fill="#475569">SQ. METRES</text>
+      <text x={lotColR} y={y} textAnchor="end" fontSize={9.5} fontWeight={700} fill="#475569">LOT No.</text>
+      <text x={sqmColR} y={y} textAnchor="end" fontSize={9.5} fontWeight={700} fill="#475569">SQ. METRES</text>
     </>
   );
   // `worldAt` (only supplied by renderLayoutSheet, which has an actual
@@ -1321,18 +1327,33 @@ export function GeneralPlanView() {
         ))}
         {sheetMode === "general" && (
           <>
-            {/* Lot Numbers / Areas table (client req 2026-08-27, §2f) — this
-                sheet's own lots only, two side-by-side "LOT No. | SQ. METRES"
-                column-pairs, sorted by lot number. */}
-            <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT NUMBERS / AREAS</text>
-            {lotPairHeader(colAx, lotTableTop + 16)}
-            {lotPairHeader(colBx, lotTableTop + 16)}
+            {/* Lot Areas table (client req 2026-08-27, §2f; bordered grid
+                added 2026-09-01 to match the reference sheet's own boxed
+                table exactly) — this sheet's own lots only, two side-by-side
+                "LOT No. | SQ. METRES" column-pairs, sorted by lot number. */}
+            <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+            {(() => {
+              const boxTop = lotTableTop + 5;
+              const headerRuleY = lotTableTop + 20;
+              const boxBottom = lotTableTop + 30 + rowsPerCol * lotRowH;
+              return (
+                <>
+                  <rect x={tblL} y={boxTop} width={tblR - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={headerRuleY} x2={tblR} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={vA} y1={boxTop} x2={vA} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                  <line x1={vMid} y1={boxTop} x2={vMid} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={vB} y1={boxTop} x2={vB} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                </>
+              );
+            })()}
+            {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
+            {lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
             {groupSortedPlots.slice(0, rowsPerCol).map((p, k) => {
               const y = lotTableTop + 30 + k * lotRowH;
               return (
                 <g key={p.number}>
-                  <text x={colAx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                  <text x={colAx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                  <text x={lotAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                  <text x={sqmAR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
                 </g>
               );
             })}
@@ -1340,12 +1361,11 @@ export function GeneralPlanView() {
               const y = lotTableTop + 30 + k * lotRowH;
               return (
                 <g key={p.number}>
-                  <text x={colBx} y={y} fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
-                  <text x={colBx + sqmOffset} y={y} fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                  <text x={lotBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.number || "(none)"}</text>
+                  <text x={sqmBR} y={y} textAnchor="end" fontSize={9} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
                 </g>
               );
             })}
-            <line x1={690} y1={lotTableTop + 30 + rowsPerCol * lotRowH} x2={970} y2={lotTableTop + 30 + rowsPerCol * lotRowH} stroke="#cbd5e1" />
             <text x={690} y={lotTableTop + 30 + rowsPerCol * lotRowH + 16} fontSize={10} fontWeight={700}>
               {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
             </text>
