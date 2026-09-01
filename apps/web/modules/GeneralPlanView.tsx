@@ -782,15 +782,15 @@ export function GeneralPlanView() {
       if (worldAt) {
         const w = worldAt(x1, y1);
         const val = Math.round(horizontal ? w.east : w.north);
-        const labelText = `${horizontal ? "Y" : "X"} ${val}`;
-        // `out`'s sign is the tick's own INWARD direction (into the frame —
-        // see this function's own doc comment); the label goes the other
-        // way, out in the margin the border sits in, never on top of the
-        // drawing. Vertical-edge labels are rotated to run parallel to the
-        // border, same convention as the reference sheet's own margin grid.
-        const marginDir = out > 0 ? -1 : 1;
-        const lx = horizontal ? t : fixed + marginDir * 8;
-        const ly = horizontal ? fixed + marginDir * 8 : t;
+        const labelText = `${horizontal ? "Y" : "X"}+${val}`;
+        // Client req 2026-09-02 (screenshot, circling the labels): these sit
+        // INSIDE the frame, right at the tick, not out in the margin the
+        // border itself sits in — `out`'s own sign already points that way
+        // (the tick's INWARD direction into the frame). Vertical-edge labels
+        // are rotated to run parallel to the border, matching the reference.
+        const dir = out > 0 ? 1 : -1;
+        const lx = horizontal ? t : fixed + dir * 8;
+        const ly = horizontal ? fixed + dir * 8 : t;
         lines.push(
           <text
             key={`l${i}`}
