@@ -1090,15 +1090,21 @@ export function GeneralPlanView() {
           match the shorter span so spacing stays even. */}
       {/* Full-length ticks in Working Plan mode (client req 2026-09-01) — the
           gap that avoids the registration box's footprint only makes sense
-          when that box is actually drawn (General Plan only, see below). */}
+          when that box is actually drawn (General Plan only, see below).
+          All four edges now labelled (client req 2026-09-02: "right and
+          bottom per labels ku nahi hai... left and top per hain" — was
+          deliberately top/left only, to stay clear of the registration box
+          and SR No; both sit outside the frame's own margin now (client req
+          2026-09-02's earlier A0-resize work), so there's no collision
+          labelling all four edges the same way. */}
       {sheetMode === "general"
         ? edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK, worldAt)
         : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK, worldAt)}
-      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK)}
+      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK, worldAt)}
       {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK, worldAt)}
       {sheetMode === "general"
-        ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK)
-        : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK)}
+        ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK, worldAt)
+        : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK, worldAt)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       {/* Title heading — select/move/resize (client req 2026-08-28: "ye
           client khud drag kar ke kahi bi place kar sake ur resize bi kar
