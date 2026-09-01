@@ -119,7 +119,7 @@ export function GeneralPlanView() {
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
-    panelOffset: { dx: number; dy: number };
+    panelOffsets: Record<string, { dx: number; dy: number }>;
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -160,11 +160,14 @@ export function GeneralPlanView() {
     // sake") — same dx/dy/scale-offset pattern as WorkingPlan.tsx's own
     // title-block treatment.
     titleOffset: { dx: 0, dy: 0 } as { dx: number; dy: number; scale?: number },
-    // Select/move for the right-side reference panel + Lot Numbers/Block
-    // Corner tables (client req 2026-09-01: "i should be able to drag this
-    // also") — same dx/dy offset mechanism as titleOffset above, minus the
-    // resize handles (only dragging was asked for here).
-    panelOffset: { dx: 0, dy: 0 } as { dx: number; dy: number },
+    // Select/move for the right-side reference panel sections + Lot Areas/
+    // Block Corner tables — EACH ONE independently (client req 2026-09-02:
+    // "group these features independently... dont just group all of them" —
+    // an earlier round moved everything as one block, which the client
+    // corrected). Keyed by section id ("sheetIndex"/"beaconDesc"/"splay"/
+    // "pedWay"/"lotAreas"/"blockCorner"); a section with no entry here just
+    // renders at its default (un-dragged) position.
+    panelOffsets: {} as Record<string, { dx: number; dy: number }>,
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -417,38 +420,45 @@ export function GeneralPlanView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingTitle]);
 
-  // Select/move for the right-side reference panel (Sheet Index/Beacon
-  // Description/Splay/Ped Way + Lot Numbers/Block Corner tables) — client
-  // req 2026-09-01: "i should be able to drag this also", same pattern as
-  // the title block above, minus resize (only dragging was asked for).
-  const [panelSelected, setPanelSelected] = useState(false);
-  const [draggingPanel, setDraggingPanel] = useState<{ startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
+  // Select/move for the right-side reference panel — EACH section (Sheet
+  // Index, Beacon Description, Splay Information, Ped Way, Lot Areas table,
+  // Block Corner table) independently (client req 2026-09-02, correcting an
+  // earlier round that moved them all as one block: "group these features
+  // independently... dont just group all of them"). One selection/drag
+  // state shared across all sections, keyed by section id, same pattern as
+  // the title block above minus resize.
+  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
+  const [draggingPanel, setDraggingPanel] = useState<{ id: string; startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
   const panelDragMovedRef = useRef(false);
-  function handlePanelClick(e: ReactMouseEvent<SVGElement>) {
+  function panelOffsetOf(id: string) {
+    return meta.panelOffsets[id] ?? { dx: 0, dy: 0 };
+  }
+  function handlePanelClick(id: string, e: ReactMouseEvent<SVGElement>) {
     e.stopPropagation();
     if (panelDragMovedRef.current) { panelDragMovedRef.current = false; return; }
-    setPanelSelected((s) => !s);
+    setSelectedPanelId((s) => (s === id ? null : id));
   }
-  function handlePanelPointerDown(e: ReactPointerEvent<SVGElement>) {
-    if (!panelSelected) return;
+  function handlePanelPointerDown(id: string, e: ReactPointerEvent<SVGElement>) {
+    if (selectedPanelId !== id) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
     const p = toSvgPoint(e);
-    setDraggingPanel({ startSx: p.x, startSy: p.y, origDx: meta.panelOffset.dx, origDy: meta.panelOffset.dy });
+    const orig = panelOffsetOf(id);
+    setDraggingPanel({ id, startSx: p.x, startSy: p.y, origDx: orig.dx, origDy: orig.dy });
   }
-  function handlePanelPointerMove(e: ReactPointerEvent<SVGElement>) {
-    if (!draggingPanel) return;
+  function handlePanelPointerMove(id: string, e: ReactPointerEvent<SVGElement>) {
+    if (!draggingPanel || draggingPanel.id !== id) return;
     const p = toSvgPoint(e);
     const dx = p.x - draggingPanel.startSx, dy = p.y - draggingPanel.startSy;
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) panelDragMovedRef.current = true;
-    setMeta((m) => ({ ...m, panelOffset: { dx: draggingPanel.origDx + dx, dy: draggingPanel.origDy + dy } }));
+    setMeta((m) => ({ ...m, panelOffsets: { ...m.panelOffsets, [id]: { dx: draggingPanel.origDx + dx, dy: draggingPanel.origDy + dy } } }));
   }
   function handlePanelPointerUp() {
     setDraggingPanel(null);
   }
   function cancelPanelDrag() {
     if (!draggingPanel) return;
-    setMeta((m) => ({ ...m, panelOffset: { dx: draggingPanel.origDx, dy: draggingPanel.origDy } }));
+    setMeta((m) => ({ ...m, panelOffsets: { ...m.panelOffsets, [draggingPanel.id]: { dx: draggingPanel.origDx, dy: draggingPanel.origDy } } }));
     setDraggingPanel(null);
   }
   useEffect(() => {
@@ -458,6 +468,20 @@ export function GeneralPlanView() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingPanel]);
+  /** Common drag-group attributes for one independently-draggable panel
+   *  section, keyed by id — shared by every `<g>` below rather than
+   *  repeating the same 6 props on each of them. */
+  function panelDragHandlers(id: string) {
+    const off = panelOffsetOf(id);
+    return {
+      transform: `translate(${off.dx},${off.dy})`,
+      style: { cursor: selectedPanelId === id ? "move" : "pointer" } as const,
+      onClick: (e: ReactMouseEvent<SVGElement>) => handlePanelClick(id, e),
+      onPointerDown: (e: ReactPointerEvent<SVGElement>) => handlePanelPointerDown(id, e),
+      onPointerMove: (e: ReactPointerEvent<SVGElement>) => handlePanelPointerMove(id, e),
+      onPointerUp: handlePanelPointerUp,
+    };
+  }
 
   useEffect(() => {
     if (!textPrompt && !addingRoadLabel && !addingBoundaryLabel) return;
@@ -500,7 +524,7 @@ export function GeneralPlanView() {
     }
     setSelectedLabel(null);
     setTitleSelected(false);
-    setPanelSelected(false);
+    setSelectedPanelId(null);
   }
   function labelArray(kind: "road" | "boundary") {
     return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
@@ -911,27 +935,42 @@ export function GeneralPlanView() {
   // WP_CH.pdf reference text (client req 2026-09-01): it never appears on
   // the Working Plan reference sheet at all, only Beacon Description/Splay
   // Information/Ped Way do.
-  const panelRows: { text: string; heading?: boolean }[] = [
-    ...(sheetMode === "general" ? [{ text: "SHEET INDEX", heading: true }, ...shownSheetIndex.map((text) => ({ text }))] : []),
-    { text: "BEACON DESCRIPTION", heading: true },
-    { text: meta.beaconDescription || "—" },
-    { text: "SPLAY INFORMATION", heading: true },
-    ...meta.splayEntries
-      .filter((e) => e.corner.trim() || e.distance.trim())
-      .map((e) => ({ text: `${e.corner || "—"}: ${e.distance || "—"}` })),
-    { text: "PED WAY", heading: true },
-    { text: meta.pedWay || "—" },
+  //
+  // Each section is its OWN independently-draggable group (client req
+  // 2026-09-02, correcting an earlier round that moved the whole panel as
+  // one block: "group these features independently... dont just group all
+  // of them") — laid out sequentially top-to-bottom for its DEFAULT
+  // (un-dragged) position, same flow the old single merged list used, but
+  // each section's own `startY` is a separate anchor a per-section
+  // panelOffsets[id] can move independently of the others.
+  interface PanelSection { id: string; rows: { text: string; heading?: boolean }[] }
+  const panelSections: PanelSection[] = [
+    ...(sheetMode === "general"
+      ? [{ id: "sheetIndex", rows: [{ text: "SHEET INDEX", heading: true }, ...shownSheetIndex.map((text) => ({ text }))] }]
+      : []),
+    { id: "beaconDesc", rows: [{ text: "BEACON DESCRIPTION", heading: true }, { text: meta.beaconDescription || "—" }] },
+    {
+      id: "splay",
+      rows: [
+        { text: "SPLAY INFORMATION", heading: true },
+        ...meta.splayEntries
+          .filter((e) => e.corner.trim() || e.distance.trim())
+          .map((e) => ({ text: `${e.corner || "—"}: ${e.distance || "—"}` })),
+      ],
+    },
+    { id: "pedWay", rows: [{ text: "PED WAY", heading: true }, { text: meta.pedWay || "—" }] },
   ];
-  const panelYs: number[] = [];
-  {
-    let y = panelTop;
-    panelRows.forEach((row, i) => {
-      if (row.heading && i > 0) y += 6;
-      panelYs.push(y);
-      y += row.heading ? 14 : 12;
+  let panelCursorY = panelTop;
+  const panelSectionLayouts = panelSections.map((section, si) => {
+    if (si > 0) panelCursorY += 6;
+    const rowYs = section.rows.map((row) => {
+      const y = panelCursorY;
+      panelCursorY += row.heading ? 14 : 12;
+      return y;
     });
-  }
-  const panelBottom = panelYs.length ? panelYs[panelYs.length - 1] + 12 : panelTop;
+    return { ...section, rowYs };
+  });
+  const panelBottom = panelCursorY + 6;
 
   // Lot Numbers / Areas table (client req 2026-08-27, §2f): two side-by-side
   // "LOT NUMBERS | SQ. METRES" column-pairs (matching the reference sheet),
@@ -1296,38 +1335,35 @@ export function GeneralPlanView() {
             );
           });
         })()}
-        {/* Sheet Index / Beacon Description / Splay Information / Ped Way,
-            plus (General Plan mode) the Lot Numbers/Areas and Block Corner
-            tables below it — select/move as one group (client req
-            2026-09-01: "i should be able to drag this also"), same pattern
-            as the title heading above. */}
-        <g
-          transform={`translate(${meta.panelOffset.dx},${meta.panelOffset.dy})`}
-          style={{ cursor: panelSelected ? "move" : "pointer" }}
-          onClick={handlePanelClick}
-          onPointerDown={handlePanelPointerDown}
-          onPointerMove={handlePanelPointerMove}
-          onPointerUp={handlePanelPointerUp}
-        >
-          {panelSelected && (
-            <rect
-              x={panelX - 10} y={panelTop - 20}
-              width={300} height={Math.max(panelBottom, rightColBottom) - panelTop + 30}
-              fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
-              style={{ pointerEvents: "none" }}
-            />
-          )}
-        {panelRows.map((row, i) => (
-          <text
-            key={i}
-            x={panelX}
-            y={panelYs[i]}
-            fontSize={row.heading ? 10 : 8}
-            fontWeight={row.heading ? 700 : 400}
-            fill={row.heading ? "#0f172a" : "#334155"}
-          >
-            {row.text}
-          </text>
+        {/* Sheet Index / Beacon Description / Splay Information / Ped Way —
+            each an INDEPENDENTLY draggable group (client req 2026-09-02,
+            correcting an earlier round that moved the whole panel as one
+            block: "group these features independently... dont just group
+            all of them"). Same select/drag interaction as the title
+            heading, just one instance per section via panelDragHandlers. */}
+        {panelSectionLayouts.map((section) => (
+          <g key={section.id} {...panelDragHandlers(section.id)}>
+            {selectedPanelId === section.id && (
+              <rect
+                x={panelX - 8} y={section.rowYs[0] - 12}
+                width={230} height={section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18}
+                fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                style={{ pointerEvents: "none" }}
+              />
+            )}
+            {section.rows.map((row, i) => (
+              <text
+                key={i}
+                x={panelX}
+                y={section.rowYs[i]}
+                fontSize={row.heading ? 10 : 8}
+                fontWeight={row.heading ? 700 : 400}
+                fill={row.heading ? "#0f172a" : "#334155"}
+              >
+                {row.text}
+              </text>
+            ))}
+          </g>
         ))}
         {sheetMode === "general" && (
           <>
@@ -1342,7 +1378,16 @@ export function GeneralPlanView() {
                 only then does the box widen to the full table width) once
                 there are actually more lots than fit in one column. */}
             {groupSortedPlots.length > 0 && (
-              <>
+              <g {...panelDragHandlers("lotAreas")}>
+                {selectedPanelId === "lotAreas" && (
+                  <rect
+                    x={tblL - 8} y={lotTableTop - 20}
+                    width={lotBoxRight - tblL + 16}
+                    height={lotTableTop + 30 + usedLotRows * lotRowH + (groupSortedPlots.length > maxLotRows ? 42 : 26) - lotTableTop + 20}
+                    fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                    style={{ pointerEvents: "none" }}
+                  />
+                )}
                 <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
                 {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
                 {useTwoLotCols && lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
@@ -1386,7 +1431,7 @@ export function GeneralPlanView() {
                     +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
                   </text>
                 )}
-              </>
+              </g>
             )}
             {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
                 own corners only; omitted entirely when none qualify, rather
@@ -1417,8 +1462,16 @@ export function GeneralPlanView() {
               const bcSorted = [...groupUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
               const bcOverflow = bcSorted.length > bcRowsFit;
               const bcShown = bcSorted.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
+              const bcBottom = bcTop + 56 + bcShown.length * BC_ROW_H + (bcSorted.length > bcShown.length ? 16 : 0);
               return (
-                <>
+                <g {...panelDragHandlers("blockCorner")}>
+                  {selectedPanelId === "blockCorner" && (
+                    <rect
+                      x={680} y={bcTop - 20} width={300} height={bcBottom - bcTop + 24}
+                      fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  )}
                   <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
                   <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
                   <text x={745} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
@@ -1441,12 +1494,11 @@ export function GeneralPlanView() {
                       +{bcSorted.length - bcShown.length} more beacon(s) — see digital schedule
                     </text>
                   )}
-                </>
+                </g>
               );
             })()}
           </>
         )}
-        </g>
         {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
             layout's outer boundary + grand total, sheet 1 only (it's not a
             per-sheet concept); other sheets point back to it. NOT part of
