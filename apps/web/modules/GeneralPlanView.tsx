@@ -1250,8 +1250,10 @@ export function GeneralPlanView() {
         onClick={handleCanvasClick}
       >
         {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld)}
-        {/* north arrow */}
-        <g transform={`translate(${FX1 - 20},${FY0 + 16})`}>
+        {/* north arrow — shifted right (client req 2026-09-02: "iss arrow ko
+            thora right shift karo... N symbol ko bhi sath karna") since it
+            was overlapping the title's "...TRIBAL AREA" line. */}
+        <g transform={`translate(${FX1 + 15},${FY0 + 16})`}>
           <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
           <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
           <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
