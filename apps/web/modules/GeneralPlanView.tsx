@@ -252,8 +252,34 @@ export function GeneralPlanView() {
   // {name}" line down from y=54 to y=66 — FY0's base shifts by the same 12
   // units so the drawing area still starts exactly as far below the title
   // as it did before this line moved.
-  const TITLE_OF_Y = 49, TITLE_LINE2_Y = 66;
-  const FX0 = 30, FY0 = 102 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = 660, FY1 = H - 150;
+  // Real A0 print margins (client req 2026-09-02, annotated drawing: outer
+  // line = standard A0 paper 118.9 x 84.1cm, inner line = the drawn frame,
+  // 7.5cm top/bottom/left, 23cm right — the wider right margin is this
+  // reference's own convention, presumably for a binding/plotter edge).
+  // UNITS_PER_CM converts real cm straight into this sheet's own SVG units
+  // (W = 1000 units = 118.9cm, same basis UNITS_PER_MM above already uses).
+  const UNITS_PER_CM = W / 118.9;
+  const FRAME_MARGIN_TOP_CM = 7.5, FRAME_MARGIN_BOTTOM_CM = 7.5, FRAME_MARGIN_LEFT_CM = 7.5, FRAME_MARGIN_RIGHT_CM = 23;
+  const FRAME_X = FRAME_MARGIN_LEFT_CM * UNITS_PER_CM;
+  const FRAME_Y = FRAME_MARGIN_TOP_CM * UNITS_PER_CM;
+  const FRAME_R = W - FRAME_MARGIN_RIGHT_CM * UNITS_PER_CM;
+  const FRAME_B = H - FRAME_MARGIN_BOTTOM_CM * UNITS_PER_CM;
+  // Old uniform 24-unit margin this whole template was previously laid out
+  // against — every other absolute position below (drawing box, panel,
+  // tables, title) is remapped from that old frame into the new one via
+  // mapX/mapY, preserving each element's own relative position/spacing
+  // instead of hand-recomputing dozens of numbers by hand. Row/line HEIGHTS
+  // (lotRowH, BC_ROW_H, TITLE_EXTRA_LINE_H, panel row heights) stay
+  // unscaled on purpose — those are font-driven, not frame-driven, and
+  // shrinking them would make text disproportionately small relative to
+  // its own row.
+  const OLD_FRAME_X = 24, OLD_FRAME_Y = 24, OLD_FRAME_R = 976, OLD_FRAME_B = 683;
+  const FRAME_SCALE_X = (FRAME_R - FRAME_X) / (OLD_FRAME_R - OLD_FRAME_X);
+  const FRAME_SCALE_Y = (FRAME_B - FRAME_Y) / (OLD_FRAME_B - OLD_FRAME_Y);
+  const mapX = (x: number) => FRAME_X + (x - OLD_FRAME_X) * FRAME_SCALE_X;
+  const mapY = (y: number) => FRAME_Y + (y - OLD_FRAME_Y) * FRAME_SCALE_Y;
+  const TITLE_OF_Y = mapY(49), TITLE_LINE2_Y = mapY(66);
+  const FX0 = mapX(30), FY0 = mapY(102) + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
   // fit-to-bounds projection below, spinning the drawing around the centre
@@ -762,8 +788,8 @@ export function GeneralPlanView() {
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
     if (sheetMode === "general") {
-      text(regX, 18, `GC-${meta.gcNo || "—"}`, 9);
-      text(regX + regW, 18, `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
+      text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 9);
+      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
       text(regX + 6, regY + 24, `DSM No: ${meta.dsmNo || "—"}`, 9.5);
       text(regX + 6, regY + 100, "Surveyed in", 8);
       text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
@@ -771,7 +797,7 @@ export function GeneralPlanView() {
       text(regX + regW - 6, regY + 114, meta.surveyor || "—", 8, "end");
       text(regX + regW - 6, regY + 126, "Land Surveyor", 7, "end");
     }
-    text(W - 20, H - 16, `SR No: ${meta.srNo || "—"}`, 9, "end");
+    text(mapX(W - 20), mapY(H - 16), `SR No: ${meta.srNo || "—"}`, 9, "end");
 
     const groupGpPlots: Plot[] = layoutGroups[activeGroupIdx].map((p) => ({ number: p.number, points: p.fig.points }));
     for (const p of groupGpPlots) {
@@ -830,11 +856,8 @@ export function GeneralPlanView() {
   // Outer page frame (client req 2026-08-28, GC-122 reference audit): the
   // reference has a real margin between the page edge and the drawn border
   // — grid tick marks and "GC-122"/"SR No" live OUT THERE, not inside the
-  // border. The old frame sat only 6 units in from the page edge, leaving no
-  // room for any of that, so GC-No/SR-No were accidentally rendering INSIDE
-  // the border instead of outside it like the reference. FRAME_R/FRAME_B are
-  // the border's right/bottom edges.
-  const FRAME_M = 24, FRAME_X = FRAME_M, FRAME_Y = FRAME_M, FRAME_R = W - FRAME_M, FRAME_B = H - FRAME_M;
+  // border. FRAME_R/FRAME_B are the border's right/bottom edges (defined
+  // above FX0 etc. now, alongside mapX/mapY — see that block's own comment).
   // Bigger + labelled (client req 2026-09-01, redline circling the top/left
   // ticks: "increase size of grid marks and add labels") — a plain unlabelled
   // tick doesn't tell a reader what coordinate it's actually at; the
@@ -909,7 +932,7 @@ export function GeneralPlanView() {
   // Sheet Index is a single trivial entry for now (real multi-sheet splitting
   // is a later phase); the numeric lot range is derived straight from the
   // numbered COGO plots when their numbers are numeric.
-  const panelX = 690, panelTop = 167; // registration block above now ends at y=163
+  const panelX = mapX(690), panelTop = mapY(167); // registration block above now ends at y=163
   // One line per LAYOUT sheet (client req 2026-08-27, multi-sheet split) —
   // shown identically on every sheet so a reader can find any lot's sheet
   // from any page, matching the reference's own Sheet Index panel.
@@ -1011,8 +1034,8 @@ export function GeneralPlanView() {
   // every column, matching the reference sheet's own boxed "LOT AREAS" table
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
   // like that" — was plain floating text with no lines at all before).
-  const tblL = 685, tblR = 975;
-  const vA = 758, vMid = 832, vB = 906; // vertical divider x-positions
+  const tblL = mapX(685), tblR = mapX(975);
+  const vA = mapX(758), vMid = mapX(832), vB = mapX(906); // vertical divider x-positions
   const lotAR = vA - 6, sqmAR = vMid - 6, lotBR = vB - 6, sqmBR = tblR - 6; // right-aligned column edges
   const lotPairHeader = (lotColR: number, sqmColR: number, y: number) => (
     <>
@@ -1130,8 +1153,8 @@ export function GeneralPlanView() {
               it (client req 2026-08-31 redline: "move GC number" / "move sheet
               numbering" — the box itself now starts with DSM No, not a Sheet No
               row). */}
-          <text x={regX} y={18} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-          <text x={regX + regW} y={18} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
+          <text x={regX} y={mapY(18)} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
           {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
               screenshot circling this whole box): no "G.P. No." row here (that
               field stays editable for other diagrams' own cross-reference, just
@@ -1157,7 +1180,7 @@ export function GeneralPlanView() {
       {/* SR No sits OUTSIDE the border too (client req 2026-08-28: "SR number
           outside frame") — y=H-16 already clears FRAME_B (H-24) now that the
           margin is wide enough to hold it. */}
-      <text x={W - 20} y={H - 16} textAnchor="end" fontSize={9} fill="#64748b">SR No: {meta.srNo || "—"}</text>
+      <text x={mapX(W - 20)} y={mapY(H - 16)} textAnchor="end" fontSize={9} fill="#64748b">SR No: {meta.srNo || "—"}</text>
     </>
   );
 
@@ -1346,7 +1369,7 @@ export function GeneralPlanView() {
             {selectedPanelId === section.id && (
               <rect
                 x={panelX - 8} y={section.rowYs[0] - 12}
-                width={230} height={section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18}
+                width={230 * FRAME_SCALE_X} height={section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18}
                 fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
                 style={{ pointerEvents: "none" }}
               />
@@ -1388,7 +1411,7 @@ export function GeneralPlanView() {
                     style={{ pointerEvents: "none" }}
                   />
                 )}
-                <text x={690} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+                <text x={panelX} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
                 {lotPairHeader(lotAR, sqmAR, lotTableTop + 16)}
                 {useTwoLotCols && lotPairHeader(lotBR, sqmBR, lotTableTop + 16)}
                 {(() => {
@@ -1423,11 +1446,11 @@ export function GeneralPlanView() {
                     </g>
                   );
                 })}
-                <text x={690} y={lotTableTop + 30 + usedLotRows * lotRowH + 16} fontSize={10} fontWeight={700}>
+                <text x={panelX} y={lotTableTop + 30 + usedLotRows * lotRowH + 16} fontSize={10} fontWeight={700}>
                   {layoutSheetCount > 1 ? "SHEET TOTAL" : "TOTAL AREA"} = {groupTotalHa.toFixed(4)} Ha
                 </text>
                 {groupSortedPlots.length > maxLotRows && (
-                  <text x={690} y={lotTableTop + 30 + usedLotRows * lotRowH + 32} fontSize={9} fill="#94a3b8">
+                  <text x={panelX} y={lotTableTop + 30 + usedLotRows * lotRowH + 32} fontSize={9} fill="#94a3b8">
                     +{groupSortedPlots.length - maxLotRows} more lot(s) on this sheet — see digital schedule
                   </text>
                 )}
@@ -1467,30 +1490,30 @@ export function GeneralPlanView() {
                 <g {...panelDragHandlers("blockCorner")}>
                   {selectedPanelId === "blockCorner" && (
                     <rect
-                      x={680} y={bcTop - 20} width={300} height={bcBottom - bcTop + 24}
+                      x={mapX(680)} y={bcTop - 20} width={300 * FRAME_SCALE_X} height={bcBottom - bcTop + 24}
                       fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
                       style={{ pointerEvents: "none" }}
                     />
                   )}
-                  <text x={690} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
-                  <text x={690} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={745} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
-                  <text x={845} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">X</text>
-                  <text x={690} y={bcTop + 42} fontSize={8} fill="#475569">CONSTANTS</text>
-                  <text x={745} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
-                  <text x={845} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
+                  <text x={panelX} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+                  <text x={panelX} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={mapX(745)} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
+                  <text x={mapX(845)} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">X</text>
+                  <text x={panelX} y={bcTop + 42} fontSize={8} fill="#475569">CONSTANTS</text>
+                  <text x={mapX(745)} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
+                  <text x={mapX(845)} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
                   {bcShown.map((b, k) => {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
                       <g key={b.id}>
-                        <text x={690} y={y} fontSize={8.5} fill="#0f172a">{b.id}</text>
-                        <text x={745} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.east)}</text>
-                        <text x={845} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.north)}</text>
+                        <text x={panelX} y={y} fontSize={8.5} fill="#0f172a">{b.id}</text>
+                        <text x={mapX(745)} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.east)}</text>
+                        <text x={mapX(845)} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.north)}</text>
                       </g>
                     );
                   })}
                   {bcSorted.length > bcShown.length && (
-                    <text x={690} y={bcTop + 56 + bcShown.length * BC_ROW_H} fontSize={8} fill="#94a3b8">
+                    <text x={panelX} y={bcTop + 56 + bcShown.length * BC_ROW_H} fontSize={8} fill="#94a3b8">
                       +{bcSorted.length - bcShown.length} more beacon(s) — see digital schedule
                     </text>
                   )}
@@ -1509,29 +1532,29 @@ export function GeneralPlanView() {
             {isFirstSheet ? (
               outerSides.length > 0 ? (
                 <>
-                  <line x1={30} y1={FY1 + 30} x2={970} y2={FY1 + 30} stroke="#0f172a" strokeWidth={0.6} />
-                  <text x={30} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
-                  <text x={30} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
-                  <text x={110} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
-                  <text x={230} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
-                  <text x={340} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
-                  <text x={430} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
+                  <line x1={mapX(30)} y1={FY1 + 30} x2={mapX(970)} y2={FY1 + 30} stroke="#0f172a" strokeWidth={0.6} />
+                  <text x={mapX(30)} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+                  <text x={mapX(30)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
+                  <text x={mapX(110)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
+                  <text x={mapX(230)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
+                  <text x={mapX(340)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
+                  <text x={mapX(430)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
                   {outerSides.slice(0, 8).map((s, k) => {
                     const y = FY1 + 72 + k * 12;
                     return (
                       <g key={k}>
-                        <text x={30} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
-                        <text x={110} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
-                        <text x={230} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
-                        <text x={340} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
-                        <text x={430} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
+                        <text x={mapX(30)} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
+                        <text x={mapX(110)} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
+                        <text x={mapX(230)} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                        <text x={mapX(340)} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
+                        <text x={mapX(430)} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
                       </g>
                     );
                   })}
                   {outerSides.length > 8 && (
-                    <text x={30} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
+                    <text x={mapX(30)} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
                   )}
-                  <text x={700} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
+                  <text x={mapX(700)} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
                 </>
               ) : (
                 // The outer-boundary traverse table itself needs one clean
@@ -1542,20 +1565,20 @@ export function GeneralPlanView() {
                 // out on the reference redline, "remove the other
                 // statement").
                 cogoPlots.length > 0 && (
-                  <text x={30} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">
+                  <text x={mapX(30)} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">
                     TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
                   </text>
                 )
               )
             ) : (
-              <text x={30} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
+              <text x={mapX(30)} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
             )}
           </>
         ) : (() => {
           // ===== Working Plan variant (spec Part 3): no tables — an inset
           // reference-mark sketch + certification box instead, same pattern
           // as WorkingPlan.tsx's own inset/cert boxes (components/WorkingPlan.tsx). =====
-          const insetBox = { x: 690, y: lotTableTop, w: 280, h: 140 };
+          const insetBox = { x: mapX(690), y: lotTableTop, w: 280 * FRAME_SCALE_X, h: 140 * FRAME_SCALE_Y };
           const insetPad = 20;
           const iSpanE = Math.max(t.bounds.maxX - t.bounds.minX, 1e-6);
           const iSpanN = Math.max(t.bounds.maxY - t.bounds.minY, 1e-6);
@@ -1573,7 +1596,7 @@ export function GeneralPlanView() {
             y: Math.min(insetBox.y + insetBox.h - 8, Math.max(insetBox.y + 8, iY(r.north))),
             label: r.name || "RM",
           }));
-          const cert = { x: 650, y: FY1 + 20, w: 320, h: 90 };
+          const cert = { x: mapX(650), y: FY1 + 20, w: 320 * FRAME_SCALE_X, h: 90 };
           return (
             <>
               <rect x={insetBox.x} y={insetBox.y} width={insetBox.w} height={insetBox.h} fill="white" stroke="#16a34a" strokeWidth={1.2} />
