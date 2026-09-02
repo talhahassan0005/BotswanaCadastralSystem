@@ -1378,20 +1378,40 @@ export function GeneralPlanView() {
             </g>
           );
         })}
-        {/* Beacon/point IDs are NEVER printed on the drawing itself in the
-            reference sheet (client req 2026-08-31, confirmed against
-            SHEET1_CH.pdf) — only the lot number centred in each polygon and
-            the side-length/bearing labels along the edges. That real
-            coordinate/ID data belongs solely in the Block Corner Table
-            below. Previously rendered here as a dot + decluttered label +
-            leader line; removed entirely rather than just hidden — the
-            leader lines (drawn whenever a label had to be nudged away from
-            its point) were themselves the "diagonal crosshatch" artefact
-            reported crossing through multiple lots at real density, so
-            this fixes both the point-ID clutter and that artefact at once. */}
         {groupUsedBeacons.length === 0 && (
           <text x={(FX0 + FX1) / 2} y={(FY0 + FY1) / 2} textAnchor="middle" fontSize={11} fill="#cbd5e1">No plots numbered in COGO yet</text>
         )}
+        {/* Block corner circles + their real point names on the drawing
+            itself (client req 2026-09-03, screenshot circling every lot
+            corner: "Block corner circles and their names should also
+            appear in the General plan" — supersedes an earlier decision to
+            keep beacon IDs off the drawing entirely and in the Block
+            Corner Table only). A small hollow circle at each beacon this
+            sheet's lots actually use (same set the Block Corner Table
+            lists), with its real name (e.g. "L1677") at a small FIXED
+            offset — not the dynamic declutter/leader-line approach the
+            earlier, removed version used, since that was the actual cause
+            of a previously-reported "diagonal crosshatch" artefact through
+            dense lots; density-tiered sizing keeps it legible instead.
+            `showDot`/name both hide past an extreme density where even a
+            tiny hollow circle would just merge into visual noise, same
+            threshold the point markers elsewhere in the app already use. */}
+        {(() => {
+          const n = groupUsedBeacons.length;
+          if (n > 250) return null;
+          const r = n > 150 ? 0.9 : n > 60 ? 1.4 : 2;
+          const labelFS = n > 150 ? 2.5 : n > 60 ? 3.5 : 5;
+          const off = labelFS + 2;
+          return groupUsedBeacons.map((b) => {
+            const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
+            return (
+              <g key={b.id}>
+                <circle cx={bx} cy={by} r={r} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.4, r * 0.35)} />
+                <text x={bx + off} y={by - off / 2} fontSize={labelFS} fill="#334155">{b.id}</text>
+              </g>
+            );
+          });
+        })()}
         {/* Road-width labels + REMAINDER OF CADASTRE boundary labels */}
         {sheetRoadLabels.map((tt) => (
           <text
