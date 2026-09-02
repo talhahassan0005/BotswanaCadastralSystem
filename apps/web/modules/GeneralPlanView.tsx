@@ -1082,12 +1082,16 @@ export function GeneralPlanView() {
   const lotColPairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / lotTableCols);
   // Each column-pair's own "LOT No." sub-column gets ~42% of the pair's
   // width, "SQ. METRES" the rest — same proportion the original fixed
-  // 2-column layout used (74 of 174 units).
+  // 2-column layout used (74 of 174 units). Left-aligned (client req
+  // 2026-09-03: "these table values should be left align" — was right-
+  // aligned against each sub-column's own right edge, which read as a big
+  // dead gap in the middle of the pair once the column itself was wide
+  // enough to hold a 3-4 digit number comfortably).
   const lotColBounds = Array.from({ length: lotTableCols }, (_, i) => {
     const left = tblL + i * lotColPairW;
     const right = tblL + (i + 1) * lotColPairW;
     const divider = left + lotColPairW * 0.42;
-    return { left, right, divider, lotColR: divider - 6, sqmColR: right - 6 };
+    return { left, right, divider, lotColL: left + 6, sqmColL: divider + 6 };
   });
   // Header/value text sized (and, past 2 columns, abbreviated) to what each
   // column-pair's own width can actually hold (client req 2026-09-02,
@@ -1099,10 +1103,10 @@ export function GeneralPlanView() {
   const lotValueFS = lotTableCols >= 4 ? 7 : lotTableCols === 3 ? 8 : 9;
   const lotLabel = lotTableCols >= 4 ? "LOT" : "LOT No.";
   const sqmLabel = lotTableCols >= 3 ? "SQ.M" : "SQ. METRES";
-  const lotPairHeader = (lotColR: number, sqmColR: number, y: number) => (
+  const lotPairHeader = (lotColL: number, sqmColL: number, y: number) => (
     <>
-      <text x={lotColR} y={y} textAnchor="end" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{lotLabel}</text>
-      <text x={sqmColR} y={y} textAnchor="end" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{sqmLabel}</text>
+      <text x={lotColL} y={y} textAnchor="start" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{lotLabel}</text>
+      <text x={sqmColL} y={y} textAnchor="start" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{sqmLabel}</text>
     </>
   );
   // `worldAt` (only supplied by renderLayoutSheet, which has an actual
@@ -1520,15 +1524,15 @@ export function GeneralPlanView() {
                 <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
                 {lotColBounds.slice(0, usedLotCols).map((col, c) => (
                   <g key={c}>
-                    {lotPairHeader(col.lotColR, col.sqmColR, lotTableTop + 16)}
+                    {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16)}
                     <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
                     {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
                     {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
                       const y = lotTableTop + 30 + k * lotRowH;
                       return (
                         <g key={p.number}>
-                          <text x={col.lotColR} y={y} textAnchor="end" fontSize={lotValueFS} fill="#0f172a">{p.number || "(none)"}</text>
-                          <text x={col.sqmColR} y={y} textAnchor="end" fontSize={lotValueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                          <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotValueFS} fill="#0f172a">{p.number || "(none)"}</text>
+                          <text x={col.sqmColL} y={y} textAnchor="start" fontSize={lotValueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
                         </g>
                       );
                     })}
