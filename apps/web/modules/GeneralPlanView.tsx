@@ -1070,7 +1070,16 @@ export function GeneralPlanView() {
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
   // like that" — was plain floating text with no lines at all before).
   const tblL = mapX(685), tblR = mapX(975);
-  const lotColPairW = (tblR - tblL) / lotTableCols;
+  // Capped at half the table width (client req 2026-09-03, screenshot: a
+  // 1-column table stretched "LOT No." and "SQ. METRES" apart across the
+  // WHOLE table width, leaving a big unnecessary gap between them, since a
+  // single used column-pair was sized as table-width/lotTableCols = the
+  // full width when lotTableCols is 1) — a reasonable column-pair width
+  // never exceeds what the original 2-column layout already used
+  // comfortably, regardless of how few columns are actually configured/
+  // used; 3-4 configured columns still compress narrower than this to fit
+  // the table, unchanged.
+  const lotColPairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / lotTableCols);
   // Each column-pair's own "LOT No." sub-column gets ~42% of the pair's
   // width, "SQ. METRES" the rest — same proportion the original fixed
   // 2-column layout used (74 of 174 units).
