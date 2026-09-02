@@ -166,6 +166,16 @@ export function CogoWorkspace({
     if (snapMissTimer.current) clearTimeout(snapMissTimer.current);
     snapMissTimer.current = setTimeout(() => setSnapMiss(false), 1600);
   }
+  // Client req 2026-09-02: "the system must refuse when i try to re join
+  // the already connected / joined line" — same brief on-screen flash
+  // pattern as flashSnapMiss above, own message (see lineExistsBetween).
+  const [dupLineWarn, setDupLineWarn] = useState(false);
+  const dupLineWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashDupLineWarn() {
+    setDupLineWarn(true);
+    if (dupLineWarnTimer.current) clearTimeout(dupLineWarnTimer.current);
+    dupLineWarnTimer.current = setTimeout(() => setDupLineWarn(false), 1600);
+  }
   const [rename, setRename] = useState<{ east: number; north: number; value: string; targetId: string } | null>(null); // inline name field for a freshly-placed single point
   const [offsetLineId, setOffsetLineId] = useState<string | null>(null); // source line picked for the Offset tool
   const [offsetInput, setOffsetInput] = useState<{ screenX: number; screenY: number; side: 1 | -1; value: string } | null>(null);
@@ -1454,6 +1464,19 @@ export function CogoWorkspace({
     }
     return best;
   }
+  /** True if a line already connects these two exact points, in either
+   *  direction (client req 2026-09-02: "the system must refuse when i try
+   *  to re join the already connected / joined line") — used while placing
+   *  a Polyline/Polygon vertex to catch clicking back onto a segment
+   *  that's already drawn, same tolerance as sameWorldPoint-style checks
+   *  elsewhere in the app. */
+  function lineExistsBetween(pE: number, pN: number, qE: number, qN: number): boolean {
+    const TOL = 0.01;
+    const same = (e1: number, n1: number, e2: number, n2: number) => Math.abs(e1 - e2) < TOL && Math.abs(n1 - n2) < TOL;
+    return lines.some(
+      (l) => (same(l.aE, l.aN, pE, pN) && same(l.bE, l.bN, qE, qN)) || (same(l.aE, l.aN, qE, qN) && same(l.bE, l.bN, pE, pN))
+    );
+  }
   /** Removes a deleted line's own bearing/distance seg-label, if it had one
    *  (client req 2026-09-02: "when i delete lines, the distance and Bearing
    *  information that comes with a line should also be deleted" —
@@ -1722,7 +1745,9 @@ export function CogoWorkspace({
         // isn't near a real point does nothing rather than creating a
         // stray vertex like the reported "T5" point.
         const v = resolveVertex(vbx, vby);
+        const last = draft[draft.length - 1];
         if (!v.existingId) flashSnapMiss();
+        else if (last && lineExistsBetween(last.east, last.north, v.east, v.north)) flashDupLineWarn();
         else setDraft((d) => [...d, addVertexPoint(v)]);
       } else if (draftTool === "offset") {
         if (!offsetLineId) {
@@ -2322,6 +2347,17 @@ export function CogoWorkspace({
                 );
               })
             )}
+            {/* Starting-point highlight (client req 2026-09-02: "when i join a
+                polygon, the starting point should be highlighted with a
+                different color so that i know where i started") — an
+                orange ring around the first vertex placed, staying visible
+                for the whole draft (not just briefly), same convention as
+                the polygon's own faint closing-preview line already pointing
+                back at this exact point. */}
+            {(draftTool === "polyline" || draftTool === "polygon") && draft.length > 0 && (() => {
+              const [sx, sy] = toScreen(draft[0].east, draft[0].north);
+              return <circle cx={sx} cy={sy} r={7} fill="none" stroke="#f97316" strokeWidth={2.2} />;
+            })()}
             {/* Already-placed segments of a multi-vertex shape (Polyline/Polygon)
                 being drawn — each gets its own live bearing/distance label,
                 same as a finished shape (client req 2026-08-20, Part 11). */}
@@ -2773,8 +2809,10 @@ export function CogoWorkspace({
 
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
-            <span className={snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon") ? "font-semibold text-red-600" : undefined}>
-              {snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon")
+            <span className={(snapMiss || dupLineWarn) && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon") ? "font-semibold text-red-600" : undefined}>
+              {dupLineWarn && (draftTool === "polyline" || draftTool === "polygon")
+                ? "That line is already drawn — pick a different point"
+                : snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon")
                 ? "No point there — click nearer an existing point (use Add Point to create a new one)"
                 : diagramPicking
                 ? "Click inside a plot (polygon) to generate its diagram"
