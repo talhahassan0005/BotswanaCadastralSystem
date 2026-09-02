@@ -1063,52 +1063,65 @@ export function GeneralPlanView() {
   // How many "LOT No. | SQ. METRES" column-pairs (client req 2026-09-02:
   // "for tables i think the user should choose whether they want 1/2/3/4
   // columns" — was always fixed at 2, or 1 when everything fit in one).
+  // A STYLE preference for how wide to spread lots that already fit — see
+  // usedLotCols below (client req 2026-09-03) for why it's never a hard cap
+  // that can drop real lots from the table.
   const lotTableCols = Math.max(1, Math.min(4, Math.round(meta.lotTableCols) || 2));
-  const maxLotRows = rowsPerCol * lotTableCols;
   // Bordered grid — outer box, header underline, and a vertical rule between
   // every column, matching the reference sheet's own boxed "LOT AREAS" table
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
   // like that" — was plain floating text with no lines at all before).
   const tblL = mapX(685), tblR = mapX(975);
-  // Capped at half the table width (client req 2026-09-03, screenshot: a
-  // 1-column table stretched "LOT No." and "SQ. METRES" apart across the
-  // WHOLE table width, leaving a big unnecessary gap between them, since a
-  // single used column-pair was sized as table-width/lotTableCols = the
-  // full width when lotTableCols is 1) — a reasonable column-pair width
-  // never exceeds what the original 2-column layout already used
-  // comfortably, regardless of how few columns are actually configured/
-  // used; 3-4 configured columns still compress narrower than this to fit
-  // the table, unchanged.
-  const lotColPairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / lotTableCols);
-  // Each column-pair's own "LOT No." sub-column gets ~42% of the pair's
-  // width, "SQ. METRES" the rest — same proportion the original fixed
-  // 2-column layout used (74 of 174 units). Left-aligned (client req
-  // 2026-09-03: "these table values should be left align" — was right-
-  // aligned against each sub-column's own right edge, which read as a big
-  // dead gap in the middle of the pair once the column itself was wide
-  // enough to hold a 3-4 digit number comfortably).
-  const lotColBounds = Array.from({ length: lotTableCols }, (_, i) => {
-    const left = tblL + i * lotColPairW;
-    const right = tblL + (i + 1) * lotColPairW;
-    const divider = left + lotColPairW * 0.42;
-    return { left, right, divider, lotColL: left + 6, sqmColL: divider + 6 };
-  });
-  // Header/value text sized (and, past 2 columns, abbreviated) to what each
-  // column-pair's own width can actually hold (client req 2026-09-02,
-  // screenshot: picking 4 columns made "LOT No."/"SQ. METRES" overlap the
-  // next column-pair — the fixed 9.5px header was sized for a 2-column
-  // pair ~113 units wide, not a 4-column one ~57 units wide). Verified
-  // against the real column widths at each tier before picking these.
-  const lotHeaderFS = lotTableCols >= 4 ? 6.5 : lotTableCols === 3 ? 7.5 : 9.5;
-  const lotValueFS = lotTableCols >= 4 ? 7 : lotTableCols === 3 ? 8 : 9;
-  const lotLabel = lotTableCols >= 4 ? "LOT" : "LOT No.";
-  const sqmLabel = lotTableCols >= 3 ? "SQ.M" : "SQ. METRES";
-  const lotPairHeader = (lotColL: number, sqmColL: number, y: number) => (
-    <>
-      <text x={lotColL} y={y} textAnchor="start" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{lotLabel}</text>
-      <text x={sqmColL} y={y} textAnchor="start" fontSize={lotHeaderFS} fontWeight={700} fill="#475569">{sqmLabel}</text>
-    </>
-  );
+  /** Column-pair geometry for `cols` columns spread across the table's own
+   *  fixed width — a function of `cols` (not a fixed component-level
+   *  value) because a sheet can end up needing MORE columns than
+   *  lotTableCols configures (client req 2026-09-03, see usedLotCols
+   *  below); whatever that real count turns out to be, the columns must
+   *  still fit inside tblL..tblR, never overflow past it.
+   *  Capped at half the table width when only 1-2 columns are actually
+   *  needed (client req 2026-09-03, screenshot: a 1-column table stretched
+   *  "LOT No." and "SQ. METRES" apart across the WHOLE table width — a
+   *  reasonable column-pair width never exceeds what the original
+   *  2-column layout already used comfortably). Each pair's own "LOT No."
+   *  sub-column gets ~42% of the pair's width, "SQ. METRES" the rest —
+   *  same proportion the original fixed 2-column layout used. Left-
+   *  aligned (client req 2026-09-03: "these table values should be left
+   *  align" — was right-aligned against each sub-column's own right edge,
+   *  which read as a dead gap in the middle of a wide pair). */
+  function computeLotColBounds(cols: number) {
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols);
+    return Array.from({ length: cols }, (_, i) => {
+      const left = tblL + i * pairW;
+      const right = tblL + (i + 1) * pairW;
+      const divider = left + pairW * 0.42;
+      return { left, right, divider, lotColL: left + 6, sqmColL: divider + 6 };
+    });
+  }
+  /** Header/value text sized (and, past 2 columns, abbreviated) to what each
+   *  column-pair's own width can actually hold at `cols` columns (client
+   *  req 2026-09-02, screenshot: picking 4 columns made "LOT No."/
+   *  "SQ. METRES" overlap the next column-pair — the fixed 9.5px header
+   *  was sized for a 2-column pair ~113 units wide, not a 4-column one
+   *  ~57 units wide). Verified against the real column widths at each
+   *  tier before picking these. A function of the sheet's own ACTUAL
+   *  column count, not the configured preference, since a sheet can end
+   *  up rendering more/narrower columns than configured (see usedLotCols). */
+  function lotFontsFor(cols: number) {
+    return {
+      headerFS: cols >= 4 ? 6.5 : cols === 3 ? 7.5 : 9.5,
+      valueFS: cols >= 4 ? 7 : cols === 3 ? 8 : 9,
+      lotLabel: cols >= 4 ? "LOT" : "LOT No.",
+      sqmLabel: cols >= 3 ? "SQ.M" : "SQ. METRES",
+    };
+  }
+  function lotPairHeader(lotColL: number, sqmColL: number, y: number, headerFS: number, lotLabel: string, sqmLabel: string) {
+    return (
+      <>
+        <text x={lotColL} y={y} textAnchor="start" fontSize={headerFS} fontWeight={700} fill="#475569">{lotLabel}</text>
+        <text x={sqmColL} y={y} textAnchor="start" fontSize={headerFS} fontWeight={700} fill="#475569">{sqmLabel}</text>
+      </>
+    );
+  }
   // `worldAt` (only supplied by renderLayoutSheet, which has an actual
   // fit-to-bounds transform to invert — the coordinate-schedule appendix
   // sheet below has no drawing to correlate a grid label to, so its own
@@ -1285,8 +1298,27 @@ export function GeneralPlanView() {
     // principle already applied to the row count) — a sheet with fewer
     // lots than rowsPerCol never widens past its first column-pair, no
     // matter how many columns lotTableCols allows.
-    const usedLotCols = groupSortedPlots.length === 0 ? 0 : Math.max(1, Math.min(lotTableCols, Math.ceil(groupSortedPlots.length / rowsPerCol)));
+    //
+    // BUT — client req 2026-09-03: "I have 12 Polygons/plots but i only
+    // see area for 3 plots in the table... i have to see them all in the
+    // same table" — lotTableCols was being used as a hard CAP, silently
+    // dropping every lot past rowsPerCol*lotTableCols with no overflow
+    // note any more (that note was removed at the client's own request
+    // just before this). A configured column count is a style preference
+    // for how WIDE to spread lots that already fit; it must never cause
+    // real lots to go missing from the table. neededCols is exactly what
+    // this sheet's own lots require; only grow past the configured
+    // lotTableCols (up to the hard UI max of 4) when that preference
+    // genuinely isn't enough to show everyone — otherwise still shrink
+    // to fit, same as before.
+    const neededCols = groupSortedPlots.length === 0 ? 0 : Math.max(1, Math.ceil(groupSortedPlots.length / rowsPerCol));
+    const usedLotCols = neededCols <= lotTableCols ? neededCols : Math.min(neededCols, 4);
     const usedLotRows = groupSortedPlots.length >= rowsPerCol ? rowsPerCol : groupSortedPlots.length;
+    // Geometry is sized for whichever is wider — the configured preference
+    // or the actual count needed — so real columns never overflow past the
+    // table's own right edge when usedLotCols has grown past lotTableCols.
+    const lotColBounds = computeLotColBounds(Math.max(lotTableCols, usedLotCols));
+    const lotFonts = lotFontsFor(usedLotCols);
     const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
@@ -1524,15 +1556,15 @@ export function GeneralPlanView() {
                 <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
                 {lotColBounds.slice(0, usedLotCols).map((col, c) => (
                   <g key={c}>
-                    {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16)}
+                    {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
                     <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
                     {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
                     {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
                       const y = lotTableTop + 30 + k * lotRowH;
                       return (
                         <g key={p.number}>
-                          <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotValueFS} fill="#0f172a">{p.number || "(none)"}</text>
-                          <text x={col.sqmColL} y={y} textAnchor="start" fontSize={lotValueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                          <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.number || "(none)"}</text>
+                          <text x={col.sqmColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
                         </g>
                       );
                     })}
