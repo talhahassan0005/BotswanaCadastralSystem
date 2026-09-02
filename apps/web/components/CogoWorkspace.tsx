@@ -25,6 +25,11 @@ import type { ToolDef, ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "
 const W = 720;
 const H = 460;
 const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not a pan
+// Client req 2026-09-03: "de activate Auto calculation of the polygons for
+// now. we will activate later when the system is final working" — flip
+// back to false to re-enable; the "Auto-Detect Rectangular Lots" button/
+// input just disable, autoDetectLots() itself is untouched.
+const AUTO_DETECT_LOTS_DISABLED = true;
 
 // "select"/"addpoint"/"move" are single-click canvas modes (Row 2). The rest
 // are click-to-draw tools (client req 2026-08-14): clicking their toolbar
@@ -2883,7 +2888,16 @@ export function CogoWorkspace({
             {/* Auto-detect rectangular lots straight from whatever points are
                 on the canvas (client req 2026-08-28) — for a raw flat beacon
                 list (no lot-grouping column at all, unlike the CSV above)
-                that's too large to draw one Polygon-tool click at a time. */}
+                that's too large to draw one Polygon-tool click at a time.
+                Temporarily disabled (client req 2026-09-03: "de activate
+                Auto calculation of the polygons for now. we will activate
+                later when the system is final working") — this was the
+                single most-revisited/bug-fixed feature across this whole
+                project's testing so far (rotation, duplicates, slivers),
+                so the client wants it out of the way while other things
+                are finalized first, not removed. To re-enable, flip
+                AUTO_DETECT_LOTS_DISABLED back to false — nothing else
+                needs to change; autoDetectLots() itself is untouched. */}
             <input
               type="text"
               inputMode="numeric"
@@ -2891,15 +2905,21 @@ export function CogoWorkspace({
               onChange={(e) => setAutoDetectStart(e.target.value)}
               placeholder={`Starting lot # (default ${suggestedNextLotStart()})`}
               title='Numbers the AUTO-DETECTED LOTS below, starting here — unrelated to the "Starting beacon" field in the left sidebar (that one names the traverse). Leave blank to continue from the highest lot number already in this project.'
-              className="w-52 rounded border border-slate-200 px-2 py-0.5 text-slate-600"
+              className="w-52 rounded border border-slate-200 px-2 py-0.5 text-slate-600 disabled:opacity-40"
+              disabled={AUTO_DETECT_LOTS_DISABLED}
             />
             <button
               type="button"
               onClick={() => autoDetectLots(autoDetectStart)}
-              className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50"
-              title="Builds one numbered plot per rectangle found among the points currently on the canvas (works for a rectilinear grid subdivision only)"
+              className="rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent"
+              title={
+                AUTO_DETECT_LOTS_DISABLED
+                  ? "Temporarily disabled — will be turned back on once the rest of the system is finalized"
+                  : "Builds one numbered plot per rectangle found among the points currently on the canvas (works for a rectilinear grid subdivision only)"
+              }
+              disabled={AUTO_DETECT_LOTS_DISABLED}
             >
-              Auto-Detect Rectangular Lots
+              Auto-Detect Rectangular Lots{AUTO_DETECT_LOTS_DISABLED ? " (disabled)" : ""}
             </button>
             {/* The only way to undo a bad/duplicated Auto-Detect run — plots
                 are saved project-wide (cogoPlots), so an unwanted set would
