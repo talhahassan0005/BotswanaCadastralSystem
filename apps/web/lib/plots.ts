@@ -16,21 +16,31 @@ export interface Plot {
   points: PlotPoint[];
 }
 
-/** "37455-37458" for a contiguous numeric run of lot numbers, "37455, 37460"
- *  for a non-contiguous or non-numeric set (client req 2026-08-26, Part 33b;
+/** "37455-37458" for a contiguous numeric run of lot numbers, "100-110, 113"
+ *  when there's a gap in the middle — each contiguous stretch collapses to
+ *  its own "X-Y" (or bare "X" for a run of one), joined by ", " (client req
+ *  2026-09-03, screenshot: a gap at 111/112 was making the WHOLE range fall
+ *  back to listing every single number individually, "100, 101, 102, ...,
+ *  110, 113" — this now only expands the stretch that actually has the gap
+ *  in it, not the whole set). Non-numeric lot numbers still fall back to a
+ *  plain comma join, same as before (client req 2026-08-26, Part 33b;
  *  promoted out of WorkingPlan.tsx 2026-08-30 so the General Plan module's
  *  own title block — "LOTS {range} {name}", matching the GC-122 reference —
  *  can reuse it instead of forking a second copy). */
 export function formatLotRange(numbers: string[]): string {
   const trimmed = numbers.map((n) => n.trim()).filter(Boolean);
   const allNumeric = trimmed.length > 0 && trimmed.every((n) => /^\d+$/.test(n));
-  if (allNumeric) {
-    const sorted = [...trimmed.map(Number)].sort((a, b) => a - b);
-    const contiguous = sorted.every((v, i) => i === 0 || v === sorted[i - 1] + 1);
-    if (contiguous && sorted.length > 1) return `${sorted[0]}-${sorted[sorted.length - 1]}`;
-    return sorted.join(", ");
+  if (!allNumeric) return trimmed.join(", ");
+  const sorted = [...new Set(trimmed.map(Number))].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0], prev = sorted[0];
+  for (let i = 1; i <= sorted.length; i++) {
+    const v = sorted[i];
+    if (v === prev + 1) { prev = v; continue; }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    if (i < sorted.length) { start = v; prev = v; }
   }
-  return trimmed.join(", ");
+  return parts.join(", ");
 }
 
 /** Points that appear in more than one plot (same name = a shared boundary
