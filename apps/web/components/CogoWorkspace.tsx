@@ -311,7 +311,13 @@ export function CogoWorkspace({
         setExtra((e) => e.filter((p) => !pointIds.has(p.id)));
         setHidden((h) => { const n = new Set(h); pointIds.forEach((id) => n.add(id)); return n; });
       }
-      if (lineIds.size) setLines((ls) => ls.filter((l) => !lineIds.has(l.id)));
+      if (lineIds.size) {
+        // Client req 2026-09-02: a multi/box-select delete has the same
+        // orphaned-seg-label issue the single Delete Line tool did — each
+        // deleted line's own bearing/distance label needs to go with it.
+        for (const l of lines) if (lineIds.has(l.id)) removeSegLabelsAt(l.aE, l.aN, l.bE, l.bN);
+        setLines((ls) => ls.filter((l) => !lineIds.has(l.id)));
+      }
       if (polyIds.size) setPolygons((ps) => ps.filter((p) => !polyIds.has(p.id)));
       setCanvasSelection(new Set());
       setSelected(null);
@@ -605,6 +611,10 @@ export function CogoWorkspace({
       setExtra((e) => e.filter((p) => !tableSelected.has(p.id)));
       setHidden((h) => { const n = new Set(h); tableSelected.forEach((id) => n.add(id)); return n; });
     } else if (tableTab === "lines") {
+      // Same orphaned-seg-label fix as the canvas delete paths (client req
+      // 2026-09-02) — deleting a line from the Lines table has the same
+      // issue.
+      for (const l of lines) if (tableSelected.has(l.id)) removeSegLabelsAt(l.aE, l.aN, l.bE, l.bN);
       setLines((ls) => ls.filter((l) => !tableSelected.has(l.id)));
     } else {
       setPolygons((ps) => ps.filter((p) => !tableSelected.has(p.id)));
@@ -1444,6 +1454,19 @@ export function CogoWorkspace({
     }
     return best;
   }
+  /** Removes a deleted line's own bearing/distance seg-label, if it had one
+   *  (client req 2026-09-02: "when i delete lines, the distance and Bearing
+   *  information that comes with a line should also be deleted" —
+   *  screenshot showed a real subdivision's worth of these, orphaned by
+   *  every earlier line deletion, piled up into unreadable overlapping
+   *  text). Seg-labels carry no stored link back to their line (see
+   *  WText's own doc comment) — they're always placed at exactly the
+   *  line's midpoint when created, so that position is what identifies
+   *  the one to remove here. */
+  function removeSegLabelsAt(aE: number, aN: number, bE: number, bN: number) {
+    const midE = (aE + bE) / 2, midN = (aN + bN) / 2;
+    setTexts((ts) => ts.filter((t) => !(t.kind === "seglabel" && Math.abs(t.east - midE) < 0.01 && Math.abs(t.north - midN) < 0.01)));
+  }
 
   /** Picks up a grip on `line` — stopPropagation keeps the root <svg>'s own
    *  onPointerDown from also firing (which would otherwise start a view-pan,
@@ -1730,7 +1753,16 @@ export function CogoWorkspace({
         if (hit) setParcelQueryId(hit.id);
       } else if (draftTool === "delete-line") {
         const hit = nearestLineHit(vbx, vby);
-        if (hit) { snapshot(); setLines((ls) => ls.filter((l) => l.id !== hit.id)); }
+        if (hit) {
+          snapshot();
+          setLines((ls) => ls.filter((l) => l.id !== hit.id));
+          // Its own bearing/distance seg-label (client req 2026-09-02,
+          // screenshot: deleted lines' labels were piling up, orphaned,
+          // unreadably overlapping each other) — seg-labels have no stored
+          // link back to their line, only a position at its exact midpoint
+          // (see WText's own doc comment), so that's what identifies it here.
+          removeSegLabelsAt(hit.aE, hit.aN, hit.bE, hit.bN);
+        }
       } else if (draftTool === "delete-parcel") {
         const [wx, wy] = toWorld(vbx, vby);
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
