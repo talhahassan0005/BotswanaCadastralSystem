@@ -983,19 +983,25 @@ export function GeneralPlanView() {
         const lx = horizontal ? t : fixed + dir * 8;
         const ly = horizontal ? fixed + dir * 8 : t;
         lines.push(
-          // Every edge's labels run vertically, rotated in line with their
-          // own tick stroke (client req 2026-09-04: "i also want them to be
-          // inline with the grid line" — top/bottom used to sit as
-          // horizontal text floating above/below a vertical tick, reading
-          // as disconnected from it; matches the left/right edges' own
-          // rotated convention, and the reference sheet's own margin grid).
+          // Each label runs in line with its OWN tick stroke (client req
+          // 2026-09-04: "i also want them to be inline with the grid line").
+          // Top/bottom ticks are vertical (jutting up/down into the frame),
+          // so their labels rotate -90 to run vertically alongside them —
+          // that part shipped correctly. Left/right ticks are HORIZONTAL
+          // (jutting left/right into the frame); an earlier round rotated
+          // those labels too "to match the top/bottom convention", which
+          // actually made them run perpendicular to their own tick instead
+          // of inline with it (client req 2026-09-04 follow-up: "top ur
+          // bottom walay lables tu inline ho gae hain ab right ut left
+          // walay lebles bi tu karo na" — left/right were the ones still
+          // wrong, not top/bottom). Only horizontal-edge labels rotate.
           <text
             key={`l${key}`}
             x={lx} y={ly}
             fontSize={GRID_LABEL_FS}
             textAnchor="middle"
             fill="#475569"
-            transform={`rotate(-90 ${lx} ${ly})`}
+            transform={horizontal ? `rotate(-90 ${lx} ${ly})` : undefined}
           >
             {labelText}
           </text>
