@@ -925,18 +925,23 @@ export function GeneralPlanView() {
         // Client req 2026-09-02 (screenshot, circling the labels): these sit
         // INSIDE the frame, right at the tick, not out in the margin the
         // border itself sits in — `dir` already points that way (the
-        // tick's own INWARD direction into the frame). Vertical-edge
-        // labels are rotated to run parallel to the border.
+        // tick's own INWARD direction into the frame).
         const lx = horizontal ? t : fixed + dir * 8;
         const ly = horizontal ? fixed + dir * 8 : t;
         lines.push(
+          // Every edge's labels run vertically, rotated in line with their
+          // own tick stroke (client req 2026-09-04: "i also want them to be
+          // inline with the grid line" — top/bottom used to sit as
+          // horizontal text floating above/below a vertical tick, reading
+          // as disconnected from it; matches the left/right edges' own
+          // rotated convention, and the reference sheet's own margin grid).
           <text
             key={`l${key}`}
             x={lx} y={ly}
             fontSize={GRID_LABEL_FS}
             textAnchor="middle"
             fill="#475569"
-            transform={horizontal ? undefined : `rotate(-90 ${lx} ${ly})`}
+            transform={`rotate(-90 ${lx} ${ly})`}
           >
             {labelText}
           </text>
