@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
@@ -121,6 +121,7 @@ export function GeneralPlanView() {
     titleOffset: { dx: number; dy: number; scale?: number };
     panelOffsets: Record<string, { dx: number; dy: number }>;
     lotTableCols: number;
+    gridSpacingM: number;
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -173,6 +174,14 @@ export function GeneralPlanView() {
     // (client req 2026-09-02: "user should choose whether they want 1/2/3/4
     // columns") — was always exactly 2 (or 1 when everything fit in one).
     lotTableCols: 2,
+    // Grid-mark spacing along the frame border, in real metres (client req
+    // 2026-09-03: "the grid numbering should be multiples of 50. The grid
+    // must space by 50m by default and the user can also choose if they
+    // want to space by 100 or 200") — ticks used to just split the edge
+    // into a fixed COUNT of even pixel intervals, landing on whatever
+    // (non-round) coordinate happened to fall there; now they land on
+    // actual round real-world multiples of this value instead.
+    gridSpacingM: 50,
     ...(savedGp ?? {}),
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -883,37 +892,46 @@ export function GeneralPlanView() {
   // value. 10 -> 16 for the tick length itself.
   const TICK = 16; // grid-tick length (client req 2026-09-01: "increase size of grid marks" — was 10)
   const GRID_LABEL_FS = 6.5;
-  /** One row of evenly-spaced tick marks along a border edge, projecting
-   *  outward (into the margin) rather than inward onto the drawing.
-   *  `worldAt`, when given, labels each tick with the real Y (east, on
-   *  horizontal top/bottom edges) or X (north, on vertical left/right
-   *  edges) coordinate at that position — same "Y"/"X" naming the Block
+  // Grid spacing, clamped to the 3 real choices offered (client req
+  // 2026-09-03) — a stray/legacy meta value never breaks the tick math.
+  const gridSpacingM = [50, 100, 200].includes(meta.gridSpacingM) ? meta.gridSpacingM : 50;
+  /** One row of tick marks along a border edge, projecting outward (into
+   *  the margin) rather than inward onto the drawing. When `worldAt` is
+   *  given, ticks land on actual round real-world multiples of
+   *  `gridSpacingM` (client req 2026-09-03: "the grid numbering should be
+   *  multiples of 50... user can also choose 100 or 200") instead of an
+   *  even pixel split of the edge — `worldAt` at the edge's own two
+   *  endpoints gives the real coordinate range it spans; every round
+   *  multiple of the spacing within that range gets a tick, placed by
+   *  linearly interpolating along the edge (correct even under display
+   *  rotation, since a straight edge maps to a straight edge under any
+   *  such transform). Falls back to a fixed 6-tick even split when there's
+   *  no transform to invert (the coordinate-schedule appendix pages, which
+   *  have no drawing for a coordinate grid to correlate to). Each tick is
+   *  labelled with the real Y (east, on horizontal top/bottom edges) or X
+   *  (north, on vertical left/right edges) — same "Y"/"X" naming the Block
    *  Corner Table already uses for this coordinate system. */
   function edgeTicks(
-    fixed: number, from: number, to: number, count: number, horizontal: boolean, out: number,
+    fixed: number, from: number, to: number, horizontal: boolean, out: number,
     worldAt?: (px: number, py: number) => { east: number; north: number }
   ) {
-    const lines = [];
-    for (let i = 0; i <= count; i++) {
-      const t = from + ((to - from) * i) / count;
+    const lines: ReactNode[] = [];
+    const dir = out > 0 ? 1 : -1;
+    function drawTick(key: string | number, t: number, labelText: string | null) {
       const x1 = horizontal ? t : fixed, y1 = horizontal ? fixed : t;
       const x2 = horizontal ? t : fixed + out, y2 = horizontal ? fixed + out : t;
-      lines.push(<line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f172a" strokeWidth={1} />);
-      if (worldAt) {
-        const w = worldAt(x1, y1);
-        const val = Math.round(horizontal ? w.east : w.north);
-        const labelText = `${horizontal ? "Y" : "X"}+${val}`;
+      lines.push(<line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f172a" strokeWidth={1} />);
+      if (labelText != null) {
         // Client req 2026-09-02 (screenshot, circling the labels): these sit
         // INSIDE the frame, right at the tick, not out in the margin the
-        // border itself sits in — `out`'s own sign already points that way
-        // (the tick's INWARD direction into the frame). Vertical-edge labels
-        // are rotated to run parallel to the border, matching the reference.
-        const dir = out > 0 ? 1 : -1;
+        // border itself sits in — `dir` already points that way (the
+        // tick's own INWARD direction into the frame). Vertical-edge
+        // labels are rotated to run parallel to the border.
         const lx = horizontal ? t : fixed + dir * 8;
         const ly = horizontal ? fixed + dir * 8 : t;
         lines.push(
           <text
-            key={`l${i}`}
+            key={`l${key}`}
             x={lx} y={ly}
             fontSize={GRID_LABEL_FS}
             textAnchor="middle"
@@ -924,6 +942,29 @@ export function GeneralPlanView() {
           </text>
         );
       }
+    }
+    if (!worldAt) {
+      const count = 6;
+      for (let i = 0; i <= count; i++) drawTick(i, from + ((to - from) * i) / count, null);
+      return lines;
+    }
+    const wFrom = worldAt(horizontal ? from : fixed, horizontal ? fixed : from);
+    const wTo = worldAt(horizontal ? to : fixed, horizontal ? fixed : to);
+    const vFrom = horizontal ? wFrom.east : wFrom.north;
+    const vTo = horizontal ? wTo.east : wTo.north;
+    const vMin = Math.min(vFrom, vTo), vMax = Math.max(vFrom, vTo);
+    const first = Math.ceil(vMin / gridSpacingM) * gridSpacingM;
+    // Safety cap (client req 2026-09-03's own spacing choice can combine
+    // with a very zoomed-out true scale — computeTransform's own client
+    // req 2026-09-02 — to make the frame's own full-width real-world span
+    // huge; a tiny spacing over a huge span would otherwise spam hundreds
+    // of ticks). Silently truncates rather than auto-widening the user's
+    // own chosen spacing.
+    const MAX_TICKS = 40;
+    for (let v = first, n = 0; v <= vMax && n < MAX_TICKS; v += gridSpacingM, n++) {
+      const frac = (v - vFrom) / (vTo - vFrom || 1);
+      const t = from + (to - from) * frac;
+      drawTick(v, t, `${horizontal ? "Y" : "X"}+${Math.round(v)}`);
     }
     return lines;
   }
@@ -1152,13 +1193,13 @@ export function GeneralPlanView() {
           2026-09-02's earlier A0-resize work), so there's no collision
           labelling all four edges the same way. */}
       {sheetMode === "general"
-        ? edgeTicks(FRAME_Y, FRAME_X, regX, 12, true, TICK, worldAt)
-        : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, 14, true, TICK, worldAt)}
-      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, 14, true, -TICK, worldAt)}
-      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, 10, false, TICK, worldAt)}
+        ? edgeTicks(FRAME_Y, FRAME_X, regX, true, TICK, worldAt)
+        : edgeTicks(FRAME_Y, FRAME_X, FRAME_R, true, TICK, worldAt)}
+      {edgeTicks(FRAME_B, FRAME_X, FRAME_R, true, -TICK, worldAt)}
+      {edgeTicks(FRAME_X, FRAME_Y, FRAME_B, false, TICK, worldAt)}
       {sheetMode === "general"
-        ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, 8, false, -TICK, worldAt)
-        : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, 10, false, -TICK, worldAt)}
+        ? edgeTicks(FRAME_R, regY + regSize, FRAME_B, false, -TICK, worldAt)
+        : edgeTicks(FRAME_R, FRAME_Y, FRAME_B, false, -TICK, worldAt)}
       <rect x={FRAME_X} y={FRAME_Y} width={FRAME_R - FRAME_X} height={FRAME_B - FRAME_Y} fill="none" stroke="#0f172a" strokeWidth={1.5} />
       {/* Title heading — select/move/resize (client req 2026-08-28: "ye
           client khud drag kar ke kahi bi place kar sake ur resize bi kar
@@ -1920,6 +1961,21 @@ export function GeneralPlanView() {
                 className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 {n}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[50, 100, 200].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
+                className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}m
               </button>
             ))}
           </span>
