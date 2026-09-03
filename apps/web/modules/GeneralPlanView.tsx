@@ -1072,8 +1072,10 @@ export function GeneralPlanView() {
   // sliced per sheet by `layoutGroups`), replacing the old single-column
   // capped schedule — fitting roughly twice as many rows in the same space.
   const lotTableTop = panelBottom + 16;
-  const lotRowH = 14;
-  // Row cap is computed from actual remaining room (not fixed) — the
+  // Row height is DEFAULT_LOT_ROW_H unless a sheet's own lot count needs it
+  // shrunk to fit within the user's chosen column count (see the per-sheet
+  // block below, client req 2026-09-03) — no longer a fixed component-level
+  // value. Row cap is computed from actual remaining room (not fixed) — the
   // reference panel above can grow (more splay entries, etc.) and push this
   // down, so a fixed cap could otherwise run the table off the bottom of the
   // sheet. Reserves room below for the TOTAL line, and for the Block Corner
@@ -1100,7 +1102,8 @@ export function GeneralPlanView() {
   // ho raha hai ye hattana hai bs" — a small fixed gap is all that's left
   // to reserve here now, not room for either line's own text).
   const LOT_FOOTER_H = 12;
-  const rowsPerCol = Math.max(1, Math.floor((rightColH - bcReserve - LOT_FOOTER_H) / lotRowH));
+  const availableLotH = Math.max(0, rightColH - bcReserve - LOT_FOOTER_H);
+  const DEFAULT_LOT_ROW_H = 14, MIN_LOT_ROW_H = 6;
   // How many "LOT No. | SQ. METRES" column-pairs (client req 2026-09-02:
   // "for tables i think the user should choose whether they want 1/2/3/4
   // columns" — was always fixed at 2, or 1 when everything fit in one).
@@ -1333,33 +1336,45 @@ export function GeneralPlanView() {
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
     // Lot Areas table sizing — only as tall/wide as this sheet's own lot
     // count actually needs (client req 2026-09-02: "table should only cater
-    // for available data"), not the full space-available capacity.
-    // Only as many columns as this sheet's own lot count actually needs
-    // (client req 2026-09-02, same "only cater for available data"
-    // principle already applied to the row count) — a sheet with fewer
-    // lots than rowsPerCol never widens past its first column-pair, no
-    // matter how many columns lotTableCols allows.
-    //
-    // BUT — client req 2026-09-03: "I have 12 Polygons/plots but i only
-    // see area for 3 plots in the table... i have to see them all in the
-    // same table" — lotTableCols was being used as a hard CAP, silently
-    // dropping every lot past rowsPerCol*lotTableCols with no overflow
-    // note any more (that note was removed at the client's own request
-    // just before this). A configured column count is a style preference
-    // for how WIDE to spread lots that already fit; it must never cause
-    // real lots to go missing from the table. neededCols is exactly what
-    // this sheet's own lots require; only grow past the configured
-    // lotTableCols (up to the hard UI max of 4) when that preference
-    // genuinely isn't enough to show everyone — otherwise still shrink
-    // to fit, same as before.
-    const neededCols = groupSortedPlots.length === 0 ? 0 : Math.max(1, Math.ceil(groupSortedPlots.length / rowsPerCol));
-    const usedLotCols = neededCols <= lotTableCols ? neededCols : Math.min(neededCols, 4);
-    const usedLotRows = groupSortedPlots.length >= rowsPerCol ? rowsPerCol : groupSortedPlots.length;
+    // for available data"), not the full space-available capacity, AND
+    // never more/fewer columns than the user actually picked (client req
+    // 2026-09-03: "ye jo table grid ke liye options rakhy thay wo working
+    // main nahi hai" — a PRIOR fix for "I have 12 Polygons/plots but i only
+    // see area for 3" grew usedLotCols past lotTableCols whenever it wasn't
+    // enough to show everyone, which silently overrode the client's own
+    // 1/2/3/4 picker instead of respecting it). The column count is now a
+    // hard, always-respected choice; when more lots need to fit than the
+    // DEFAULT row height allows within that many columns, the ROW HEIGHT
+    // itself shrinks instead (same density-tiering principle every other
+    // font/line-weight in this file already uses) — so both "my column
+    // count works" and "I never lose lots off the table" hold at once.
+    // Columns only grow past the configured count, up to the hard UI max
+    // of 4, as an actual last resort: when even the smallest still-legible
+    // row height (MIN_LOT_ROW_H) can't fit everyone in that many columns.
+    const totalLots = groupSortedPlots.length;
+    const defaultRowsPerCol = Math.max(1, Math.floor(availableLotH / DEFAULT_LOT_ROW_H));
+    const neededColsAtDefault = totalLots === 0 ? 0 : Math.max(1, Math.ceil(totalLots / defaultRowsPerCol));
+    let usedLotCols = totalLots === 0 ? 0 : Math.min(lotTableCols, neededColsAtDefault);
+    let rowsPerCol = usedLotCols === 0 ? 0 : Math.ceil(totalLots / usedLotCols);
+    let lotRowH = rowsPerCol === 0 ? DEFAULT_LOT_ROW_H : Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol);
+    if (lotRowH < MIN_LOT_ROW_H && usedLotCols < 4) {
+      const maxRowsAtMin = Math.max(1, Math.floor(availableLotH / MIN_LOT_ROW_H));
+      const neededColsAtMin = Math.max(1, Math.ceil(totalLots / maxRowsAtMin));
+      usedLotCols = Math.min(4, Math.max(usedLotCols, neededColsAtMin));
+      rowsPerCol = Math.ceil(totalLots / usedLotCols);
+      lotRowH = Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol));
+    }
+    const usedLotRows = rowsPerCol;
     // Geometry is sized for whichever is wider — the configured preference
     // or the actual count needed — so real columns never overflow past the
-    // table's own right edge when usedLotCols has grown past lotTableCols.
+    // table's own right edge on the rare last-resort-growth case above.
     const lotColBounds = computeLotColBounds(Math.max(lotTableCols, usedLotCols));
-    const lotFonts = lotFontsFor(usedLotCols);
+    // Value font also can't exceed what the (now possibly shrunk) row
+    // height itself has room for, on top of the existing per-column-count
+    // sizing — otherwise a row height squeezed down toward MIN_LOT_ROW_H
+    // would render text taller than its own row, overlapping the next one.
+    const lotFontsRaw = lotFontsFor(usedLotCols);
+    const lotFonts = { ...lotFontsRaw, valueFS: Math.min(lotFontsRaw.valueFS, lotRowH * 0.65) };
     const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
