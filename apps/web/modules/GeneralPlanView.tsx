@@ -120,6 +120,7 @@ export function GeneralPlanView() {
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
     panelOffsets: Record<string, { dx: number; dy: number }>;
+    panelScales: Record<string, number>;
     lotTableCols: number;
     gridSpacingM: number;
   }> | null;
@@ -170,6 +171,11 @@ export function GeneralPlanView() {
     // "pedWay"/"lotAreas"/"blockCorner"); a section with no entry here just
     // renders at its default (un-dragged) position.
     panelOffsets: {} as Record<string, { dx: number; dy: number }>,
+    // Per-section resize (client req 2026-09-04: "i also want to be able to
+    // click and resize this" — same section ids as panelOffsets above,
+    // scale factor around each section's own top-left corner so resizing
+    // doesn't also drift its position).
+    panelScales: {} as Record<string, number>,
     // How many "LOT No. | SQ. METRES" column-pairs the Lot Areas table uses
     // (client req 2026-09-02: "user should choose whether they want 1/2/3/4
     // columns") — was always exactly 2 (or 1 when everything fit in one).
@@ -519,19 +525,69 @@ export function GeneralPlanView() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingPanel]);
-  /** Common drag-group attributes for one independently-draggable panel
-   *  section, keyed by id — shared by every `<g>` below rather than
-   *  repeating the same 6 props on each of them. */
-  function panelDragHandlers(id: string) {
+  function panelScaleOf(id: string) {
+    return meta.panelScales[id] ?? 1;
+  }
+  function handlePanelResize(id: string, delta: number) {
+    setMeta((m) => ({
+      ...m,
+      panelScales: { ...m.panelScales, [id]: Math.max(0.5, Math.min(2.5, (m.panelScales[id] ?? 1) + delta)) },
+    }));
+  }
+  /** One independently draggable + resizable panel section, keyed by id —
+   *  used by every right-side panel group below instead of each repeating
+   *  its own drag props + hit-rect + selection outline + resize buttons
+   *  (client req 2026-09-04: "i also want to be able to click and resize
+   *  this"). `box` is that section's own bounding rect in LOCAL (pre-scale)
+   *  coordinates — content is scaled around box's top-left corner so
+   *  resizing never also shifts the section's drag position. Resize
+   *  buttons live in the outer (translate-only) group so their own size
+   *  stays constant regardless of the section's current scale. */
+  function panelResizable(id: string, box: { x: number; y: number; w: number; h: number }, content: ReactNode) {
     const off = panelOffsetOf(id);
-    return {
-      transform: `translate(${off.dx},${off.dy})`,
-      style: { cursor: selectedPanelId === id ? "move" : "pointer" } as const,
-      onClick: (e: ReactMouseEvent<SVGElement>) => handlePanelClick(id, e),
-      onPointerDown: (e: ReactPointerEvent<SVGElement>) => handlePanelPointerDown(id, e),
-      onPointerMove: (e: ReactPointerEvent<SVGElement>) => handlePanelPointerMove(id, e),
-      onPointerUp: handlePanelPointerUp,
-    };
+    const scale = panelScaleOf(id);
+    const selected = selectedPanelId === id;
+    const rightEdge = box.x + box.w * scale;
+    return (
+      <g
+        key={id}
+        transform={`translate(${off.dx},${off.dy})`}
+        style={{ cursor: selected ? "move" : "pointer" }}
+        onClick={(e: ReactMouseEvent<SVGElement>) => handlePanelClick(id, e)}
+        onPointerDown={(e: ReactPointerEvent<SVGElement>) => handlePanelPointerDown(id, e)}
+        onPointerMove={(e: ReactPointerEvent<SVGElement>) => handlePanelPointerMove(id, e)}
+        onPointerUp={handlePanelPointerUp}
+      >
+        <g transform={`translate(${box.x * (1 - scale)},${box.y * (1 - scale)}) scale(${scale})`}>
+          {/* Invisible hit-area covering the section's own box (client req
+              2026-09-02) — an SVG <g> has no geometry of its own, so a
+              click landing in the blank space between sparse text/table
+              grid lines would otherwise fall through to the canvas below.
+              fill="transparent" (not "none") keeps it clickable. */}
+          <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" />
+          {selected && (
+            <rect
+              x={box.x} y={box.y} width={box.w} height={box.h}
+              fill="none" stroke="#dc2626" strokeWidth={0.8 / scale} strokeDasharray={`${2 / scale} ${2 / scale}`}
+              style={{ pointerEvents: "none" }}
+            />
+          )}
+          {content}
+        </g>
+        {selected && (
+          <>
+            <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); handlePanelResize(id, 0.1); }}>
+              <circle cx={rightEdge + 12} cy={box.y + 14} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+              <text x={rightEdge + 12} y={box.y + 17} textAnchor="middle" fontSize={10} fill="#dc2626">+</text>
+            </g>
+            <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); handlePanelResize(id, -0.1); }}>
+              <circle cx={rightEdge + 12} cy={box.y + 32} r={7} fill="white" stroke="#dc2626" strokeWidth={1} />
+              <text x={rightEdge + 12} y={box.y + 35} textAnchor="middle" fontSize={10} fill="#dc2626">−</text>
+            </g>
+          </>
+        )}
+      </g>
+    );
   }
 
   useEffect(() => {
@@ -1337,41 +1393,35 @@ export function GeneralPlanView() {
     const t = computeTransform(groupUsedBeacons);
     const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
-    // Lot Areas table sizing — only as tall/wide as this sheet's own lot
-    // count actually needs (client req 2026-09-02: "table should only cater
-    // for available data"), not the full space-available capacity, AND
-    // never more/fewer columns than the user actually picked (client req
-    // 2026-09-03: "ye jo table grid ke liye options rakhy thay wo working
-    // main nahi hai" — a PRIOR fix for "I have 12 Polygons/plots but i only
-    // see area for 3" grew usedLotCols past lotTableCols whenever it wasn't
-    // enough to show everyone, which silently overrode the client's own
-    // 1/2/3/4 picker instead of respecting it). The column count is now a
-    // hard, always-respected choice; when more lots need to fit than the
-    // DEFAULT row height allows within that many columns, the ROW HEIGHT
-    // itself shrinks instead (same density-tiering principle every other
-    // font/line-weight in this file already uses) — so both "my column
-    // count works" and "I never lose lots off the table" hold at once.
-    // Columns only grow past the configured count, up to the hard UI max
-    // of 4, as an actual last resort: when even the smallest still-legible
-    // row height (MIN_LOT_ROW_H) can't fit everyone in that many columns.
+    // Lot Areas table sizing — the column count is now the user's picked
+    // value, ALWAYS, full stop (client req 2026-09-04, screenshots of the
+    // picker set to 2 vs 4 rendering near-identically: "number of columns
+    // are not working with options !! just simpley changing the size of the
+    // text not the number of columns" — a PRIOR "grow columns as a last
+    // resort" escape hatch, meant to avoid unreadable text, ended up
+    // silently overriding the picker almost every time a sheet had enough
+    // lots to need it, which is exactly what the client is now reporting).
+    // rowsPerCol is derived from the ACTUAL lot count (`Math.ceil`), so
+    // every lot always gets a row regardless of column count — no lot is
+    // ever dropped, the same guarantee the old escape hatch existed to
+    // protect, but without needing to override the user's choice to do it.
+    // Row height shrinks toward MIN_LOT_ROW_H (now an UNCONDITIONAL floor —
+    // the old version only floored it inside the since-removed escape-hatch
+    // branch, so picking the picker's own max of 4 columns could shrink
+    // text past that floor into near-invisible sub-1pt text with no clamp
+    // at all, which is the "just changing the size of the text" half of the
+    // same screenshot). If even the floor doesn't make everything fit, the
+    // table legitimately runs taller than its usual box — same trade-off
+    // already accepted for the Block Corner Table below, and the section is
+    // independently draggable/resizable so the client can reposition or
+    // shrink it by hand rather than losing rows or legibility to an
+    // auto-override.
     const totalLots = groupSortedPlots.length;
-    const defaultRowsPerCol = Math.max(1, Math.floor(availableLotH / DEFAULT_LOT_ROW_H));
-    const neededColsAtDefault = totalLots === 0 ? 0 : Math.max(1, Math.ceil(totalLots / defaultRowsPerCol));
-    let usedLotCols = totalLots === 0 ? 0 : Math.min(lotTableCols, neededColsAtDefault);
-    let rowsPerCol = usedLotCols === 0 ? 0 : Math.ceil(totalLots / usedLotCols);
-    let lotRowH = rowsPerCol === 0 ? DEFAULT_LOT_ROW_H : Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol);
-    if (lotRowH < MIN_LOT_ROW_H && usedLotCols < 4) {
-      const maxRowsAtMin = Math.max(1, Math.floor(availableLotH / MIN_LOT_ROW_H));
-      const neededColsAtMin = Math.max(1, Math.ceil(totalLots / maxRowsAtMin));
-      usedLotCols = Math.min(4, Math.max(usedLotCols, neededColsAtMin));
-      rowsPerCol = Math.ceil(totalLots / usedLotCols);
-      lotRowH = Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol));
-    }
+    const usedLotCols = totalLots === 0 ? 0 : lotTableCols;
+    const rowsPerCol = usedLotCols === 0 ? 0 : Math.ceil(totalLots / usedLotCols);
+    const lotRowH = rowsPerCol === 0 ? DEFAULT_LOT_ROW_H : Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol));
     const usedLotRows = rowsPerCol;
-    // Geometry is sized for whichever is wider — the configured preference
-    // or the actual count needed — so real columns never overflow past the
-    // table's own right edge on the rare last-resort-growth case above.
-    const lotColBounds = computeLotColBounds(Math.max(lotTableCols, usedLotCols));
+    const lotColBounds = computeLotColBounds(usedLotCols);
     // Value font also can't exceed what the (now possibly shrunk) row
     // height itself has room for, on top of the existing per-column-count
     // sizing — otherwise a row height squeezed down toward MIN_LOT_ROW_H
@@ -1555,47 +1605,31 @@ export function GeneralPlanView() {
           });
         })()}
         {/* Sheet Index / Beacon Description / Splay Information / Ped Way —
-            each an INDEPENDENTLY draggable group (client req 2026-09-02,
-            correcting an earlier round that moved the whole panel as one
-            block: "group these features independently... dont just group
-            all of them"). Same select/drag interaction as the title
-            heading, just one instance per section via panelDragHandlers. */}
+            each an INDEPENDENTLY draggable + resizable group (client req
+            2026-09-02, correcting an earlier round that moved the whole
+            panel as one block: "group these features independently... dont
+            just group all of them"; resize added 2026-09-04: "i also want
+            to be able to click and resize this"). Same select/drag/resize
+            interaction as the title heading, via panelResizable. */}
         {panelSectionLayouts.map((section) => {
           const secX = panelX - 8, secY = section.rowYs[0] - 12;
           const secW = 230 * FRAME_SCALE_X, secH = section.rowYs[section.rowYs.length - 1] - section.rowYs[0] + 18;
-          return (
-          <g key={section.id} {...panelDragHandlers(section.id)}>
-            {/* Invisible hit-area covering the whole section (client req
-                2026-09-02: "table group... drag ho kar kahi ur place nahi ho
-                raha jese heading section hota hai" — an SVG <g> has no
-                geometry of its own, so a click landing in the blank space
-                between these short, sparse text lines (unlike the much
-                denser/bolder title heading) hit nothing and fell through to
-                the canvas below, deselecting instead of selecting this
-                section). fill="transparent" (not "none") makes the whole
-                rect clickable while staying invisible. */}
-            <rect x={secX} y={secY} width={secW} height={secH} fill="transparent" />
-            {selectedPanelId === section.id && (
-              <rect
-                x={secX} y={secY} width={secW} height={secH}
-                fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
-                style={{ pointerEvents: "none" }}
-              />
-            )}
-            {section.rows.map((row, i) => (
-              <text
-                key={i}
-                x={panelX}
-                y={section.rowYs[i]}
-                fontSize={row.heading ? 10 : 8}
-                fontWeight={row.heading ? 700 : 400}
-                fill={row.heading ? "#0f172a" : "#334155"}
-              >
-                {row.text}
-              </text>
-            ))}
-          </g>
-          );
+          return panelResizable(section.id, { x: secX, y: secY, w: secW, h: secH }, (
+            <>
+              {section.rows.map((row, i) => (
+                <text
+                  key={i}
+                  x={panelX}
+                  y={section.rowYs[i]}
+                  fontSize={row.heading ? 10 : 8}
+                  fontWeight={row.heading ? 700 : 400}
+                  fill={row.heading ? "#0f172a" : "#334155"}
+                >
+                  {row.text}
+                </text>
+              ))}
+            </>
+          ));
         })}
         {sheetMode === "general" && (
           <>
@@ -1616,41 +1650,29 @@ export function GeneralPlanView() {
               const boxTop = lotTableTop + 5;
               const headerRuleY = lotTableTop + 20;
               const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
-              return (
-              <g {...panelDragHandlers("lotAreas")}>
-                {/* Invisible hit-area (client req 2026-09-02) — same reason
-                    as the panel sections above: a bordered table is mostly
-                    blank space between its own grid lines, which a bare <g>
-                    doesn't catch clicks on. */}
-                <rect x={laX} y={laY} width={laW} height={laH} fill="transparent" />
-                {selectedPanelId === "lotAreas" && (
-                  <rect
-                    x={laX} y={laY} width={laW} height={laH}
-                    fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
-                    style={{ pointerEvents: "none" }}
-                  />
-                )}
-                <text x={panelX} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
-                <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
-                <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                {lotColBounds.slice(0, usedLotCols).map((col, c) => (
-                  <g key={c}>
-                    {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
-                    <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
-                    {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
-                    {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
-                      const y = lotTableTop + 30 + k * lotRowH;
-                      return (
-                        <g key={p.number}>
-                          <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.number || "(none)"}</text>
-                          <text x={col.sqmColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
-                        </g>
-                      );
-                    })}
-                  </g>
-                ))}
-              </g>
-              );
+              return panelResizable("lotAreas", { x: laX, y: laY, w: laW, h: laH }, (
+                <>
+                  <text x={panelX} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+                  <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                  {lotColBounds.slice(0, usedLotCols).map((col, c) => (
+                    <g key={c}>
+                      {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
+                      <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                      {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
+                      {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
+                        const y = lotTableTop + 30 + k * lotRowH;
+                        return (
+                          <g key={p.number}>
+                            <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.number || "(none)"}</text>
+                            <text x={col.sqmColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.fig.area_m2.toFixed(2)}</text>
+                          </g>
+                        );
+                      })}
+                    </g>
+                  ))}
+                </>
+              ));
             })()}
             {/* Block Corner Table (client req 2026-08-27, §2g) — this sheet's
                 own corners only; omitted entirely when none qualify, rather
@@ -1670,34 +1692,22 @@ export function GeneralPlanView() {
               // more (client req 2026-09-02, both removed) — just a small
               // fixed gap before the Block Corner Table's own heading.
               const bcTop = lotTableTop + 30 + usedLotRows * lotRowH + 24;
-              // Only as many rows as actually fit above the bottom band —
-              // this table was previously uncapped and ran off the sheet once
-              // a real layout produced more beacons than fit (client req
-              // 2026-08-30). Same "+N more … see digital schedule" overflow
-              // note the Lot Areas table above uses — every beacon still
-              // appears in full on the paginated Coordinate Schedule pages.
-              const bcRowsFit = Math.max(0, Math.floor((rightColBottom - (bcTop + 56)) / BC_ROW_H));
-              // Not even the heading fits — drop the section entirely rather
-              // than spilling it past the frame; the coordinates stay in the
-              // DXF and the digital record either way.
-              if (bcTop + 56 > rightColBottom) return null;
+              // EVERY beacon this sheet uses gets a row — no "+N more … see
+              // digital schedule" truncation any more (client req
+              // 2026-09-04, reference screenshot of the real GC document's
+              // own block corner page: "All block corner should appear in
+              // the table like below" — a single continuous list, not cut
+              // short). A table that runs past the frame's usual bottom band
+              // is expected at real subdivision density; the section is now
+              // independently draggable/resizable (added this same session)
+              // so the client can reposition/shrink it to fit rather than
+              // losing rows to an auto-truncated note.
               const bcSorted = [...groupUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
-              const bcOverflow = bcSorted.length > bcRowsFit;
-              const bcShown = bcSorted.slice(0, Math.max(0, bcOverflow ? bcRowsFit - 1 : bcRowsFit));
-              const bcBottom = bcTop + 56 + bcShown.length * BC_ROW_H + (bcSorted.length > bcShown.length ? 16 : 0);
+              const bcShown = bcSorted;
+              const bcBottom = bcTop + 56 + bcShown.length * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
-              return (
-                <g {...panelDragHandlers("blockCorner")}>
-                  {/* Invisible hit-area (client req 2026-09-02) — same reason
-                      as the Lot Areas table above. */}
-                  <rect x={bcHitX} y={bcHitY} width={bcHitW} height={bcHitH} fill="transparent" />
-                  {selectedPanelId === "blockCorner" && (
-                    <rect
-                      x={bcHitX} y={bcHitY} width={bcHitW} height={bcHitH}
-                      fill="none" stroke="#dc2626" strokeWidth={0.8} strokeDasharray="2 2"
-                      style={{ pointerEvents: "none" }}
-                    />
-                  )}
+              return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
+                <>
                   <text x={panelX} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
                   <text x={panelX} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
                   <text x={mapX(745)} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
@@ -1715,13 +1725,8 @@ export function GeneralPlanView() {
                       </g>
                     );
                   })}
-                  {bcSorted.length > bcShown.length && (
-                    <text x={panelX} y={bcTop + 56 + bcShown.length * BC_ROW_H} fontSize={8} fill="#94a3b8">
-                      +{bcSorted.length - bcShown.length} more beacon(s) — see digital schedule
-                    </text>
-                  )}
-                </g>
-              );
+                </>
+              ));
             })()}
           </>
         )}
