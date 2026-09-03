@@ -409,8 +409,6 @@ export function GeneralPlanView() {
   );
   const { sx, sy, screenToWorld } = computeTransform(activeUsedBeacons);
 
-  const grandTotalHa = cogoPlots.reduce((a, p) => a + (p.fig.area_ha || 0), 0);
-
   // ===================== Road-width / boundary-label annotation tool ======
   // Plain click-to-place free text (spec Part 4), reusing SgDiagram's
   // ManualText type/pattern rather than inventing a new one.
@@ -1759,22 +1757,14 @@ export function GeneralPlanView() {
                   {outerSides.length > 8 && (
                     <text x={mapX(30)} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
                   )}
-                  <text x={mapX(700)} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">TOTAL AREA = {grandTotalHa.toFixed(4)} Ha</text>
                 </>
-              ) : (
-                // The outer-boundary traverse table itself needs one clean
-                // connected ring to walk — when the layout doesn't form one
-                // (a gap, an unmatched edge), just the total area still
-                // prints, without the technical explanation of why the
-                // table above it is empty (client req 2026-08-31: crossed
-                // out on the reference redline, "remove the other
-                // statement").
-                cogoPlots.length > 0 && (
-                  <text x={mapX(30)} y={FY1 + 58} fontSize={12} fontWeight={700} fill="#0f172a">
-                    TOTAL AREA = {grandTotalHa.toFixed(4)} Ha
-                  </text>
-                )
-              )
+              ) : null /* Standalone "TOTAL AREA" line (client req 2026-09-04,
+                   screenshot with a red cross through it: "delete this
+                   line") removed — no fallback message printed here any
+                   more when the outer-boundary traverse table itself has
+                   no clean ring to walk (client req 2026-08-31 already
+                   dropped the technical explanation that used to sit
+                   alongside it). */
             ) : (
               <text x={mapX(30)} y={FY1 + 58} fontSize={9} fill="#94a3b8">Outer boundary traverse and total area — see Sheet 1.</text>
             )}
