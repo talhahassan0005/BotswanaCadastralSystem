@@ -19,6 +19,20 @@ const H = 707; // A4 landscape ratio
 // 1189mm of actual paper width. Used to draw at a true chosen plan scale
 // (client req 2026-09-02) instead of always fitting the box.
 const UNITS_PER_MM = W / 1189;
+// Real printed text sizes for the main drawing itself (client req 2026-09-04,
+// reference screenshot + an exact spec table: "Lot-number font ~2.2mm
+// (bold)" / "Edge-length / bearing / corner text font ~1.8mm (regular)" —
+// "Text information should not be too big. you see the relationship between
+// the plots and the text"). Previously these three tiered their font size
+// off how many plots/labels were on the sheet, growing on sparse sheets and
+// shrinking on dense ones — but a plot's ON-PAPER size already shrinks with
+// density too (this sheet renders at a true chosen scale, client req
+// 2026-09-02), so density-tiered text drifted out of proportion with the
+// plots themselves at both ends. A FIXED real-world size, like the
+// reference sheet actually uses, stays in proportion no matter how dense
+// the layout is.
+const LOT_NUMBER_FS = 2.2 * UNITS_PER_MM;
+const EDGE_TEXT_FS = 1.8 * UNITS_PER_MM;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -1481,15 +1495,11 @@ export function GeneralPlanView() {
           const d = pts.map((pp) => `${t.sx(pp.east, pp.north)},${t.sy(pp.east, pp.north)}`).join(" ");
           const cx = pts.reduce((a, pp) => a + t.sx(pp.east, pp.north), 0) / pts.length;
           const cy = pts.reduce((a, pp) => a + t.sy(pp.east, pp.north), 0) / pts.length;
-          // Reduced again (client req 2026-09-01: "counting numbers ka font
-          // bara hai") — still legible at real density without dominating
-          // the tiny lot cells the way the previous tiers still did.
-          const plotFS = groupPlots.length > 150 ? 3 : groupPlots.length > 60 ? 4.5 : groupPlots.length > 20 ? 6 : 8;
           const lineW = groupPlots.length > 150 ? 0.5 : groupPlots.length > 60 ? 0.7 : 1;
           return (
             <g key={p.number}>
               <polygon points={d} fill="none" stroke="#0f172a" strokeWidth={lineW} strokeLinejoin="round" />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={plotFS} fontWeight={700} fill="#0f172a">{p.number}</text>
+              <text x={cx} y={cy} textAnchor="middle" fontSize={LOT_NUMBER_FS} fontWeight={700} fill="#0f172a">{p.number}</text>
             </g>
           );
         })}
@@ -1515,14 +1525,13 @@ export function GeneralPlanView() {
           const n = groupUsedBeacons.length;
           if (n > 250) return null;
           const r = n > 150 ? 0.9 : n > 60 ? 1.4 : 2;
-          const labelFS = n > 150 ? 2.5 : n > 60 ? 3.5 : 5;
-          const off = labelFS + 2;
+          const off = EDGE_TEXT_FS + 2;
           return groupUsedBeacons.map((b) => {
             const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
             return (
               <g key={b.id}>
                 <circle cx={bx} cy={by} r={r} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.4, r * 0.35)} />
-                <text x={bx + off} y={by - off / 2} fontSize={labelFS} fill="#334155">{b.id}</text>
+                <text x={bx + off} y={by - off / 2} fontSize={EDGE_TEXT_FS} fill="#334155">{b.id}</text>
               </g>
             );
           });
@@ -1595,17 +1604,16 @@ export function GeneralPlanView() {
           // search keep escalating outward past nearby collisions into
           // empty space well away from the true anchor. Reverted to plain
           // anchored rendering at the real edge midpoint — the font-size
-          // tiering (further reduced here, client req 2026-08-31 "reduce
-          // font size generally") is what actually resolves legibility at
-          // density; decluttering wasn't needed and wasn't safe as wired.
-          const dimFS = sheetDimLabels.length > 150 ? 2.2 : sheetDimLabels.length > 60 ? 3 : 4.5;
-          const dimGap = dimFS + 1.5;
+          // tiering is gone (client req 2026-09-04: a fixed real print size,
+          // see EDGE_TEXT_FS above, now matches the reference sheet at any
+          // density since the plots themselves already shrink with it).
+          const dimGap = EDGE_TEXT_FS + 1.5;
           return sheetDimLabels.map((d) => {
             const lx = t.sx(d.east, d.north), ly = t.sy(d.east, d.north);
             return (
               <g key={d.id} transform={`rotate(${d.angle + rotation} ${lx} ${ly})`}>
-                <text x={lx} y={ly} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
-                <text x={lx} y={ly + dimGap} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.bearing}</text>
+                <text x={lx} y={ly} textAnchor="middle" fontSize={EDGE_TEXT_FS} fill="#334155">{d.distance}</text>
+                <text x={lx} y={ly + dimGap} textAnchor="middle" fontSize={EDGE_TEXT_FS} fill="#334155">{d.bearing}</text>
               </g>
             );
           });
