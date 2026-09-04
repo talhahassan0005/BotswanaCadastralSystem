@@ -35,6 +35,16 @@ const UNITS_PER_MM = W / 1189;
 // documented on the two call-site comments below.)
 const LOT_NUMBER_GROUND_M = 1.8;
 const EDGE_TEXT_GROUND_M = 1.3;
+// Floors under the ground-metre sizing above (client req 2026-09-04, round
+// 3: "itna zoom karne ke baad bi nahi dikh raha text" — a real subdivision
+// spanning a wide geographic area within one sheet can still legitimately
+// need a very small true-scale factor even at a sane, valid plan scale, at
+// which point pure ground-metre proportionality shrinks text toward
+// invisible. These floors keep every label legible no matter how small the
+// sheet's own drawn scale gets, at the cost of exact proportionality only
+// in that extreme case.
+const MIN_LOT_NUMBER_FS = 3;
+const MIN_EDGE_TEXT_FS = 2.2;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -206,7 +216,16 @@ export function GeneralPlanView() {
     gridSpacingM: 50,
     ...(savedGp ?? {}),
   });
-  const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
+  // "Scale 1:" falling to 0 mid-edit (client req 2026-09-04, screenshot:
+  // "SCALE 1:0" — every keystroke commits straight to state, so briefly
+  // clearing the field to retype a new value used to collapse it to 0,
+  // which both showed as "1:0" in the title and, since the drawing renders
+  // at true scale off this same number, silently fell back to fit-to-box —
+  // shrinking the whole drawing, and with it every ground-metre-sized
+  // label, to whatever tiny scale fits this sheet's own full geographic
+  // spread). An empty/invalid keystroke now keeps the last valid scale
+  // instead of zeroing it out.
+  const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || m.scale : v }));
   const setSplayEntry = (i: number, patch: Partial<{ corner: string; distance: string }>) =>
     setMeta((m) => ({ ...m, splayEntries: m.splayEntries.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
   const addSplayEntry = () => setMeta((m) => ({ ...m, splayEntries: [...m.splayEntries, { corner: "", distance: "" }] }));
@@ -1501,7 +1520,7 @@ export function GeneralPlanView() {
           return (
             <g key={p.number}>
               <polygon points={d} fill="none" stroke="#0f172a" strokeWidth={lineW} strokeLinejoin="round" />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={LOT_NUMBER_GROUND_M * t.s} fontWeight={700} fill="#0f172a">{p.number}</text>
+              <text x={cx} y={cy} textAnchor="middle" fontSize={Math.max(MIN_LOT_NUMBER_FS, LOT_NUMBER_GROUND_M * t.s)} fontWeight={700} fill="#0f172a">{p.number}</text>
             </g>
           );
         })}
@@ -1527,7 +1546,7 @@ export function GeneralPlanView() {
           const n = groupUsedBeacons.length;
           if (n > 250) return null;
           const r = n > 150 ? 0.9 : n > 60 ? 1.4 : 2;
-          const cornerFS = EDGE_TEXT_GROUND_M * t.s;
+          const cornerFS = Math.max(MIN_EDGE_TEXT_FS, EDGE_TEXT_GROUND_M * t.s);
           const off = cornerFS + 2;
           return groupUsedBeacons.map((b) => {
             const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
@@ -1609,7 +1628,7 @@ export function GeneralPlanView() {
           // anchored rendering at the real edge midpoint — the font-size
           // tiering is gone — text size now tracks the true plan scale
           // instead (see EDGE_TEXT_GROUND_M above), same as the plots.
-          const dimFS = EDGE_TEXT_GROUND_M * t.s;
+          const dimFS = Math.max(MIN_EDGE_TEXT_FS, EDGE_TEXT_GROUND_M * t.s);
           const dimGap = dimFS + 1.5;
           return sheetDimLabels.map((d) => {
             const lx = t.sx(d.east, d.north), ly = t.sy(d.east, d.north);
