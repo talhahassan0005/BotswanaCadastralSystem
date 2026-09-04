@@ -1285,7 +1285,11 @@ export function GeneralPlanView() {
    *  align" — was right-aligned against each sub-column's own right edge,
    *  which read as a dead gap in the middle of a wide pair). */
   function computeLotColBounds(cols: number) {
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols);
+    // 0.88 (client req 2026-09-05: "reduce little bit the column's width of
+    // the Lot area table") — each column-pair a bit narrower than the full
+    // share of the table width it would otherwise get, leaving a small gap
+    // past the last column instead of stretching edge to edge.
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols) * 0.88;
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
@@ -1894,9 +1898,9 @@ export function GeneralPlanView() {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
                       <g key={b.id}>
-                        <text x={panelX} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
-                        <text x={mapX(745)} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
-                        <text x={mapX(845)} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
+                        <text x={bcCol0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
+                        <text x={bcCol1 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
+                        <text x={bcCol2 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
                       </g>
                     );
                   })}
