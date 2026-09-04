@@ -2252,7 +2252,7 @@ export function GeneralPlanView() {
             {gpZoom !== 1 && (
               <Button variant="ghost" onClick={() => setGpZoom(1)}>Reset zoom</Button>
             )}
-            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom.</span>
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button, then drag, to pan.</span>
           </div>
         )}
         {/* Render all sheets (so refs exist for print-all); show only the active one.
