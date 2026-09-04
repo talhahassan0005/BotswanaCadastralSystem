@@ -215,16 +215,28 @@ export function Diagrams() {
   // When several plots are computed together in one COGO layout (Part 33 —
   // e.g. a subdivision's 100/101/102... sharing boundary points) and the
   // diagram is generated for just one of them, any side of THIS plot that's
-  // also an edge of another plot from that same layout gets Part 24's
-  // dashed-extension-line treatment automatically — no manual drawing
-  // needed, and (unlike Part 24's lines, which have no known neighbour)
-  // labelled with that neighbour's own plot number, since that's known
-  // here. Part 24's manual tool remains the only option for a side that
-  // borders something with no COGO data at all (an unsurveyed neighbour).
-  // `loadedPlotNumber` only resolves when this diagram's lot name matches
-  // an actual saved cogoPlots entry — a Parcels-tab pick or a quick canvas
-  // "Generate Diagram" (neither backed by a numbered, saved plot) correctly
-  // finds nothing here and this whole feature is a no-op for them.
+  // also an edge of another plot from that same layout is labelled with
+  // that neighbour's own plot number, since that's known here — no manual
+  // drawing needed. Part 24's manual tool remains the only option for a
+  // side that borders something with no COGO data at all (an unsurveyed
+  // neighbour). `loadedPlotNumber` only resolves when this diagram's lot
+  // name matches an actual saved cogoPlots entry — a Parcels-tab pick or a
+  // quick canvas "Generate Diagram" (neither backed by a numbered, saved
+  // plot) correctly finds nothing here and this whole feature is a no-op
+  // for them.
+  //
+  // No dashed leader line any more, and the label sits AT A CORNER, not the
+  // side's own midpoint (client req 2026-09-04, reference sheet: "the
+  // correct presentation should be like this. remove dash lines in the
+  // middle" — a screenshot of the real GC document showing each adjoining
+  // parcel's number sitting right beside a beacon, not floating mid-air off
+  // a dashed stub). Reference sheet places each label beside whichever of
+  // the side's two endpoints ALSO touches a side with no neighbour of its
+  // own (i.e. the corner nearest the road/frontage — confirmed against two
+  // labels in that reference: both sat next to the corner shared with the
+  // one side that had no adjoining parcel). Falls back to the side's own
+  // first point when neither or both endpoints qualify (an interior side
+  // with neighbours on every edge, e.g. a fully built-out block).
   const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
   const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
     Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
@@ -237,35 +249,38 @@ export function Diagrams() {
     if (!loadedPlotNumber || points.length < 3) return empty;
     const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
     if (!others.length) return empty;
-    const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
-    const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
-    const anns: ManualAnnotation[] = [];
-    const labels: ManualText[] = [];
-    for (let i = 0; i < points.length; i++) {
-      const a = points[i], b = points[(i + 1) % points.length];
-      const neighbor = others.find((o) =>
+    const n = points.length;
+    const cE = points.reduce((s, p) => s + p.east, 0) / n;
+    const cN = points.reduce((s, p) => s + p.north, 0) / n;
+    const findNeighbor = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+      others.find((o) =>
         o.fig.points.some((oa, j) => {
           const ob = o.fig.points[(j + 1) % o.fig.points.length];
           return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
         })
       );
+    const sideNeighbors = points.map((a, i) => findNeighbor(a, points[(i + 1) % n]));
+    const labels: ManualText[] = [];
+    for (let i = 0; i < n; i++) {
+      const neighbor = sideNeighbors[i];
       if (!neighbor) continue;
-      // A short stub perpendicular to the shared side's midpoint, pointing
-      // outward (away from this plot's own centroid) — same idea as a
-      // surveyor's own hand-drawn extension line (Part 24), just placed
-      // automatically since the geometry is already known here.
-      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+      const a = points[i], b = points[(i + 1) % n];
+      const prevHasNeighbor = !!sideNeighbors[(i - 1 + n) % n];
+      const nextHasNeighbor = !!sideNeighbors[(i + 1) % n];
+      // Prefer whichever endpoint borders a neighbour-less side; `a` when
+      // only the previous side is neighbour-less, `b` when only the next
+      // one is, `a` as the deterministic fallback otherwise.
+      const corner = !prevHasNeighbor && nextHasNeighbor ? a : prevHasNeighbor && !nextHasNeighbor ? b : a;
       const dE = b.east - a.east, dN = b.north - a.north;
       const segLen = Math.hypot(dE, dN) || 1;
       let pE = -dN / segLen, pN = dE / segLen;
+      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
       if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
-      const stub = Math.min(15, Math.max(2, segLen * 0.25));
-      const e2 = mE + pE * stub, n2 = mN + pN * stub;
+      const offset = 2.5; // metres beside the corner — just clears the beacon dot
       const id = `auto-adj-${i}-${neighbor.number}`;
-      anns.push({ id, e1: mE, n1: mN, e2, n2 });
-      labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number });
+      labels.push({ id: `${id}-label`, east: corner.east + pE * offset, north: corner.north + pN * offset, text: neighbor.number });
     }
-    return { annotations: anns, texts: labels };
+    return { annotations: [] as ManualAnnotation[], texts: labels };
   }, [loadedPlotNumber, cogoPlots, points]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
