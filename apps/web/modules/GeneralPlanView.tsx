@@ -1585,14 +1585,26 @@ export function GeneralPlanView() {
         onClick={handleCanvasClick}
       >
         {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld, t.s)}
-        {/* north arrow — shifted right (client req 2026-09-02: "iss arrow ko
+        {/* North arrow — shifted right (client req 2026-09-02: "iss arrow ko
             thora right shift karo... N symbol ko bhi sath karna") since it
-            was overlapping the title's "...TRIBAL AREA" line. */}
-        <g transform={`translate(${FX1 + 15},${FY0 + 16})`}>
-          <line x1={0} y1={12} x2={0} y2={-10} stroke="#0f172a" strokeWidth={1.5} />
-          <polygon points="0,-14 -5,-5 5,-5" fill="#0f172a" />
-          <text x={0} y={26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
-        </g>
+            was overlapping the title's "...TRIBAL AREA" line. Independently
+            click-to-select + draggable + resizable (client req 2026-09-05:
+            "I want to be able to move (select and drag) the north arrow and
+            also resize") — same panelResizable pattern as every other panel
+            element, coordinates baked absolute (rather than the group's own
+            local translate this replaces) so panelResizable's own pivot
+            math anchors correctly on the arrow's own top-left. */}
+        {(() => {
+          const northX = FX1 + 15, northY = FY0 + 16;
+          const northBox = { x: northX - 10, y: northY - 18, w: 20, h: 48 };
+          return panelResizable("northArrow", northBox, (
+            <>
+              <line x1={northX} y1={northY + 12} x2={northX} y2={northY - 10} stroke="#0f172a" strokeWidth={1.5} />
+              <polygon points={`${northX},${northY - 14} ${northX - 5},${northY - 5} ${northX + 5},${northY - 5}`} fill="#0f172a" />
+              <text x={northX} y={northY + 26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
+            </>
+          ));
+        })()}
         {/* parcels — plain black outline, no fill (client req 2026-08-31:
             "colorful ku hai ur simple lines ku nahi" — matching the GC-122
             reference's own monochrome line drawing exactly, not a colour
@@ -1853,20 +1865,31 @@ export function GeneralPlanView() {
               // convention just above, not a new style of its own).
               const bcBoxTop = bcTop + 5;
               const bcHeaderRuleY = bcTop + 49;
-              const bcDiv1 = mapX(730), bcDiv2 = mapX(800);
+              // Column bounds RESET to fractions of the table's own width
+              // (client req 2026-09-05: "reset the columns size of the
+              // block corner table" — the two hand-picked divider positions
+              // from the previous round didn't line up cleanly with the Y/X
+              // value columns' actual text). Point/beacon names are short
+              // ("L1401") so that column gets less width; Y and X hold full
+              // coordinate values and split the rest evenly — same
+              // fraction-of-box-width approach the Lot Areas table's own
+              // computeLotColBounds already uses, not hand-tuned pixels.
+              const bcTotalW = tblR - tblL;
+              const bcCol0 = tblL, bcCol1 = tblL + bcTotalW * 0.22, bcCol2 = tblL + bcTotalW * 0.61;
+              const bcPad = 6;
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
                   <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
                   <rect x={tblL} y={bcBoxTop} width={tblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={bcHeaderRuleY} x2={tblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={bcDiv1} y1={bcBoxTop} x2={bcDiv1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={bcDiv2} y1={bcBoxTop} x2={bcDiv2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={bcCol1} y1={bcBoxTop} x2={bcCol1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={bcCol2} y1={bcBoxTop} x2={bcCol2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcTop + 15} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={mapX(745)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
-                  <text x={mapX(845)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                  <text x={panelX} y={bcTop + 42} fontSize={bcFS} fill="#475569">CONSTANTS</text>
-                  <text x={mapX(745)} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
-                  <text x={mapX(845)} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                  <text x={bcCol0 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
                   {bcShown.map((b, k) => {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
