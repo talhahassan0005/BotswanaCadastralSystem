@@ -155,7 +155,6 @@ export function GeneralPlanView() {
     location: "",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
     gpNo: "",
-    scale: 2000,
     gcNo: "",       // "GC-122" compilation/grid code, small red text top-right
     dsmNo: "",      // "DSM No: 1244/2026"
     srNo: "",       // "SR No: 966/2026", bottom-right of the sheet
@@ -215,6 +214,16 @@ export function GeneralPlanView() {
     // actual round real-world multiples of this value instead.
     gridSpacingM: 50,
     ...(savedGp ?? {}),
+    // Sanitises a scale value already saved from BEFORE the scale-field
+    // fix above (client req 2026-09-04, round 3 — a huge "108" plot-number
+    // label overflowing the whole sheet: the deferred-commit fix stops the
+    // Scale field committing a garbage MID-TYPE value going forward, but a
+    // project saved WHILE it was still showing "SCALE 1:2" keeps loading
+    // that same 2 back in on every open, since it's a perfectly valid
+    // positive number as far as the loader is concerned). No real plan
+    // scale is ever this fine — floors it back to the sane default instead
+    // of trusting a saved value under 1:50.
+    scale: savedGp?.scale && savedGp.scale >= 50 ? savedGp.scale : 2000,
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: v }));
   // "Scale 1:" is edited as its own local text buffer, committed to
@@ -232,7 +241,11 @@ export function GeneralPlanView() {
   useEffect(() => setScaleText(String(meta.scale)), [meta.scale]);
   function commitScale() {
     const n = Number(scaleText);
-    if (Number.isFinite(n) && n > 0) setMeta((m) => ({ ...m, scale: n }));
+    // Same >=50 floor the saved-data sanitiser above uses (client req
+    // 2026-09-04, round 3) — blocks a deliberately-typed absurd value like
+    // "10" from reproducing the giant-text-off-the-page bug live, not just
+    // an already-corrupted saved one.
+    if (Number.isFinite(n) && n >= 50) setMeta((m) => ({ ...m, scale: n }));
     else setScaleText(String(meta.scale));
   }
   const setSplayEntry = (i: number, patch: Partial<{ corner: string; distance: string }>) =>
