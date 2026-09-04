@@ -45,6 +45,16 @@ const EDGE_TEXT_GROUND_M = 1.3;
 // in that extreme case.
 const MIN_LOT_NUMBER_FS = 3;
 const MIN_EDGE_TEXT_FS = 2.2;
+// Section headings (SHEET INDEX / BEACON DESCRIPTION / SPLAY INFORMATION /
+// PED WAY / LOT AREAS / BLOCK CORNER TABLE) a size step above their own
+// body/value text (client req 2026-09-05, screenshot arrowing each one:
+// "Maybe make headings 2m") — same ground-metre-times-true-scale formula,
+// just a bigger ground distance and its own proportionally bigger floor so
+// it doesn't collapse to the SAME floor as the body text it's meant to
+// stand out from once the scale factor gets small enough that floors
+// dominate (the common case at a normal plan scale).
+const PANEL_HEADING_GROUND_M = 2;
+const MIN_PANEL_HEADING_FS = 3.5;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -1002,7 +1012,7 @@ export function GeneralPlanView() {
   // reference sheet's own grid marks carry their real Y/X (east/north)
   // value. 10 -> 16 for the tick length itself.
   const TICK = 16; // grid-tick length (client req 2026-09-01: "increase size of grid marks" — was 10)
-  const GRID_LABEL_FS = 6.5;
+  const GRID_LABEL_FS = 4; // client req 2026-09-05: "6.5 se 4 kardo" — all four edges
   // Grid spacing, clamped to the 3 real choices offered (client req
   // 2026-09-03) — a stray/legacy meta value never breaks the tick math.
   const gridSpacingM = [50, 100, 200].includes(meta.gridSpacingM) ? meta.gridSpacingM : 50;
@@ -1036,9 +1046,13 @@ export function GeneralPlanView() {
         // Client req 2026-09-02 (screenshot, circling the labels): these sit
         // INSIDE the frame, right at the tick, not out in the margin the
         // border itself sits in — `dir` already points that way (the
-        // tick's own INWARD direction into the frame).
-        const lx = horizontal ? t : fixed + dir * 8;
-        const ly = horizontal ? fixed + dir * 8 : t;
+        // tick's own INWARD direction into the frame). Placed just PAST the
+        // tick's own inner end (client req 2026-09-05: "make sure it does
+        // not cross the lines" — sitting at the tick's own midpoint, as
+        // this used to, put the label right on top of the tick stroke
+        // itself since the label also runs inline with it).
+        const lx = horizontal ? t : fixed + dir * (TICK + 4);
+        const ly = horizontal ? fixed + dir * (TICK + 4) : t;
         lines.push(
           // Each label runs in line with its OWN tick stroke (client req
           // 2026-09-04: "i also want them to be inline with the grid line").
@@ -1454,6 +1468,15 @@ export function GeneralPlanView() {
       .filter((p): p is { name: string; east: number; north: number } => !!p.name)
       .map((p) => ({ id: p.name, east: p.east, north: p.north }));
     const t = computeTransform(groupUsedBeacons);
+    // Right-side panel + Lot Areas + Block Corner Table text, all sized the
+    // same as the drawing's own plot numbers (client req 2026-09-05,
+    // screenshot circling the whole panel + both tables: "Make all text
+    // 1.8. and propotional to scalling") — same ground-metre-times-true-
+    // scale formula as LOT_NUMBER_GROUND_M on the drawing itself, so this
+    // text now scales right along with the plots when the plan scale
+    // changes, instead of staying a fixed pixel size regardless of scale.
+    const panelFS = Math.max(MIN_LOT_NUMBER_FS, LOT_NUMBER_GROUND_M * t.s);
+    const panelHeadingFS = Math.max(MIN_PANEL_HEADING_FS, PANEL_HEADING_GROUND_M * t.s);
     const groupSchedule = groupPlots.map((p, i) => ({ p, i }));
     const groupSortedPlots = groupPlots; // layoutGroups are already slices of sortedPlots
     // Lot Areas table sizing — the column count is now the user's picked
@@ -1485,12 +1508,16 @@ export function GeneralPlanView() {
     const lotRowH = rowsPerCol === 0 ? DEFAULT_LOT_ROW_H : Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol));
     const usedLotRows = rowsPerCol;
     const lotColBounds = computeLotColBounds(usedLotCols);
-    // Value font also can't exceed what the (now possibly shrunk) row
-    // height itself has room for, on top of the existing per-column-count
-    // sizing — otherwise a row height squeezed down toward MIN_LOT_ROW_H
-    // would render text taller than its own row, overlapping the next one.
-    const lotFontsRaw = lotFontsFor(usedLotCols);
-    const lotFonts = { ...lotFontsRaw, valueFS: Math.min(lotFontsRaw.valueFS, lotRowH * 0.65) };
+    // Header/value size now comes from panelFS (client req 2026-09-05, "make
+    // all text 1.8 and proportional to scaling") — lotFontsFor still supplies
+    // the per-column-count LABEL TEXT ("LOT No." vs "LOT" etc., abbreviated
+    // once a narrow column has no room for the long form), just not its own
+    // font sizes any more. Value font still can't exceed what the (now
+    // possibly shrunk) row height has room for — otherwise a row height
+    // squeezed down toward MIN_LOT_ROW_H would render text taller than its
+    // own row, overlapping the next one.
+    const lotLabels = lotFontsFor(usedLotCols);
+    const lotFonts = { headerFS: panelFS, valueFS: Math.min(panelFS, lotRowH * 0.65), lotLabel: lotLabels.lotLabel, sqmLabel: lotLabels.sqmLabel };
     const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
@@ -1679,7 +1706,11 @@ export function GeneralPlanView() {
                   key={i}
                   x={panelX}
                   y={section.rowYs[i]}
-                  fontSize={row.heading ? 10 : 8}
+                  // Capped against this row's own fixed line-height (14 for a
+                  // heading row, 12 otherwise — panelSectionLayouts' own
+                  // spacing) so a very fine plan scale can't grow the font
+                  // past what that fixed spacing has room for.
+                  fontSize={row.heading ? Math.min(panelHeadingFS, 14 * 0.65) : Math.min(panelFS, 12 * 0.65)}
                   fontWeight={row.heading ? 700 : 400}
                   fill={row.heading ? "#0f172a" : "#334155"}
                 >
@@ -1710,7 +1741,7 @@ export function GeneralPlanView() {
               const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
               return panelResizable("lotAreas", { x: laX, y: laY, w: laW, h: laH }, (
                 <>
-                  <text x={panelX} y={lotTableTop} fontSize={11} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+                  <text x={panelX} y={lotTableTop} fontSize={panelHeadingFS} fontWeight={700} fill="#0f172a">LOT AREAS</text>
                   <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   {lotColBounds.slice(0, usedLotCols).map((col, c) => (
@@ -1764,22 +1795,30 @@ export function GeneralPlanView() {
               const bcShown = bcSorted;
               const bcBottom = bcTop + 56 + bcShown.length * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
+              // Same panelFS/panelHeadingFS as the rest of the panel (client
+              // req 2026-09-05), each capped against its own fixed line
+              // spacing — BC_ROW_H for the beacon rows, the 15-unit gap to
+              // the next line for the table's own heading — so a very fine
+              // plan scale can't blow either one up past what that fixed
+              // spacing actually has room for.
+              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
+              const bcHeadingFS = Math.min(panelHeadingFS, 15 * 0.65);
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
-                  <text x={panelX} y={bcTop} fontSize={11} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
-                  <text x={panelX} y={bcTop + 15} fontSize={9} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={mapX(745)} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">Y</text>
-                  <text x={mapX(845)} y={bcTop + 28} fontSize={9} fontWeight={600} fill="#475569">X</text>
-                  <text x={panelX} y={bcTop + 42} fontSize={8} fill="#475569">CONSTANTS</text>
-                  <text x={mapX(745)} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
-                  <text x={mapX(845)} y={bcTop + 42} fontSize={8} fill="#475569">+0,00</text>
+                  <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+                  <text x={panelX} y={bcTop + 15} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={mapX(745)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                  <text x={mapX(845)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                  <text x={panelX} y={bcTop + 42} fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                  <text x={mapX(745)} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={mapX(845)} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
                   {bcShown.map((b, k) => {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
                       <g key={b.id}>
-                        <text x={panelX} y={y} fontSize={8.5} fill="#0f172a">{b.id}</text>
-                        <text x={mapX(745)} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.east)}</text>
-                        <text x={mapX(845)} y={y} fontSize={8.5} fill="#0f172a">{fmtCoord(b.north)}</text>
+                        <text x={panelX} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
+                        <text x={mapX(745)} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
+                        <text x={mapX(845)} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
                       </g>
                     );
                   })}
