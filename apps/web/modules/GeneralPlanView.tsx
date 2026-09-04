@@ -1054,24 +1054,26 @@ export function GeneralPlanView() {
       const x2 = horizontal ? t : fixed + out, y2 = horizontal ? fixed + out : t;
       lines.push(<line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f172a" strokeWidth={1} />);
       if (labelText != null) {
-        // Vertical edges (left/right): the tick is HORIZONTAL at y=t, so
-        // the label sits on a DIFFERENT axis entirely — offset a fixed gap
-        // ABOVE it (client req 2026-09-05, reference screenshot: "ye dekho
-        // sample hai kese line ke uper hai ur responsive bi hai" — sharing
-        // no axis with the tick is what actually guarantees no crossing at
-        // any label length, unlike every previous round's fix, which kept
-        // trying to widen the gap along the SAME line the tick occupies).
-        // x sits just past the border, near the tick's own start, not past
-        // its far tip. Horizontal edges (top/bottom) keep the previous
-        // round's fix — rotated, anchored so length can't re-cross the
-        // tick's own far end (client req 2026-09-04/09-05 for the "inline
-        // with the tick" + no-crossing behaviour there).
+        // Same fix, both axes (client req 2026-09-05: "top ur bottom walao
+        // ko bi karo" — extended the left/right fix above to top/bottom
+        // too). The label sits on a DIFFERENT axis entirely from its own
+        // tick — offset a fixed gap to the side of it, rather than further
+        // along the same line the tick occupies — which is what actually
+        // guarantees no crossing at any label length, since the two no
+        // longer share a coordinate axis to cross on. The other coordinate
+        // stays near the tick's own start (just past the border), running
+        // in the tick's own inward direction, not past its far tip.
+        // Vertical edges (left/right): tick is HORIZONTAL at y=t, so the
+        // label's own perpendicular offset is in y (sits above the tick).
+        // Horizontal edges (top/bottom): tick is VERTICAL at x=t, rotated
+        // labels (client req 2026-09-04, "inline with the grid line"), so
+        // the perpendicular offset is in x instead (sits beside the tick).
         const GRID_LABEL_GAP = 6;
         let lx: number, ly: number, anchor: "start" | "end";
         if (horizontal) {
-          lx = t;
-          ly = fixed + dir * (TICK + 2);
-          anchor = dir < 0 ? "start" : "end";
+          lx = t - GRID_LABEL_GAP;
+          ly = fixed + dir * 4;
+          anchor = dir > 0 ? "end" : "start";
         } else {
           lx = fixed + dir * 4;
           ly = t - GRID_LABEL_GAP;
