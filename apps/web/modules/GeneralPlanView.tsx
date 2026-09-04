@@ -1806,6 +1806,15 @@ export function GeneralPlanView() {
                       {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 16, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
                       <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
                       {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
+                      {/* Row dividers (client req 2026-09-05: "block corner
+                          table ur lot Area table dono ke rows ke divider
+                          nahi hain?? fix karo") — one between each pair of
+                          consecutive rows, at the midpoint of their two
+                          baselines. */}
+                      {Array.from({ length: Math.max(0, Math.min(rowsPerCol, groupSortedPlots.length - c * rowsPerCol) - 1) }).map((_, ri) => {
+                        const ly = lotTableTop + 30 + (ri + 0.5) * lotRowH;
+                        return <line key={`rd${ri}`} x1={col.left} y1={ly} x2={col.right} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
+                      })}
                       {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
                         const y = lotTableTop + 30 + k * lotRowH;
                         return (
@@ -1878,14 +1887,19 @@ export function GeneralPlanView() {
               // coordinate values and split the rest evenly — same
               // fraction-of-box-width approach the Lot Areas table's own
               // computeLotColBounds already uses, not hand-tuned pixels.
-              const bcTotalW = tblR - tblL;
+              // Table width halved (client req 2026-09-05: "block corner
+              // table ke columns ki width half kardo") — bcTblR replaces
+              // tblR as this table's own right edge everywhere below,
+              // leaving the Lot Areas table above it untouched.
+              const bcTblR = tblL + (tblR - tblL) * 0.5;
+              const bcTotalW = bcTblR - tblL;
               const bcCol0 = tblL, bcCol1 = tblL + bcTotalW * 0.22, bcCol2 = tblL + bcTotalW * 0.61;
               const bcPad = 6;
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
                   <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
-                  <rect x={tblL} y={bcBoxTop} width={tblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={tblL} y1={bcHeaderRuleY} x2={tblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                  <rect x={tblL} y={bcBoxTop} width={bcTblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={bcCol1} y1={bcBoxTop} x2={bcCol1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={bcCol2} y1={bcBoxTop} x2={bcCol2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcTop + 15} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
@@ -1894,6 +1908,15 @@ export function GeneralPlanView() {
                   <text x={bcCol0 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">CONSTANTS</text>
                   <text x={bcCol1 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
                   <text x={bcCol2 + bcPad} y={bcTop + 42} fontSize={bcFS} fill="#475569">+0,00</text>
+                  {/* Row dividers (client req 2026-09-05: "block corner
+                      table ur lot Area table dono ke rows ke divider nahi
+                      hain?? fix karo") — one between each pair of
+                      consecutive beacon rows, at the midpoint of their two
+                      baselines. */}
+                  {bcShown.slice(1).map((b, ri) => {
+                    const ly = bcTop + 56 + (ri + 0.5) * BC_ROW_H;
+                    return <line key={`rd-${b.id}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
+                  })}
                   {bcShown.map((b, k) => {
                     const y = bcTop + 56 + k * BC_ROW_H;
                     return (
