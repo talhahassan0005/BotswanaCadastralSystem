@@ -938,12 +938,12 @@ export function GeneralPlanView() {
     if (sheetMode === "general") {
       text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 9);
       text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
-      text(regX + 6, regY + 24, `DSM No: ${meta.dsmNo || "—"}`, 9.5);
-      text(regX + 6, regY + 100, "Surveyed in", 8);
-      text(regX + regW - 6, regY + 100, meta.surveyedIn || "—", 8, "end");
-      text(regX + 6, regY + 114, "By me", 8);
-      text(regX + regW - 6, regY + 138, meta.surveyor || "—", 8, "end");
-      text(regX + regW - 6, regY + 150, "Land Surveyor", 7, "end");
+      text(regX + 6 * regScale, regY + 24 * regScale, `DSM No: ${meta.dsmNo || "—"}`, 9.5 * regScale);
+      text(regX + 6 * regScale, regY + 100 * regScale, "Surveyed in", 8 * regScale);
+      text(regX + regW - 6 * regScale, regY + 100 * regScale, meta.surveyedIn || "—", 8 * regScale, "end");
+      text(regX + 6 * regScale, regY + 114 * regScale, "By me", 8 * regScale);
+      text(regX + regW - 6 * regScale, regY + 138 * regScale, meta.surveyor || "—", 8 * regScale, "end");
+      text(regX + regW - 6 * regScale, regY + 150 * regScale, "Land Surveyor", 7 * regScale, "end");
     }
     text(mapX(W - 20), mapY(H - 16), `SR No: ${meta.srNo || "—"}`, 9, "end");
 
@@ -1117,14 +1117,19 @@ export function GeneralPlanView() {
   // the box entirely, onto one line directly above it (same redline: "move
   // GC number" / "move sheet numbering" — the reference has both above the
   // box, not GC above and Sheet No as the box's own first row).
-  // Grown from 145 (client req 2026-09-02: "the surveyor must sign there...
-  // move [the name] and Land Surveyor a bit down to create space" — the
-  // printed name sat directly on the same line as "By me" with no room for
-  // an actual pen signature between them, unlike the "Approved"/"Director"
-  // pair above, which already had a real blank gap for exactly this
-  // reason). Taller than the earlier "true 10cm square" redline now that a
-  // signature needs its own room; still square-ish, not stretched thin.
-  const regSize = 164;
+  // Grew to 164 for a while (client req 2026-09-02: "the surveyor must sign
+  // there... move [the name] and Land Surveyor a bit down to create space")
+  // — the printed name sat directly on the same line as "By me" with no
+  // room for an actual pen signature between them. Client req 2026-09-05
+  // put a ruler on it and re-drew the exact 10cm-by-10cm redline this box
+  // started from: "make sure its 10cm by 10 cm". True size now, via the
+  // same UNITS_PER_CM conversion the frame margins use — regScale below
+  // shrinks the box's own internal row spacing/font sizes by the same
+  // ratio this is smaller than the old 164, so the layout (including the
+  // 2026-09-02 signature gap) stays proportionally the same, just smaller,
+  // instead of overflowing the now-smaller box.
+  const regSize = 10 * UNITS_PER_CM;
+  const regScale = regSize / 164;
   const regX = FRAME_R - regSize, regY = FRAME_Y;
   const regW = regSize;
 
@@ -1429,13 +1434,13 @@ export function GeneralPlanView() {
               left with its value right-aligned on the same row, and "Land
               Surveyor" sits alone on the row under the surveyor's name. */}
           <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-          <text x={regX + 6} y={regY + 24} fontSize={9.5} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
-          <line x1={regX} y1={regY + 30} x2={regX + regW} y2={regY + 30} stroke="#0f172a" strokeWidth={0.4} />
-          <text x={regX + 6} y={regY + 46} fontSize={8.5} fontWeight={700} fill="#0f172a">Approved</text>
-          <text x={regX + 6} y={regY + 76} fontSize={7.5} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
-          <line x1={regX} y1={regY + 86} x2={regX + regW} y2={regY + 86} stroke="#0f172a" strokeWidth={0.4} />
-          <text x={regX + 6} y={regY + 100} fontSize={8} fontWeight={700} fill="#0f172a">Surveyed in</text>
-          <text x={regX + regW - 6} y={regY + 100} textAnchor="end" fontSize={8} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
+          <text x={regX + 6 * regScale} y={regY + 24 * regScale} fontSize={9.5 * regScale} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+          <line x1={regX} y1={regY + 30 * regScale} x2={regX + regW} y2={regY + 30 * regScale} stroke="#0f172a" strokeWidth={0.4} />
+          <text x={regX + 6 * regScale} y={regY + 46 * regScale} fontSize={8.5 * regScale} fontWeight={700} fill="#0f172a">Approved</text>
+          <text x={regX + 6 * regScale} y={regY + 76 * regScale} fontSize={7.5 * regScale} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
+          <line x1={regX} y1={regY + 86 * regScale} x2={regX + regW} y2={regY + 86 * regScale} stroke="#0f172a" strokeWidth={0.4} />
+          <text x={regX + 6 * regScale} y={regY + 100 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">Surveyed in</text>
+          <text x={regX + regW - 6 * regScale} y={regY + 100 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
           {/* "By me" own row, then a real blank gap before the printed name —
               same convention as the Approved/Director gap above — for the
               surveyor's actual pen signature (client req 2026-09-02,
@@ -1443,9 +1448,9 @@ export function GeneralPlanView() {
               and Land Surveyor a bit down to create space"). Was
               cramming the name onto the same line as "By me" with no room
               to sign at all. */}
-          <text x={regX + 6} y={regY + 114} fontSize={8} fontWeight={700} fill="#0f172a">By me</text>
-          <text x={regX + regW - 6} y={regY + 138} textAnchor="end" fontSize={8} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-          <text x={regX + regW - 6} y={regY + 150} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+          <text x={regX + 6 * regScale} y={regY + 114 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">By me</text>
+          <text x={regX + regW - 6 * regScale} y={regY + 138 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+          <text x={regX + regW - 6 * regScale} y={regY + 150 * regScale} textAnchor="end" fontSize={7 * regScale} fontWeight={700} fill="#0f172a">Land Surveyor</text>
         </>
       )}
 
