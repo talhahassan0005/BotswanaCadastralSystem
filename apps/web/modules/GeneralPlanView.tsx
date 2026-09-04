@@ -1054,50 +1054,30 @@ export function GeneralPlanView() {
       const x2 = horizontal ? t : fixed + out, y2 = horizontal ? fixed + out : t;
       lines.push(<line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0f172a" strokeWidth={1} />);
       if (labelText != null) {
-        // Client req 2026-09-02 (screenshot, circling the labels): these sit
-        // INSIDE the frame, right at the tick, not out in the margin the
-        // border itself sits in — `dir` already points that way (the
-        // tick's own INWARD direction into the frame). Placed past the
-        // tick's own inner end (client req 2026-09-05: "make sure it does
-        // not cross the lines"), with extra clearance (client req
-        // 2026-09-05 follow-up, screenshot: "ur labels ko responsive
-        // karo" — the label is CENTERED on this offset point, so a longer
-        // string like "Y+93300" extends backward past a small offset and
-        // crosses the tick stroke again even though its own anchor point
-        // doesn't; TICK+8 gives enough room for that back half at any
-        // real coordinate's digit count, not just short ones).
-        // Anchored so the text only ever grows AWAY from the tick, never
-        // back across it, at any label length (client req 2026-09-05,
-        // screenshot: "inko line ke uper rakho ur responsive bi" — the
-        // previous fix used textAnchor="middle" on a fixed offset point,
-        // which cleared the tick for short labels but let a longer one's
-        // own back half re-cross it; anchoring the near edge at the offset
-        // point instead means length can never push any part of the text
-        // back toward the tick, so a fixed small gap now works for any
-        // length). Under rotate(-90 lx ly) (used for top/bottom, whose
-        // ticks are vertical), textAnchor "start" extends the pre-rotation
-        // text in +x, which maps to -y (up) after rotation, and "end" (-x)
-        // maps to +y (down) — the opposite of their un-rotated meaning —
-        // so which anchor points "away from the tick" flips between the
-        // rotated and un-rotated cases even though `dir`'s own sign
-        // doesn't.
-        const lx = horizontal ? t : fixed + dir * (TICK + 2);
-        const ly = horizontal ? fixed + dir * (TICK + 2) : t;
-        const awayIsPositive = horizontal ? dir < 0 : dir > 0;
-        const anchor = awayIsPositive ? "start" : "end";
+        // Vertical edges (left/right): the tick is HORIZONTAL at y=t, so
+        // the label sits on a DIFFERENT axis entirely — offset a fixed gap
+        // ABOVE it (client req 2026-09-05, reference screenshot: "ye dekho
+        // sample hai kese line ke uper hai ur responsive bi hai" — sharing
+        // no axis with the tick is what actually guarantees no crossing at
+        // any label length, unlike every previous round's fix, which kept
+        // trying to widen the gap along the SAME line the tick occupies).
+        // x sits just past the border, near the tick's own start, not past
+        // its far tip. Horizontal edges (top/bottom) keep the previous
+        // round's fix — rotated, anchored so length can't re-cross the
+        // tick's own far end (client req 2026-09-04/09-05 for the "inline
+        // with the tick" + no-crossing behaviour there).
+        const GRID_LABEL_GAP = 6;
+        let lx: number, ly: number, anchor: "start" | "end";
+        if (horizontal) {
+          lx = t;
+          ly = fixed + dir * (TICK + 2);
+          anchor = dir < 0 ? "start" : "end";
+        } else {
+          lx = fixed + dir * 4;
+          ly = t - GRID_LABEL_GAP;
+          anchor = dir > 0 ? "start" : "end";
+        }
         lines.push(
-          // Each label runs in line with its OWN tick stroke (client req
-          // 2026-09-04: "i also want them to be inline with the grid line").
-          // Top/bottom ticks are vertical (jutting up/down into the frame),
-          // so their labels rotate -90 to run vertically alongside them —
-          // that part shipped correctly. Left/right ticks are HORIZONTAL
-          // (jutting left/right into the frame); an earlier round rotated
-          // those labels too "to match the top/bottom convention", which
-          // actually made them run perpendicular to their own tick instead
-          // of inline with it (client req 2026-09-04 follow-up: "top ur
-          // bottom walay lables tu inline ho gae hain ab right ut left
-          // walay lebles bi tu karo na" — left/right were the ones still
-          // wrong, not top/bottom). Only horizontal-edge labels rotate.
           <text
             key={`l${key}`}
             x={lx} y={ly}
