@@ -19,20 +19,22 @@ const H = 707; // A4 landscape ratio
 // 1189mm of actual paper width. Used to draw at a true chosen plan scale
 // (client req 2026-09-02) instead of always fitting the box.
 const UNITS_PER_MM = W / 1189;
-// Real printed text sizes for the main drawing itself (client req 2026-09-04,
-// reference screenshot + an exact spec table: "Lot-number font ~2.2mm
-// (bold)" / "Edge-length / bearing / corner text font ~1.8mm (regular)" —
-// "Text information should not be too big. you see the relationship between
-// the plots and the text"). Previously these three tiered their font size
-// off how many plots/labels were on the sheet, growing on sparse sheets and
-// shrinking on dense ones — but a plot's ON-PAPER size already shrinks with
-// density too (this sheet renders at a true chosen scale, client req
-// 2026-09-02), so density-tiered text drifted out of proportion with the
-// plots themselves at both ends. A FIXED real-world size, like the
-// reference sheet actually uses, stays in proportion no matter how dense
-// the layout is.
-const LOT_NUMBER_FS = 2.2 * UNITS_PER_MM;
-const EDGE_TEXT_FS = 1.8 * UNITS_PER_MM;
+// Main-drawing text sized as a GROUND distance, drawn through the same true
+// plan-scale factor (`t.s`, from computeTransform) the plots themselves are
+// drawn through — client req 2026-09-04 (round 2): a fixed print-mm size
+// (the first attempt, keyed to UNITS_PER_MM alone) stayed the same absolute
+// size no matter what plan scale (meta.scale) was chosen, so it looked
+// right at one scale and oversized/undersized at any other: "I think the
+// text should be propossional to the polygon. ones i change scale, text
+// should also change scale with polygons." Multiplying a ground-metre
+// constant by `t.s` keeps text at a CONSTANT proportion to the plots'
+// own drawn size at every scale, the same way the plots' own edges do —
+// `fontSize(scale) = GROUND_M * t.s(scale)`, exactly how `t.sx`/`t.sy`
+// convert a ground distance into this sheet's SVG units for the geometry
+// itself. (The earlier, since-superseded density tiering this replaced is
+// documented on the two call-site comments below.)
+const LOT_NUMBER_GROUND_M = 1.8;
+const EDGE_TEXT_GROUND_M = 1.3;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -414,7 +416,7 @@ export function GeneralPlanView() {
       return { east: (x - ox) / s + minX, north: minY + (FY1 - oyOff - y) / s };
     };
     const bounds = { minX, maxX, minY, maxY };
-    return { sx, sy, screenToWorld, bounds };
+    return { sx, sy, screenToWorld, bounds, s };
   }
   /** Sheet currently on screen, clamped to a valid layout-sheet index —
    *  drives which sheet's own transform the interaction handlers (click to
@@ -1499,7 +1501,7 @@ export function GeneralPlanView() {
           return (
             <g key={p.number}>
               <polygon points={d} fill="none" stroke="#0f172a" strokeWidth={lineW} strokeLinejoin="round" />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={LOT_NUMBER_FS} fontWeight={700} fill="#0f172a">{p.number}</text>
+              <text x={cx} y={cy} textAnchor="middle" fontSize={LOT_NUMBER_GROUND_M * t.s} fontWeight={700} fill="#0f172a">{p.number}</text>
             </g>
           );
         })}
@@ -1525,13 +1527,14 @@ export function GeneralPlanView() {
           const n = groupUsedBeacons.length;
           if (n > 250) return null;
           const r = n > 150 ? 0.9 : n > 60 ? 1.4 : 2;
-          const off = EDGE_TEXT_FS + 2;
+          const cornerFS = EDGE_TEXT_GROUND_M * t.s;
+          const off = cornerFS + 2;
           return groupUsedBeacons.map((b) => {
             const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
             return (
               <g key={b.id}>
                 <circle cx={bx} cy={by} r={r} fill="white" stroke="#0f172a" strokeWidth={Math.max(0.4, r * 0.35)} />
-                <text x={bx + off} y={by - off / 2} fontSize={EDGE_TEXT_FS} fill="#334155">{b.id}</text>
+                <text x={bx + off} y={by - off / 2} fontSize={cornerFS} fill="#334155">{b.id}</text>
               </g>
             );
           });
@@ -1604,16 +1607,16 @@ export function GeneralPlanView() {
           // search keep escalating outward past nearby collisions into
           // empty space well away from the true anchor. Reverted to plain
           // anchored rendering at the real edge midpoint — the font-size
-          // tiering is gone (client req 2026-09-04: a fixed real print size,
-          // see EDGE_TEXT_FS above, now matches the reference sheet at any
-          // density since the plots themselves already shrink with it).
-          const dimGap = EDGE_TEXT_FS + 1.5;
+          // tiering is gone — text size now tracks the true plan scale
+          // instead (see EDGE_TEXT_GROUND_M above), same as the plots.
+          const dimFS = EDGE_TEXT_GROUND_M * t.s;
+          const dimGap = dimFS + 1.5;
           return sheetDimLabels.map((d) => {
             const lx = t.sx(d.east, d.north), ly = t.sy(d.east, d.north);
             return (
               <g key={d.id} transform={`rotate(${d.angle + rotation} ${lx} ${ly})`}>
-                <text x={lx} y={ly} textAnchor="middle" fontSize={EDGE_TEXT_FS} fill="#334155">{d.distance}</text>
-                <text x={lx} y={ly + dimGap} textAnchor="middle" fontSize={EDGE_TEXT_FS} fill="#334155">{d.bearing}</text>
+                <text x={lx} y={ly} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.distance}</text>
+                <text x={lx} y={ly + dimGap} textAnchor="middle" fontSize={dimFS} fill="#334155">{d.bearing}</text>
               </g>
             );
           });
