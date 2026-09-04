@@ -128,6 +128,7 @@ export function Input({
   placeholder,
   type = "text",
   onFocus,
+  onBlur,
   onKeyDown,
 }: {
   value: string | number;
@@ -135,6 +136,7 @@ export function Input({
   placeholder?: string;
   type?: string;
   onFocus?: () => void;
+  onBlur?: () => void;
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
 }) {
   const [reveal, setReveal] = useState(false);
@@ -147,6 +149,7 @@ export function Input({
         value={value}
         placeholder={placeholder}
         onFocus={onFocus}
+        onBlur={onBlur}
         onKeyDown={onKeyDown}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${

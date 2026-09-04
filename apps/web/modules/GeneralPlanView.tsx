@@ -216,16 +216,25 @@ export function GeneralPlanView() {
     gridSpacingM: 50,
     ...(savedGp ?? {}),
   });
-  // "Scale 1:" falling to 0 mid-edit (client req 2026-09-04, screenshot:
-  // "SCALE 1:0" — every keystroke commits straight to state, so briefly
-  // clearing the field to retype a new value used to collapse it to 0,
-  // which both showed as "1:0" in the title and, since the drawing renders
-  // at true scale off this same number, silently fell back to fit-to-box —
-  // shrinking the whole drawing, and with it every ground-metre-sized
-  // label, to whatever tiny scale fits this sheet's own full geographic
-  // spread). An empty/invalid keystroke now keeps the last valid scale
-  // instead of zeroing it out.
-  const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || m.scale : v }));
+  const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: v }));
+  // "Scale 1:" is edited as its own local text buffer, committed to
+  // meta.scale only on blur/Enter (client req 2026-09-04, ROUND 2 — the
+  // first fix only stopped an EMPTY field collapsing to 0; a fully
+  // controlled numeric input committing every keystroke straight into
+  // meta.scale is the deeper problem, since the drawing renders at TRUE
+  // scale off that same live number: typing "2000" digit by digit
+  // transiently renders at 1:2, then 1:20, then 1:200, each one a
+  // wildly wrong scale that can leave every plot far outside the visible
+  // frame — exactly the "SCALE 1:2" / empty-looking sheet in the client's
+  // follow-up screenshot, "still pots nahi dikh rahay"). Deferring the
+  // commit means only a finished, deliberate value ever drives a render.
+  const [scaleText, setScaleText] = useState(String(meta.scale));
+  useEffect(() => setScaleText(String(meta.scale)), [meta.scale]);
+  function commitScale() {
+    const n = Number(scaleText);
+    if (Number.isFinite(n) && n > 0) setMeta((m) => ({ ...m, scale: n }));
+    else setScaleText(String(meta.scale));
+  }
   const setSplayEntry = (i: number, patch: Partial<{ corner: string; distance: string }>) =>
     setMeta((m) => ({ ...m, splayEntries: m.splayEntries.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
   const addSplayEntry = () => setMeta((m) => ({ ...m, splayEntries: [...m.splayEntries, { corner: "", distance: "" }] }));
@@ -1902,7 +1911,15 @@ export function GeneralPlanView() {
           <Field label="Location"><Input value={meta.location} onChange={set("location")} placeholder="e.g. Mogoditshane" /></Field>
           <Field label="Surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
           <Field label="G.P. No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
-          <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+          <Field label="Scale 1:">
+            <Input
+              type="number"
+              value={scaleText}
+              onChange={setScaleText}
+              onBlur={commitScale}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            />
+          </Field>
           <Field label="GC No. (compilation code)"><Input value={meta.gcNo} onChange={set("gcNo")} placeholder="e.g. 122" /></Field>
           <Field label="DSM No."><Input value={meta.dsmNo} onChange={set("dsmNo")} placeholder="e.g. 1244/2026" /></Field>
           <Field label="SR No."><Input value={meta.srNo} onChange={set("srNo")} placeholder="e.g. 966/2026" /></Field>
