@@ -215,25 +215,24 @@ export function Diagrams() {
   // When several plots are computed together in one COGO layout (Part 33 —
   // e.g. a subdivision's 100/101/102... sharing boundary points) and the
   // diagram is generated for just one of them, any side of THIS plot that's
-  // also an edge of another plot from that same layout gets Part 24's
-  // dashed-extension-line treatment automatically — no manual drawing
-  // needed, and (unlike Part 24's lines, which have no known neighbour)
-  // labelled with that neighbour's own plot number, since that's known
-  // here. Part 24's manual tool remains the only option for a side that
-  // borders something with no COGO data at all (an unsurveyed neighbour).
-  // `loadedPlotNumber` only resolves when this diagram's lot name matches
-  // an actual saved cogoPlots entry — a Parcels-tab pick or a quick canvas
-  // "Generate Diagram" (neither backed by a numbered, saved plot) correctly
-  // finds nothing here and this whole feature is a no-op for them.
+  // also an edge of another plot from that same layout is labelled with
+  // that neighbour's own plot number automatically, since that's known
+  // here. Part 24's manual tool (below) is the only option for a side that
+  // borders something with no COGO data at all (an unsurveyed neighbour) —
+  // and, since Part 33's client req 2026-09-04 round, the only one with a
+  // dashed leader at all (see its own comment). `loadedPlotNumber` only
+  // resolves when this diagram's lot name matches an actual saved
+  // cogoPlots entry — a Parcels-tab pick or a quick canvas "Generate
+  // Diagram" (neither backed by a numbered, saved plot) correctly finds
+  // nothing here and this whole feature is a no-op for them.
   //
-  // Reverted 2026-09-04: a previous round removed this stub/dash entirely
-  // and moved the label to a corner instead, reading an earlier ambiguous
-  // reference as "no dash at all" — client corrected that with a fresh
-  // screenshot, marked up in red over the SAME reference sheet, explicitly
-  // showing a dashed connector from a small X on the shared side out to
-  // each neighbour's number ("ye jo red lines client ne lagae hain na iss
-  // tarah honi chahiye ... tumne tu dotted lines hi remove kardi"). Restored
-  // the original midpoint + dashed-stub placement this replaced.
+  // No dashed leader line for THIS auto-detected case (client req
+  // 2026-09-04, pointing at this exact rendered example: "inn dottedt
+  // lines ko remove kardo" — distinct from Part 24's manual tool below,
+  // which the client separately confirmed (a different, red-marked-up
+  // screenshot) SHOULD keep its dash). The label still sits at the same
+  // small outward offset from the shared side's midpoint it always has —
+  // only the connecting line itself is gone.
   const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
   const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
     Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
@@ -248,7 +247,6 @@ export function Diagrams() {
     if (!others.length) return empty;
     const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
     const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
-    const anns: ManualAnnotation[] = [];
     const labels: ManualText[] = [];
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
@@ -259,10 +257,8 @@ export function Diagrams() {
         })
       );
       if (!neighbor) continue;
-      // A short stub perpendicular to the shared side's midpoint, pointing
-      // outward (away from this plot's own centroid) — same idea as a
-      // surveyor's own hand-drawn extension line (Part 24), just placed
-      // automatically since the geometry is already known here.
+      // Same outward-offset placement as before — just no line connecting
+      // it back to the boundary any more.
       const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
       const dE = b.east - a.east, dN = b.north - a.north;
       const segLen = Math.hypot(dE, dN) || 1;
@@ -271,10 +267,9 @@ export function Diagrams() {
       const stub = Math.min(15, Math.max(2, segLen * 0.25));
       const e2 = mE + pE * stub, n2 = mN + pN * stub;
       const id = `auto-adj-${i}-${neighbor.number}`;
-      anns.push({ id, e1: mE, n1: mN, e2, n2 });
       labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number });
     }
-    return { annotations: anns, texts: labels };
+    return { annotations: [] as ManualAnnotation[], texts: labels };
   }, [loadedPlotNumber, cogoPlots, points]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
