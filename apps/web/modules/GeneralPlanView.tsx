@@ -55,6 +55,17 @@ const MIN_EDGE_TEXT_FS = 2.2;
 // dominate (the common case at a normal plan scale).
 const PANEL_HEADING_GROUND_M = 2;
 const MIN_PANEL_HEADING_FS = 3.5;
+// Title heading/subheading (client req 2026-09-05: "General Plan= make 13,
+// All other information under =make 10 (By Default.) They will change
+// propositionally with Scale" — replacing the previous fixed 19/11/10
+// sizes, none of which tracked plan scale at all, only the user's own
+// manual title +/- resize). Same ground-metre-floor pattern as the panel
+// text above; the ground-metre side only matters at a very fine plan
+// scale, same as everywhere else it's used.
+const MIN_TITLE_FS = 13;
+const TITLE_GROUND_M = 8;
+const MIN_SUBTITLE_FS = 10;
+const SUBTITLE_GROUND_M = 6;
 
 /** One numbered plot's boundary, resolved from `cogoPlots` for drawing. */
 interface GpBeacon { id: string; east: number; north: number }
@@ -922,16 +933,16 @@ export function GeneralPlanView() {
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
-    text(W / 2, TITLE_Y1, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, 19, "middle");
-    text(W / 2, TITLE_OF_Y, "OF", 11, "middle");
+    text(W / 2, TITLE_Y1, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, MIN_TITLE_FS, "middle");
+    text(W / 2, TITLE_OF_Y, "OF", MIN_SUBTITLE_FS, "middle");
     text(
       W / 2, TITLE_LINE2_Y,
       lotRangeText
         ? `LOTS ${lotRangeText} ${meta.name}`
         : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}${meta.location ? ` — ${meta.location}` : ""}`,
-      11, "middle"
+      MIN_SUBTITLE_FS, "middle"
     );
-    extraTitleLines.forEach((ln, i) => text(W / 2, TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H, ln, 10, "middle"));
+    extraTitleLines.forEach((ln, i) => text(W / 2, TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H, ln, MIN_SUBTITLE_FS, "middle"));
     // Registration box (GC-No/SHEET-No/DSM-No/Surveyed-in/By-me/Land-Surveyor)
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
@@ -1315,7 +1326,12 @@ export function GeneralPlanView() {
   // exactly those two edges: "increase size of grid marks and add
   // labels") — bottom/right stay plain ticks, since a bottom-edge label
   // near the sheet's own right end would collide with "SR No" there.
-  const titleBlock = (no: number, label: string, worldAt?: (px: number, py: number) => { east: number; north: number }) => (
+  const titleBlock = (
+    no: number,
+    label: string,
+    worldAt?: (px: number, py: number) => { east: number; north: number },
+    scaleFactor?: number
+  ) => (
     <>
       {/* Grid tick marks along the border, projecting INWARD into the frame
           (client req 2026-08-28: "check grid marks on frame", then "Grids
@@ -1350,6 +1366,14 @@ export function GeneralPlanView() {
           sake"), same offset pattern as WorkingPlan.tsx's own title block. */}
       {(() => {
         const ts = meta.titleOffset.scale ?? 1;
+        // Base sizes proportional to plan scale (client req 2026-09-05:
+        // "General Plan= make 13, All other information under =make 10
+        // (By Default.) They will change propositionally with Scale"),
+        // with the user's own manual title +/- (ts) still composing on top
+        // — same two-layer pattern the registration box uses (regScale for
+        // the base size, panelResizable's own scale for on-demand zoom).
+        const titleFS = Math.max(MIN_TITLE_FS, TITLE_GROUND_M * (scaleFactor ?? 0)) * ts;
+        const subtitleFS = Math.max(MIN_SUBTITLE_FS, SUBTITLE_GROUND_M * (scaleFactor ?? 0)) * ts;
         const tBoxTop = mapY(18), tBoxBottom = TITLE_LINE2_Y + 8 + extraTitleLines.length * TITLE_EXTRA_LINE_H, tBoxHalfW = 200;
         // "LOTS 14183-14608 CHARLESHILL" once plots are numbered — layout
         // name sits on THIS line, next to the lot range (client req
@@ -1373,17 +1397,17 @@ export function GeneralPlanView() {
                 2026-09-01 redline: "move Of to be under General Plan"),
                 matching the GC-122/WP_CH reference exactly instead of
                 running "GENERAL PLAN OF {name}" together on one line. */}
-            <text x={W / 2} y={TITLE_Y1} textAnchor="middle" fontSize={19 * ts} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
+            <text x={W / 2} y={TITLE_Y1} textAnchor="middle" fontSize={titleFS} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
               {sheetMode === "working" ? "WORKING PLAN" : "GENERAL PLAN"}
             </text>
-            <text x={W / 2} y={TITLE_OF_Y} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+            <text x={W / 2} y={TITLE_OF_Y} textAnchor="middle" fontSize={subtitleFS} fill={titleSelected ? "#dc2626" : "#334155"}>
               OF
             </text>
-            <text x={W / 2} y={TITLE_LINE2_Y} textAnchor="middle" fontSize={11 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+            <text x={W / 2} y={TITLE_LINE2_Y} textAnchor="middle" fontSize={subtitleFS} fill={titleSelected ? "#dc2626" : "#334155"}>
               {line2}
             </text>
             {extraTitleLines.map((ln, i) => (
-              <text key={i} x={W / 2} y={TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H} textAnchor="middle" fontSize={10 * ts} fill={titleSelected ? "#dc2626" : "#334155"}>
+              <text key={i} x={W / 2} y={TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H} textAnchor="middle" fontSize={subtitleFS} fill={titleSelected ? "#dc2626" : "#334155"}>
                 {ln}
               </text>
             ))}
@@ -1560,7 +1584,7 @@ export function GeneralPlanView() {
         style={{ border: "1px solid #cbd5e1", overflow: "visible", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
         onClick={handleCanvasClick}
       >
-        {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld)}
+        {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld, t.s)}
         {/* north arrow — shifted right (client req 2026-09-02: "iss arrow ko
             thora right shift karo... N symbol ko bhi sath karna") since it
             was overlapping the title's "...TRIBAL AREA" line. */}
