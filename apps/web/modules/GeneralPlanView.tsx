@@ -947,8 +947,8 @@ export function GeneralPlanView() {
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
     if (sheetMode === "general") {
-      text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 9);
-      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 9, "end");
+      text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 7);
+      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 7, "end");
       text(regX + 6 * regScale, regY + 24 * regScale, `DSM No: ${meta.dsmNo || "—"}`, 9.5 * regScale);
       text(regX + 6 * regScale, regY + 100 * regScale, "Surveyed in", 8 * regScale);
       text(regX + regW - 6 * regScale, regY + 100 * regScale, meta.surveyedIn || "—", 8 * regScale, "end");
@@ -1455,8 +1455,8 @@ export function GeneralPlanView() {
               it (client req 2026-08-31 redline: "move GC number" / "move sheet
               numbering" — the box itself now starts with DSM No, not a Sheet No
               row). */}
-          <text x={regX} y={mapY(18)} fontSize={9} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={9} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
+          <text x={regX} y={mapY(18)} fontSize={7} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
           {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
               screenshot circling this whole box): no "G.P. No." row here (that
               field stays editable for other diagrams' own cross-reference, just
