@@ -214,6 +214,13 @@ export function WorkingPlanView() {
     setPlotNumberError(null);
     setPlotNumbers(cogoPlots.map((p) => p.number));
   }
+  // "Also add the button 'delete all'" (client req 2026-09-04) — clearing a
+  // sheet loaded via "Load all N lots" one × at a time wasn't realistic
+  // either, same reasoning as loadAllPlots itself above.
+  function clearPlots() {
+    setPlotNumberError(null);
+    setPlotNumbers([]);
+  }
 
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
@@ -570,6 +577,9 @@ export function WorkingPlanView() {
               />
               <Button onClick={addPlot}>Add plot</Button>
               <Button variant="ghost" onClick={loadAllPlots}>Load all {cogoPlots.length} lots</Button>
+              {plotNumbers.length > 0 && (
+                <Button variant="ghost" onClick={clearPlots}>Delete all</Button>
+              )}
             </div>
             {plotNumberError && <p className="mt-1 text-xs text-red-600">{plotNumberError}</p>}
             {plotNumbers.length > 0 && (
