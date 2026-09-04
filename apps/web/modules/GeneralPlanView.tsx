@@ -1240,7 +1240,7 @@ export function GeneralPlanView() {
   const rightColTop = lotTableTop + 34;
   const rightColBottom = FY1 + 20;
   const rightColH = Math.max(0, rightColBottom - rightColTop);
-  const BC_ROW_H = 13;
+  const BC_ROW_H = 9; // client req 2026-09-05: "reduce spacing... make them close like that" (13 -> 9)
   // What the Block Corner Table would need if every beacon were listed,
   // clamped to at most half the column so the Lot Areas table above always
   // keeps usable room no matter how many beacons the layout produces.
@@ -1255,7 +1255,7 @@ export function GeneralPlanView() {
   // to reserve here now, not room for either line's own text).
   const LOT_FOOTER_H = 12;
   const availableLotH = Math.max(0, rightColH - bcReserve - LOT_FOOTER_H);
-  const DEFAULT_LOT_ROW_H = 14, MIN_LOT_ROW_H = 6;
+  const DEFAULT_LOT_ROW_H = 10, MIN_LOT_ROW_H = 6; // client req 2026-09-05: "reduce table and spacing" (14 -> 10, matching the Block Corner Table's own just-tightened row spacing)
   // How many "LOT No. | SQ. METRES" column-pairs (client req 2026-09-02:
   // "for tables i think the user should choose whether they want 1/2/3/4
   // columns" — was always fixed at 2, or 1 when everything fit in one).
@@ -1844,9 +1844,23 @@ export function GeneralPlanView() {
               // spacing actually has room for.
               const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
               const bcHeadingFS = Math.min(panelHeadingFS, 15 * 0.65);
+              // Actual bordered grid (client req 2026-09-05, reference
+              // screenshot of the real GC document's own tightly-ruled
+              // block corner page: "isko table ki form main hi rakhna
+              // hai... bus lines wagaira add karna ur space reduce karna
+              // rows ur columns ki ur kuch nahi karna" — matches the Lot
+              // Areas table's own outer-rect + column-divider + header-rule
+              // convention just above, not a new style of its own).
+              const bcBoxTop = bcTop + 5;
+              const bcHeaderRuleY = bcTop + 49;
+              const bcDiv1 = mapX(730), bcDiv2 = mapX(800);
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
                   <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+                  <rect x={tblL} y={bcBoxTop} width={tblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={bcHeaderRuleY} x2={tblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={bcDiv1} y1={bcBoxTop} x2={bcDiv1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={bcDiv2} y1={bcBoxTop} x2={bcDiv2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcTop + 15} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
                   <text x={mapX(745)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
                   <text x={mapX(845)} y={bcTop + 28} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
