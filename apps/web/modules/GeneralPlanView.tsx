@@ -1023,7 +1023,7 @@ export function GeneralPlanView() {
   // reference sheet's own grid marks carry their real Y/X (east/north)
   // value. 10 -> 16 for the tick length itself.
   const TICK = 16; // grid-tick length (client req 2026-09-01: "increase size of grid marks" — was 10)
-  const GRID_LABEL_FS = 4; // client req 2026-09-05: "6.5 se 4 kardo" — all four edges
+  const GRID_LABEL_FS = 3; // client req 2026-09-05: "lines ka font kam karo" (4 -> 3)
   // Grid spacing, clamped to the 3 real choices offered (client req
   // 2026-09-03) — a stray/legacy meta value never breaks the tick math.
   const gridSpacingM = [50, 100, 200].includes(meta.gridSpacingM) ? meta.gridSpacingM : 50;
@@ -1057,13 +1057,17 @@ export function GeneralPlanView() {
         // Client req 2026-09-02 (screenshot, circling the labels): these sit
         // INSIDE the frame, right at the tick, not out in the margin the
         // border itself sits in — `dir` already points that way (the
-        // tick's own INWARD direction into the frame). Placed just PAST the
+        // tick's own INWARD direction into the frame). Placed past the
         // tick's own inner end (client req 2026-09-05: "make sure it does
-        // not cross the lines" — sitting at the tick's own midpoint, as
-        // this used to, put the label right on top of the tick stroke
-        // itself since the label also runs inline with it).
-        const lx = horizontal ? t : fixed + dir * (TICK + 4);
-        const ly = horizontal ? fixed + dir * (TICK + 4) : t;
+        // not cross the lines"), with extra clearance (client req
+        // 2026-09-05 follow-up, screenshot: "ur labels ko responsive
+        // karo" — the label is CENTERED on this offset point, so a longer
+        // string like "Y+93300" extends backward past a small offset and
+        // crosses the tick stroke again even though its own anchor point
+        // doesn't; TICK+8 gives enough room for that back half at any
+        // real coordinate's digit count, not just short ones).
+        const lx = horizontal ? t : fixed + dir * (TICK + 8);
+        const ly = horizontal ? fixed + dir * (TICK + 8) : t;
         lines.push(
           // Each label runs in line with its OWN tick stroke (client req
           // 2026-09-04: "i also want them to be inline with the grid line").
@@ -1651,7 +1655,14 @@ export function GeneralPlanView() {
         {(() => {
           const n = groupUsedBeacons.length;
           if (n > 250) return null;
-          const r = n > 150 ? 0.9 : n > 60 ? 1.4 : 2;
+          // Base (low-density) radius set to 1.3333 — diameter 2.6667
+          // (client req 2026-09-05: "recheck block corner diameter",
+          // confirming the Radius/Diameter values sent earlier). The
+          // medium/dense tiers scale down by the same ratio as before
+          // (0.7x / 0.45x) rather than keeping their old absolute values,
+          // so density-based shrinking still behaves the same relative to
+          // this new base.
+          const r = n > 150 ? 0.6 : n > 60 ? 0.9333 : 1.3333;
           const cornerFS = Math.max(MIN_EDGE_TEXT_FS, EDGE_TEXT_GROUND_M * t.s);
           const off = cornerFS + 2;
           return groupUsedBeacons.map((b) => {
