@@ -1289,7 +1289,7 @@ export function GeneralPlanView() {
     // the Lot area table") — each column-pair a bit narrower than the full
     // share of the table width it would otherwise get, leaving a small gap
     // past the last column instead of stretching edge to edge.
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols) * 0.88;
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols) * 0.7; // client req 2026-09-05: "ur reduce karo" (0.88 -> 0.7)
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
@@ -1891,7 +1891,7 @@ export function GeneralPlanView() {
               // table ke columns ki width half kardo") — bcTblR replaces
               // tblR as this table's own right edge everywhere below,
               // leaving the Lot Areas table above it untouched.
-              const bcTblR = tblL + (tblR - tblL) * 0.5;
+              const bcTblR = tblL + (tblR - tblL) * 0.35; // client req 2026-09-05: "ur reduce karo" (0.5 -> 0.35)
               const bcTotalW = bcTblR - tblL;
               const bcCol0 = tblL, bcCol1 = tblL + bcTotalW * 0.22, bcCol2 = tblL + bcTotalW * 0.61;
               const bcPad = 6;
