@@ -1433,24 +1433,36 @@ export function GeneralPlanView() {
               actual signature; "Surveyed in"/"By me" each pair a label on the
               left with its value right-aligned on the same row, and "Land
               Surveyor" sits alone on the row under the surveyor's name. */}
-          <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
-          <text x={regX + 6 * regScale} y={regY + 24 * regScale} fontSize={9.5 * regScale} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
-          <line x1={regX} y1={regY + 30 * regScale} x2={regX + regW} y2={regY + 30 * regScale} stroke="#0f172a" strokeWidth={0.4} />
-          <text x={regX + 6 * regScale} y={regY + 46 * regScale} fontSize={8.5 * regScale} fontWeight={700} fill="#0f172a">Approved</text>
-          <text x={regX + 6 * regScale} y={regY + 76 * regScale} fontSize={7.5 * regScale} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
-          <line x1={regX} y1={regY + 86 * regScale} x2={regX + regW} y2={regY + 86 * regScale} stroke="#0f172a" strokeWidth={0.4} />
-          <text x={regX + 6 * regScale} y={regY + 100 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">Surveyed in</text>
-          <text x={regX + regW - 6 * regScale} y={regY + 100 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
-          {/* "By me" own row, then a real blank gap before the printed name —
-              same convention as the Approved/Director gap above — for the
-              surveyor's actual pen signature (client req 2026-09-02,
-              screenshot: "the surveyor must sign there... move [the name]
-              and Land Surveyor a bit down to create space"). Was
-              cramming the name onto the same line as "By me" with no room
-              to sign at all. */}
-          <text x={regX + 6 * regScale} y={regY + 114 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">By me</text>
-          <text x={regX + regW - 6 * regScale} y={regY + 138 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
-          <text x={regX + regW - 6 * regScale} y={regY + 150 * regScale} textAnchor="end" fontSize={7 * regScale} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+          {/* Independently click-to-select + resize, same pattern as the
+              6 right-panel sections (client req 2026-09-05: "i also like
+              that feature... he want that feature for zoom in and zoom
+              out when he click on that" — asked, of the options offered,
+              specifically for this registration box). panelResizable's own
+              scale composes with regScale above — regScale keeps the box
+              at a true 10cm by default, this adds an on-demand +/- on top
+              of that once the client clicks it. */}
+          {panelResizable("registrationBox", { x: regX, y: regY, w: regW, h: regSize }, (
+            <>
+              <rect x={regX} y={regY} width={regW} height={regSize} fill="none" stroke="#0f172a" strokeWidth={0.6} />
+              <text x={regX + 6 * regScale} y={regY + 24 * regScale} fontSize={9.5 * regScale} fontWeight={700} fill="#0f172a">DSM No: {meta.dsmNo || "—"}</text>
+              <line x1={regX} y1={regY + 30 * regScale} x2={regX + regW} y2={regY + 30 * regScale} stroke="#0f172a" strokeWidth={0.4} />
+              <text x={regX + 6 * regScale} y={regY + 46 * regScale} fontSize={8.5 * regScale} fontWeight={700} fill="#0f172a">Approved</text>
+              <text x={regX + 6 * regScale} y={regY + 76 * regScale} fontSize={7.5 * regScale} fontWeight={700} fill="#0f172a">Director of Surveys and Mapping</text>
+              <line x1={regX} y1={regY + 86 * regScale} x2={regX + regW} y2={regY + 86 * regScale} stroke="#0f172a" strokeWidth={0.4} />
+              <text x={regX + 6 * regScale} y={regY + 100 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">Surveyed in</text>
+              <text x={regX + regW - 6 * regScale} y={regY + 100 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={700} fill="#0f172a">{meta.surveyedIn || "—"}</text>
+              {/* "By me" own row, then a real blank gap before the printed name —
+                  same convention as the Approved/Director gap above — for the
+                  surveyor's actual pen signature (client req 2026-09-02,
+                  screenshot: "the surveyor must sign there... move [the name]
+                  and Land Surveyor a bit down to create space"). Was
+                  cramming the name onto the same line as "By me" with no room
+                  to sign at all. */}
+              <text x={regX + 6 * regScale} y={regY + 114 * regScale} fontSize={8 * regScale} fontWeight={700} fill="#0f172a">By me</text>
+              <text x={regX + regW - 6 * regScale} y={regY + 138 * regScale} textAnchor="end" fontSize={8 * regScale} fontWeight={600} fill="#0f172a">{meta.surveyor || "—"}</text>
+              <text x={regX + regW - 6 * regScale} y={regY + 150 * regScale} textAnchor="end" fontSize={7 * regScale} fontWeight={700} fill="#0f172a">Land Surveyor</text>
+            </>
+          ))}
         </>
       )}
 
