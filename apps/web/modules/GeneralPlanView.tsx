@@ -1066,8 +1066,25 @@ export function GeneralPlanView() {
         // crosses the tick stroke again even though its own anchor point
         // doesn't; TICK+8 gives enough room for that back half at any
         // real coordinate's digit count, not just short ones).
-        const lx = horizontal ? t : fixed + dir * (TICK + 8);
-        const ly = horizontal ? fixed + dir * (TICK + 8) : t;
+        // Anchored so the text only ever grows AWAY from the tick, never
+        // back across it, at any label length (client req 2026-09-05,
+        // screenshot: "inko line ke uper rakho ur responsive bi" — the
+        // previous fix used textAnchor="middle" on a fixed offset point,
+        // which cleared the tick for short labels but let a longer one's
+        // own back half re-cross it; anchoring the near edge at the offset
+        // point instead means length can never push any part of the text
+        // back toward the tick, so a fixed small gap now works for any
+        // length). Under rotate(-90 lx ly) (used for top/bottom, whose
+        // ticks are vertical), textAnchor "start" extends the pre-rotation
+        // text in +x, which maps to -y (up) after rotation, and "end" (-x)
+        // maps to +y (down) — the opposite of their un-rotated meaning —
+        // so which anchor points "away from the tick" flips between the
+        // rotated and un-rotated cases even though `dir`'s own sign
+        // doesn't.
+        const lx = horizontal ? t : fixed + dir * (TICK + 2);
+        const ly = horizontal ? fixed + dir * (TICK + 2) : t;
+        const awayIsPositive = horizontal ? dir < 0 : dir > 0;
+        const anchor = awayIsPositive ? "start" : "end";
         lines.push(
           // Each label runs in line with its OWN tick stroke (client req
           // 2026-09-04: "i also want them to be inline with the grid line").
@@ -1085,7 +1102,7 @@ export function GeneralPlanView() {
             key={`l${key}`}
             x={lx} y={ly}
             fontSize={GRID_LABEL_FS}
-            textAnchor="middle"
+            textAnchor={anchor}
             fill="#475569"
             transform={horizontal ? `rotate(-90 ${lx} ${ly})` : undefined}
           >
