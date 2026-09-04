@@ -315,6 +315,15 @@ export function Diagrams() {
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
+  // Set only between an extension line's 2nd click and the number prompt
+  // that follows it being confirmed/cancelled (client req 2026-09-04:
+  // "Add as many of these per edge as needed... each with its own typed
+  // number" — Draw Extension Line already let you click anywhere on any
+  // side, unlimited times; it just never asked for the neighbour's number
+  // the way Part 37's auto-detected labels do). Reuses the same textPrompt
+  // UI the free-text tool already has, positioned at the line's own end
+  // point, rather than building a second prompt component.
+  const [pendingAnnotationLine, setPendingAnnotationLine] = useState<{ e1: number; n1: number; e2: number; n2: number } | null>(null);
   const [draggingText, setDraggingText] = useState<{
     id: string;
     startSvg: { x: number; y: number };
@@ -378,14 +387,18 @@ export function Diagrams() {
       setPendingPoint(p);
       return;
     }
-    // No label — these lines only mark that a side borders a neighbouring
-    // plot (client req 2026-08-23), they don't need to name which one.
+    // Line first, then prompt for the neighbouring lot's number at the end
+    // point (client req 2026-09-04) — Add with the field left blank still
+    // commits a plain unlabelled boundary mark, the original behaviour this
+    // replaces (client req 2026-08-23: "these lines only mark that a side
+    // borders a neighbouring plot, they don't need to name which one").
     // Stored as real survey coordinates, not the raw pixel click (client
     // req 2026-08-25) — see transformRef's comment above.
     const t = transformRef.current;
     const start = t ? t.toWorld(pendingPoint.x, pendingPoint.y) : { east: 0, north: 0 };
     const end = t ? t.toWorld(p.x, p.y) : { east: 0, north: 0 };
-    setAnnotations((arr) => [...arr, { id: `ann-${Date.now()}`, e1: start.east, n1: start.north, e2: end.east, n2: end.north }]);
+    setPendingAnnotationLine({ e1: start.east, n1: start.north, e2: end.east, n2: end.north });
+    setTextPrompt({ id: null, x: p.x, y: p.y, value: "", angle: 0 });
     setPendingPoint(null);
     setDrawingAnnotation(false);
   }
@@ -413,6 +426,20 @@ export function Diagrams() {
   function commitTextPrompt() {
     if (!textPrompt) return;
     const value = textPrompt.value.trim();
+    if (pendingAnnotationLine) {
+      // Extension line just drawn (client req 2026-09-04) — commit it, with
+      // a paired number label only if one was typed. Matching ids
+      // (`adj-<ts>` / `adj-<ts>-label`) are how delete/drag keep the two in
+      // sync elsewhere (deleteSelectedAnnotation/deleteSelectedText,
+      // syncPairedLabel).
+      const id = `adj-${Date.now()}`;
+      const { e1, n1, e2, n2 } = pendingAnnotationLine;
+      setAnnotations((arr) => [...arr, { id, e1, n1, e2, n2 }]);
+      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value }]);
+      setPendingAnnotationLine(null);
+      setTextPrompt(null);
+      return;
+    }
     if (value) {
       const w = transformRef.current?.toWorld(textPrompt.x, textPrompt.y) ?? { east: 0, north: 0 };
       const angle = normalizeDeg(textPrompt.angle) || undefined;
@@ -424,8 +451,24 @@ export function Diagrams() {
     }
     setTextPrompt(null);
   }
+  // Keeps a labelled extension line's number glued to its leader's end
+  // point through move/stretch/rotate (client req 2026-09-04) — called
+  // anywhere an annotation's own e2/n2 changes; a no-op when that
+  // annotation has no paired label (setTexts' map just finds nothing).
+  function syncPairedLabel(annotationId: string, east: number, north: number) {
+    const labelId = `${annotationId}-label`;
+    setTexts((arr) => arr.map((tt) => (tt.id === labelId ? { ...tt, east, north } : tt)));
+  }
   function deleteSelectedText() {
     if (!selectedTextId) return;
+    // A number typed onto an extension line (client req 2026-09-04) is
+    // paired 1:1 with its line via id (`adj-<ts>` / `adj-<ts>-label`) —
+    // deleting either half removes both, so nothing orphaned is left
+    // behind (a stray line with no number, or a number with no line).
+    if (selectedTextId.startsWith("adj-") && selectedTextId.endsWith("-label")) {
+      const annotationId = selectedTextId.slice(0, -"-label".length);
+      setAnnotations((arr) => arr.filter((a) => a.id !== annotationId));
+    }
     setTexts((arr) => arr.filter((tt) => tt.id !== selectedTextId));
     setSelectedTextId(null);
   }
@@ -440,6 +483,8 @@ export function Diagrams() {
   }
   function deleteSelectedAnnotation() {
     if (!selectedAnnotationId) return;
+    // See deleteSelectedText's own comment — same pairing, other direction.
+    setTexts((arr) => arr.filter((tt) => tt.id !== `${selectedAnnotationId}-label`));
     setAnnotations((arr) => arr.filter((a) => a.id !== selectedAnnotationId));
     setSelectedAnnotationId(null);
   }
@@ -487,6 +532,7 @@ export function Diagrams() {
       const w1 = t.toWorld(orig.x1 + dx, orig.y1 + dy);
       const w2 = t.toWorld(orig.x2 + dx, orig.y2 + dy);
       setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, e1: w1.east, n1: w1.north, e2: w2.east, n2: w2.north } : a)));
+      syncPairedLabel(id, w2.east, w2.north);
       return;
     }
     const isStart = handle === "start";
@@ -511,6 +557,7 @@ export function Diagrams() {
     }
     const w = t.toWorld(nx, ny);
     setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
+    if (!isStart) syncPairedLabel(id, w.east, w.north);
     setDraggingAnnotation((g) => (g ? { ...g, lengthText: lengthMm.toFixed(1), angleText: formatDms(angleDeg) } : g));
   }
   function handleCanvasMouseUp() {
@@ -541,12 +588,14 @@ export function Diagrams() {
     const ny = pivot.y - lengthMm * ANN_MM * Math.cos(rad);
     const w = t.toWorld(nx, ny);
     setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
+    if (!isStart) syncPairedLabel(id, w.east, w.north);
     setDraggingAnnotation(null);
   }
   function cancelAnnotationDrag() {
     if (!draggingAnnotation) return;
     const { origWorld, id } = draggingAnnotation;
     setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, ...origWorld } : a)));
+    syncPairedLabel(id, origWorld.e2, origWorld.n2);
     setDraggingAnnotation(null);
   }
   function cancelTextDrag() {
@@ -565,7 +614,7 @@ export function Diagrams() {
       e.preventDefault();
       if (draggingAnnotation) cancelAnnotationDrag();
       else if (draggingText) cancelTextDrag();
-      else if (textPrompt) setTextPrompt(null);
+      else if (textPrompt) { setTextPrompt(null); setPendingAnnotationLine(null); }
       else if (addingText) setAddingText(false);
     }
     window.addEventListener("keydown", onKey);
@@ -1315,12 +1364,14 @@ export function Diagrams() {
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
                     These dashed extension lines are added by hand, the same way a surveyor marks them up on
-                    paper — there's no survey data to compute them from. They just mark that a side borders a
-                    neighbouring plot, with no label. Click "Draw Extension Line" below, then click two points
-                    directly on the preview to draw one. Click an existing line to select it — drag the line
-                    itself to move it, drag an end-handle to stretch that end (hold Shift to rotate the whole
-                    line around the other end instead), type an exact length/angle while dragging, or press
-                    Delete to remove it. Esc cancels a drag in progress.
+                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
+                    click two points directly on the preview — any side, as many as you need along one edge — and
+                    type the neighbouring lot's number when prompted (leave it blank for an unlabelled mark).
+                    Click an existing line to select it — drag the line itself to move it (its number moves with
+                    it), drag an end-handle to stretch that end (hold Shift to rotate the whole line around the
+                    other end instead), type an exact length/angle while dragging, or press Delete to remove it
+                    (removes its number too). Click a number directly to select and delete just that. Esc cancels
+                    a drag in progress, or a line's number prompt (discarding that line too).
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1499,30 +1550,41 @@ export function Diagrams() {
                 style={{ left: p.x + 12, top: p.y + 12 }}
               >
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="font-semibold text-brand-dark">{textPrompt.id ? "Edit Text" : "Add Text"}</span>
-                  <button type="button" onClick={() => setTextPrompt(null)} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                  <span className="font-semibold text-brand-dark">
+                    {pendingAnnotationLine ? "Neighbouring lot no." : textPrompt.id ? "Edit Text" : "Add Text"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setTextPrompt(null); setPendingAnnotationLine(null); }}
+                    className="text-slate-400 hover:text-slate-700"
+                    aria-label="Cancel"
+                  >
+                    ✕
+                  </button>
                 </div>
                 <input
                   autoFocus
                   value={textPrompt.value}
                   onChange={(e) => setTextPrompt((g) => (g ? { ...g, value: e.target.value } : g))}
-                  onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
-                  placeholder="Note text…"
+                  onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") { setTextPrompt(null); setPendingAnnotationLine(null); } }}
+                  placeholder={pendingAnnotationLine ? "e.g. 107 (optional)" : "Note text…"}
                   className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1"
                 />
-                <label className="mb-1.5 flex items-center gap-1.5">
-                  <span className="text-slate-500">Angle</span>
-                  <input
-                    type="number"
-                    value={textPrompt.angle}
-                    onChange={(e) => setTextPrompt((g) => (g ? { ...g, angle: Number(e.target.value) || 0 } : g))}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
-                    className="w-16 rounded border border-slate-200 px-1.5 py-1"
-                  />
-                  <span className="text-slate-400">degrees, clockwise</span>
-                </label>
+                {!pendingAnnotationLine && (
+                  <label className="mb-1.5 flex items-center gap-1.5">
+                    <span className="text-slate-500">Angle</span>
+                    <input
+                      type="number"
+                      value={textPrompt.angle}
+                      onChange={(e) => setTextPrompt((g) => (g ? { ...g, angle: Number(e.target.value) || 0 } : g))}
+                      onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
+                      className="w-16 rounded border border-slate-200 px-1.5 py-1"
+                    />
+                    <span className="text-slate-400">degrees, clockwise</span>
+                  </label>
+                )}
                 <button type="button" onClick={commitTextPrompt} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">
-                  {textPrompt.id ? "Save" : "Add"}
+                  {pendingAnnotationLine ? "Add" : textPrompt.id ? "Save" : "Add"}
                 </button>
               </div>
             );
