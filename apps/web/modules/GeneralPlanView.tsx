@@ -1217,7 +1217,7 @@ export function GeneralPlanView() {
   ];
   let panelCursorY = panelTop;
   const panelSectionLayouts = panelSections.map((section, si) => {
-    if (si > 0) panelCursorY += 6;
+    if (si > 0) panelCursorY += 3; // client req 2026-09-05: "inke daramayan space ur reduce karo" (6 -> 3)
     const rowYs = section.rows.map((row) => {
       const y = panelCursorY;
       // Heading's own line-height reduced (client req 2026-09-05,
