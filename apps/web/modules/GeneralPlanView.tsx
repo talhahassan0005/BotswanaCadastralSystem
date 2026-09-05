@@ -1913,10 +1913,18 @@ export function GeneralPlanView() {
               // Areas table's own outer-rect + column-divider + header-rule
               // convention just above, not a new style of its own).
               const bcBoxTop = bcTop + 5;
+              // Header block shrunk further (client req 2026-09-05: "ye jo
+              // heading diver hai isko thora uper karo na takay heading
+              // walai jo row hai iski height kam ho jae ur x,y ur ye jo
+              // heading hai inke darmayan space kam karo" — the rule moved
+              // up closer to CONSTANTS, and the SYSTEM-to-Y/X gap tightened
+              // from a full BC_ROW_H to 6). First data row (bcFirstRowOffset
+              // below) is untouched, so this only affects the header's own
+              // height, not the row rhythm below it.
               const bcSystemY = bcTop + BC_ROW_H;
-              const bcYXY = bcTop + BC_ROW_H * 2;
-              const bcConstY = bcTop + BC_ROW_H * 3;
-              const bcHeaderRuleY = bcTop + BC_ROW_H * 3.5;
+              const bcYXY = bcSystemY + 6;
+              const bcConstY = bcYXY + 6;
+              const bcHeaderRuleY = bcConstY + 3;
               // Column bounds RESET to fractions of the table's own width
               // (client req 2026-09-05: "reset the columns size of the
               // block corner table" — the two hand-picked divider positions
@@ -1944,9 +1952,9 @@ export function GeneralPlanView() {
                   <text x={panelX} y={bcSystemY} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
                   <text x={bcCol1 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
                   <text x={bcCol2 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                  <text x={bcCol0 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">CONSTANTS</text>
-                  <text x={bcCol1 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
-                  <text x={bcCol2 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol0 + bcPad} y={bcConstY} fontSize={bcFS} fill="#01070f">CONSTANTS</text>
+                  <text x={bcCol1 + bcPad} y={bcConstY} fontSize={bcFS} fill="#030911">+0,00</text>
+                  <text x={bcCol2 + bcPad} y={bcConstY} fontSize={bcFS} fill="#01050a">+0,00</text>
                   {/* Row dividers (client req 2026-09-05: "block corner
                       table ur lot Area table dono ke rows ke divider nahi
                       hain?? fix karo") — one between each pair of
