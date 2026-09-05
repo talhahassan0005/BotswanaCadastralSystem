@@ -1288,11 +1288,17 @@ export function GeneralPlanView() {
    *  align" — was right-aligned against each sub-column's own right edge,
    *  which read as a dead gap in the middle of a wide pair). */
   function computeLotColBounds(cols: number) {
-    // 0.88 (client req 2026-09-05: "reduce little bit the column's width of
-    // the Lot area table") — each column-pair a bit narrower than the full
-    // share of the table width it would otherwise get, leaving a small gap
-    // past the last column instead of stretching edge to edge.
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / cols) * 0.7; // client req 2026-09-05: "ur reduce karo" (0.88 -> 0.7)
+    // Each column-pair's own width no longer grows just because fewer
+    // columns were picked (client req 2026-09-05, two screenshots: "jab
+    // option 2 per click karta hon tu inki width ziadah hoti hai ur jab 4
+    // per karta hon tu width theak hoti hai" — width used to be the full
+    // table width split among `cols` pairs, so 2 columns each got roughly
+    // twice the width 4 columns did). Width is now computed as if there
+    // were always at least 4 pairs sharing the table's width, so picking
+    // 1-3 columns keeps each pair the same size 4 columns already gets
+    // right — it just uses fewer of them (and a narrower total table),
+    // not wider ones.
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.7;
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
