@@ -1839,11 +1839,11 @@ export function GeneralPlanView() {
                           consecutive rows, at the midpoint of their two
                           baselines. */}
                       {Array.from({ length: Math.max(0, Math.min(rowsPerCol, groupSortedPlots.length - c * rowsPerCol) - 1) }).map((_, ri) => {
-                        const ly = lotTableTop + 30 + (ri + 0.5) * lotRowH;
+                        const ly = lotTableTop + 22 + (ri + 0.5) * lotRowH;
                         return <line key={`rd${ri}`} x1={col.left} y1={ly} x2={col.right} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
                       })}
                       {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
-                        const y = lotTableTop + 30 + k * lotRowH;
+                        const y = lotTableTop + 22 + k * lotRowH;
                         return (
                           <g key={p.number}>
                             <text x={col.lotColL} y={y} textAnchor="start" fontSize={lotFonts.valueFS} fill="#0f172a">{p.number || "(none)"}</text>
@@ -1904,7 +1904,14 @@ export function GeneralPlanView() {
               // Areas table's own outer-rect + column-divider + header-rule
               // convention just above, not a new style of its own).
               const bcBoxTop = bcTop + 5;
-              const bcHeaderRuleY = bcTop + 28; // client req 2026-09-05: "muje nahi lag raha kam hui hai" — reduced much further (35 -> 28)
+              // Moved back up, closer to CONSTANTS above it rather than the
+              // first data row below (client req 2026-09-05: "ye jo black
+              // devider hai na heading row ka isko uper karo takay first
+              // row heading main na aye" — the previous round's aggressive
+              // compression left too little clearance between this rule
+              // and the first beacon row, so the row visually crowded into
+              // the header block beneath it).
+              const bcHeaderRuleY = bcTop + 24;
               // Column bounds RESET to fractions of the table's own width
               // (client req 2026-09-05: "reset the columns size of the
               // block corner table" — the two hand-picked divider positions
@@ -1930,22 +1937,22 @@ export function GeneralPlanView() {
                   <line x1={bcCol1} y1={bcBoxTop} x2={bcCol1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={bcCol2} y1={bcBoxTop} x2={bcCol2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcTop + 9} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={bcCol1 + bcPad} y={bcTop + 16} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
-                  <text x={bcCol2 + bcPad} y={bcTop + 16} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                  <text x={bcCol0 + bcPad} y={bcTop + 23} fontSize={bcFS} fill="#475569">CONSTANTS</text>
-                  <text x={bcCol1 + bcPad} y={bcTop + 23} fontSize={bcFS} fill="#475569">+0,00</text>
-                  <text x={bcCol2 + bcPad} y={bcTop + 23} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 12} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 12} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                  <text x={bcCol0 + bcPad} y={bcTop + 12} fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 12} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 12} fontSize={bcFS} fill="#475569">+0,00</text>
                   {/* Row dividers (client req 2026-09-05: "block corner
                       table ur lot Area table dono ke rows ke divider nahi
                       hain?? fix karo") — one between each pair of
                       consecutive beacon rows, at the midpoint of their two
                       baselines. */}
                   {bcShown.slice(1).map((b, ri) => {
-                    const ly = bcTop + 33 + (ri + 0.5) * BC_ROW_H;
+                    const ly = bcTop + 22 + (ri + 0.5) * BC_ROW_H;
                     return <line key={`rd-${b.id}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
                   })}
                   {bcShown.map((b, k) => {
-                    const y = bcTop + 33 + k * BC_ROW_H;
+                    const y = bcTop + 22 + k * BC_ROW_H;
                     return (
                       <g key={b.id}>
                         <text x={bcCol0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
