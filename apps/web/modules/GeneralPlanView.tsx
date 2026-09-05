@@ -344,7 +344,7 @@ export function GeneralPlanView() {
   // line, not a separate caption under the drawing) — always shown, unlike
   // the three lines above which only appear once their field is filled in.
   extraTitleLines.push(`SCALE 1:${meta.scale.toLocaleString()}`);
-  const TITLE_EXTRA_LINE_H = 13;
+  const TITLE_EXTRA_LINE_H = 10; // client req 2026-09-05: "inke darmayan bi space reduce karo" (13 -> 10)
   // "OF" now runs on its own line under the main "GENERAL PLAN"/"WORKING
   // PLAN" heading (client req 2026-09-01 redline), pushing the "LOTS ...
   // {name}" line down from y=54 to y=66 — FY0's base shifts by the same 12
@@ -389,7 +389,7 @@ export function GeneralPlanView() {
   // for a field that's set (see where it's built above), so FY0 never
   // reserves room for a subheading that isn't there.
   const TITLE_Y1 = mapY(34);
-  const TITLE_OF_Y = TITLE_Y1 + 13, TITLE_LINE2_Y = TITLE_OF_Y + 14;
+  const TITLE_OF_Y = TITLE_Y1 + 10, TITLE_LINE2_Y = TITLE_OF_Y + 10; // client req 2026-09-05: "inke darmayan bi space reduce karo" (13/14 -> 10/10)
   const FX0 = mapX(30), FY0 = TITLE_LINE2_Y + 22 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
@@ -1068,7 +1068,7 @@ export function GeneralPlanView() {
         // Horizontal edges (top/bottom): tick is VERTICAL at x=t, rotated
         // labels (client req 2026-09-04, "inline with the grid line"), so
         // the perpendicular offset is in x instead (sits beside the tick).
-        const GRID_LABEL_GAP = 6;
+        const GRID_LABEL_GAP = 3; // client req 2026-09-05: "lables ki jo lines hain ur jo numbers hain inke darmayan space reduce karo" (6 -> 3)
         let lx: number, ly: number, anchor: "start" | "end";
         if (horizontal) {
           lx = t - GRID_LABEL_GAP;
@@ -1111,9 +1111,15 @@ export function GeneralPlanView() {
     // of ticks). Silently truncates rather than auto-widening the user's
     // own chosen spacing.
     const MAX_TICKS = 40;
+    // Skipped this close to either end of the edge — the frame's own
+    // corner, where the border already turns a right angle right there —
+    // (client req 2026-09-05, screenshot with an X over the top-left
+    // corner: "delete the grid marks which are very close to the corner").
+    const CORNER_MARGIN = 25;
     for (let v = first, n = 0; v <= vMax && n < MAX_TICKS; v += gridSpacingM, n++) {
       const frac = (v - vFrom) / (vTo - vFrom || 1);
       const t = from + (to - from) * frac;
+      if (Math.abs(t - from) < CORNER_MARGIN || Math.abs(t - to) < CORNER_MARGIN) continue;
       drawTick(v, t, `${horizontal ? "Y" : "X"}+${Math.round(v)}`);
     }
     return lines;
