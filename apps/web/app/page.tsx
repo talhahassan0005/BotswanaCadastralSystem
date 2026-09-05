@@ -58,7 +58,20 @@ function Workspace() {
       <Header activeTab={activeTab} onTab={setActiveTab}>
         <ProjectBar />
       </Header>
-      <main className="mx-auto max-w-screen-2xl px-3 py-4 sm:px-6 sm:py-6">
+      <main
+        className={
+          // General Plan's own sidebar + true-scale sheet preview wants the
+          // full page width to lay itself out in (client req 2026-09-06:
+          // "dono sections fit nahi hue page pe, left right pe space hai"
+          // — max-w-screen-2xl's own cap, shared by every OTHER tab here,
+          // was leaving unused gutters on wide screens specifically for
+          // this one). Scoped to just this tab so nothing else's layout
+          // changes.
+          activeTab === "generalplan"
+            ? "mx-auto max-w-full px-3 py-4 sm:px-4 sm:py-6"
+            : "mx-auto max-w-screen-2xl px-3 py-4 sm:px-6 sm:py-6"
+        }
+      >
         {/* keyed by loadVersion so opening a project remounts modules with fresh state */}
         <div key={loadVersion}>
           {activeTab === "import" && <DataImport />}

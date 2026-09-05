@@ -90,7 +90,7 @@ export function GeneralPlanView() {
   // CSS transform on the preview box, independent of the browser's own
   // page zoom/scroll.
   const [gpZoom, setGpZoom] = useState(1);
-  const GP_ZOOM_MIN = 0.4, GP_ZOOM_MAX = 3;
+  const GP_ZOOM_MIN = 0.4, GP_ZOOM_MAX = 6;
   // Pan (client req 2026-09-02: "pan with down press the scroll button") —
   // press-and-hold the mouse's middle/scroll-wheel button and drag, the same
   // convention CAD viewers use. Drives the zoom box's own scrollLeft/Top
@@ -127,6 +127,73 @@ export function GeneralPlanView() {
       window.removeEventListener("mouseup", onUp);
     };
   }, [isPanning]);
+  // Marquee zoom (client req 2026-09-05: "add this zoom features under
+  // general plan" — a drag-a-rectangle-to-zoom-into-it tool, alongside a
+  // "fit to frame" one, matching two icons the client sent). Toggled on by
+  // its own icon button; only ever intercepts a LEFT-button drag while
+  // active, so it never touches the existing middle-button pan (button 1)
+  // or anything else when off (its default state) — "dont disturb
+  // anything else". One-shot: drawing a rectangle zooms once, then the
+  // tool turns itself back off, matching common zoom-to-selection UX.
+  const [marqueeZoomActive, setMarqueeZoomActive] = useState(false);
+  const [marqueeDragging, setMarqueeDragging] = useState(false);
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  function handleMarqueeMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (!marqueeZoomActive || e.button !== 0) return;
+    e.preventDefault();
+    const box = panBoxRef.current;
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const x = e.clientX - rect.left + box.scrollLeft, y = e.clientY - rect.top + box.scrollTop;
+    marqueeStartRef.current = { x, y };
+    setMarqueeRect({ x, y, w: 0, h: 0 });
+    setMarqueeDragging(true);
+  }
+  useEffect(() => {
+    if (!marqueeDragging) return;
+    function onMove(e: MouseEvent) {
+      const start = marqueeStartRef.current;
+      const box = panBoxRef.current;
+      if (!start || !box) return;
+      const rect = box.getBoundingClientRect();
+      const x = e.clientX - rect.left + box.scrollLeft, y = e.clientY - rect.top + box.scrollTop;
+      setMarqueeRect({ x: Math.min(start.x, x), y: Math.min(start.y, y), w: Math.abs(x - start.x), h: Math.abs(y - start.y) });
+    }
+    function onUp() {
+      const box = panBoxRef.current;
+      setMarqueeRect((r) => {
+        if (box && r && r.w > 10 && r.h > 10) {
+          // Relative-factor math (not an absolute content-coordinate
+          // conversion) so it stays correct regardless of exactly how the
+          // scaled content's scroll geometry works out: the rectangle
+          // needs to grow by this same factor, at the current zoom, to
+          // fill the viewport, so the NEW zoom is just gpZoom * factor.
+          const viewW = box.clientWidth, viewH = box.clientHeight;
+          const factor = Math.min(viewW / r.w, viewH / r.h) * 0.95;
+          const newZoom = Math.max(GP_ZOOM_MIN, Math.min(GP_ZOOM_MAX, +(gpZoom * factor).toFixed(2)));
+          const actualFactor = newZoom / gpZoom; // re-derive in case clamping capped the raw factor above
+          setGpZoom(newZoom);
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          requestAnimationFrame(() => {
+            box.scrollLeft = cx * actualFactor - viewW / 2;
+            box.scrollTop = cy * actualFactor - viewH / 2;
+          });
+        }
+        return null;
+      });
+      marqueeStartRef.current = null;
+      setMarqueeDragging(false);
+      setMarqueeZoomActive(false);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marqueeDragging]);
   // GP's own Working Plan variant (client req 2026-08-27/28, spec Part 3):
   // same drawing + descriptive block, but the Lot Numbers/Block Corner/
   // traverse tables are dropped in favour of an inset reference-mark sketch
@@ -169,6 +236,7 @@ export function GeneralPlanView() {
     panelOffsets: Record<string, { dx: number; dy: number }>;
     panelScales: Record<string, number>;
     lotTableCols: number;
+    blockCornerCols: number;
     gridSpacingM: number;
   }> | null;
   const [meta, setMeta] = useState({
@@ -226,6 +294,10 @@ export function GeneralPlanView() {
     // (client req 2026-09-02: "user should choose whether they want 1/2/3/4
     // columns") — was always exactly 2 (or 1 when everything fit in one).
     lotTableCols: 2,
+    // Same idea as lotTableCols, for the Block Corner Table's own "Point |
+    // Y | X" groups (client req 2026-09-05: "same yahi functionality
+    // block corner table ke liye bi rakho jese client ne kaha hai").
+    blockCornerCols: 1,
     // Grid-mark spacing along the frame border, in real metres (client req
     // 2026-09-03: "the grid numbering should be multiples of 50. The grid
     // must space by 50m by default and the user can also choose if they
@@ -947,8 +1019,8 @@ export function GeneralPlanView() {
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
     if (sheetMode === "general") {
-      text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 7);
-      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 7, "end");
+      text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 5);
+      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 5, "end");
       text(regX + 6 * regScale, regY + 24 * regScale, `DSM No: ${meta.dsmNo || "—"}`, 9.5 * regScale);
       text(regX + 6 * regScale, regY + 100 * regScale, "Surveyed in", 8 * regScale);
       text(regX + regW - 6 * regScale, regY + 100 * regScale, meta.surveyedIn || "—", 8 * regScale, "end");
@@ -1280,6 +1352,10 @@ export function GeneralPlanView() {
   // usedLotCols below (client req 2026-09-03) for why it's never a hard cap
   // that can drop real lots from the table.
   const lotTableCols = Math.max(1, Math.min(4, Math.round(meta.lotTableCols) || 2));
+  // Same picker, for the Block Corner Table's own "Point | Y | X" groups
+  // (client req 2026-09-05: "same yahi functionality block corner table
+  // ke liye bi rakho").
+  const blockCornerCols = Math.max(1, Math.min(4, Math.round(meta.blockCornerCols) || 1));
   // Bordered grid — outer box, header underline, and a vertical rule between
   // every column, matching the reference sheet's own boxed "LOT AREAS" table
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
@@ -1474,8 +1550,15 @@ export function GeneralPlanView() {
               it (client req 2026-08-31 redline: "move GC number" / "move sheet
               numbering" — the box itself now starts with DSM No, not a Sheet No
               row). */}
-          <text x={regX} y={mapY(18)} fontSize={7} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={7} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
+          {/* Shrunk further (client req 2026-09-05, screenshot with a red
+              line where "GC-123" and "SHEET No..." were running into each
+              other: "Add space. separate") — at size 7, this pair's
+              combined text width could exceed the now-narrower registration
+              box's own width entirely, since one is left-anchored at the
+              box's left edge and the other right-anchored at its right
+              edge with nothing keeping them apart in between. */}
+          <text x={regX} y={mapY(18)} fontSize={5} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
+          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={5} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
           {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
               screenshot circling this whole box): no "G.P. No." row here (that
               field stays editable for other diagrams' own cross-reference, just
@@ -1886,6 +1969,14 @@ export function GeneralPlanView() {
               // losing rows to an auto-truncated note.
               const bcSorted = [...groupUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
               const bcShown = bcSorted;
+              // Same "Point | Y | X" column-count picker as Lot Areas' own
+              // LOT No./SQ. METRES columns (client req 2026-09-05: "same
+              // yahi functionality block corner table ke liye bi rakho") —
+              // splits bcShown across usedBcCols side-by-side groups the
+              // same way Lot Areas splits its own plots, each group a full
+              // repeat of the Point/Y/X columns and their own header.
+              const usedBcCols = bcShown.length === 0 ? 0 : blockCornerCols;
+              const bcRowsPerCol = usedBcCols === 0 ? 0 : Math.ceil(bcShown.length / usedBcCols);
               // Header lines now spaced exactly like an ordinary data row —
               // same BC_ROW_H rhythm throughout, just bold weight on the
               // header lines themselves (client req 2026-09-05: "heading
@@ -1895,7 +1986,7 @@ export function GeneralPlanView() {
               // the Y/X labels and CONSTANTS values landing on the exact
               // same y and rendering on top of each other).
               const bcFirstRowOffset = BC_ROW_H * 4;
-              const bcBottom = bcTop + bcFirstRowOffset + bcShown.length * BC_ROW_H;
+              const bcBottom = bcTop + bcFirstRowOffset + bcRowsPerCol * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
               // req 2026-09-05), each capped against BC_ROW_H so a very
@@ -1923,6 +2014,7 @@ export function GeneralPlanView() {
               // height, not the row rhythm below it.
               const bcSystemY = bcTop + BC_ROW_H;
               const bcYXY = bcSystemY + 6;
+              const bcSystemRowBottom = (bcSystemY + bcYXY) / 2;
               const bcConstY = bcYXY + 6;
               const bcHeaderRuleY = bcConstY + 3;
               // Column bounds RESET to fractions of the table's own width
@@ -1934,46 +2026,80 @@ export function GeneralPlanView() {
               // coordinate values and split the rest evenly — same
               // fraction-of-box-width approach the Lot Areas table's own
               // computeLotColBounds already uses, not hand-tuned pixels.
-              // Table width halved (client req 2026-09-05: "block corner
-              // table ke columns ki width half kardo") — bcTblR replaces
-              // tblR as this table's own right edge everywhere below,
-              // leaving the Lot Areas table above it untouched.
-              const bcTblR = tblL + (tblR - tblL) * 0.35; // client req 2026-09-05: "ur reduce karo" (0.5 -> 0.35)
-              const bcTotalW = bcTblR - tblL;
-              const bcCol0 = tblL, bcCol1 = tblL + bcTotalW * 0.22, bcCol2 = tblL + bcTotalW * 0.61;
+              // Table width halved then reduced further (client req
+              // 2026-09-05: "block corner table ke columns ki width half
+              // kardo", then "ur reduce karo") — bcGroupW is now the width
+              // of ONE "Point | Y | X" group (same magnitude the whole
+              // table used to be, back when there was only ever one group);
+              // bcTblR grows with usedBcCols instead of staying fixed —
+              // NOT independently capped at tblR (client req 2026-09-05:
+              // "3 columns tak table pe complete borders aate hain lakin 4
+              // columns karne pe... boundary ya border show nahi hotay" —
+              // capping bcTblR alone, while bcGroups below kept using the
+              // UNCAPPED bcGroupW for each group's own position, meant the
+              // last group(s) at 3-4 columns rendered past where the outer
+              // border rect actually ended, so the border no longer
+              // enclosed the real content. bcTblR now always matches the
+              // groups' true combined width, the same way Lot Areas' own
+              // lotBoxRight is never capped independently of its columns
+              // either — leaves the Lot Areas table above it untouched).
+              const bcGroupW = (tblR - tblL) * 0.35;
+              const bcTblR = tblL + bcGroupW * Math.max(usedBcCols, 1);
               const bcPad = 6;
+              const bcGroups = Array.from({ length: usedBcCols }, (_, g) => {
+                const left = tblL + g * bcGroupW;
+                return { left, col0: left, col1: left + bcGroupW * 0.22, col2: left + bcGroupW * 0.61, right: left + bcGroupW };
+              });
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
                   <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
                   <rect x={tblL} y={bcBoxTop} width={bcTblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  {/* SYSTEM row spans all columns, no vertical divider through
+                      it (client req 2026-09-05: "ye heading wali row main
+                      coumns ku banay hue hain columne psan use karo...
+                      colpsan3 use karo na takay columns combine hi jae sirf
+                      heading wali row main" — an SVG table has no literal
+                      colspan, so the same visual effect comes from starting
+                      the column dividers below this row instead of at the
+                      box's own top). */}
+                  <line x1={tblL} y1={bcSystemRowBottom} x2={bcTblR} y2={bcSystemRowBottom} stroke="#0f172a" strokeWidth={0.5} />
                   <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={bcCol1} y1={bcBoxTop} x2={bcCol1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
-                  <line x1={bcCol2} y1={bcBoxTop} x2={bcCol2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcSystemY} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={bcCol1 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
-                  <text x={bcCol2 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                  <text x={bcCol0 + bcPad} y={bcConstY} fontSize={bcFS} fill="#01070f">CONSTANTS</text>
-                  <text x={bcCol1 + bcPad} y={bcConstY} fontSize={bcFS} fill="#030911">+0,00</text>
-                  <text x={bcCol2 + bcPad} y={bcConstY} fontSize={bcFS} fill="#01050a">+0,00</text>
-                  {/* Row dividers (client req 2026-09-05: "block corner
-                      table ur lot Area table dono ke rows ke divider nahi
-                      hain?? fix karo") — one between each pair of
-                      consecutive beacon rows, at the midpoint of their two
-                      baselines. */}
-                  {bcShown.slice(1).map((b, ri) => {
+                  {/* Row dividers span the table's FULL width, drawn once per
+                      row index rather than once per group (client req
+                      2026-09-05: "table per pura tarah lines nahi hai" — a
+                      divider drawn separately inside each group only ever
+                      covered that one group's own width, leaving visible
+                      gaps at every group boundary instead of one continuous
+                      line all the way across). bcRowsPerCol is the same for
+                      every group, so one set of lines lines up with all of
+                      them. */}
+                  {Array.from({ length: Math.max(0, bcRowsPerCol - 1) }).map((_, ri) => {
                     const ly = bcTop + bcFirstRowOffset + (ri + 0.5) * BC_ROW_H;
-                    return <line key={`rd-${b.id}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
+                    return <line key={`rd${ri}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
                   })}
-                  {bcShown.map((b, k) => {
-                    const y = bcTop + bcFirstRowOffset + k * BC_ROW_H;
-                    return (
-                      <g key={b.id}>
-                        <text x={bcCol0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
-                        <text x={bcCol1 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
-                        <text x={bcCol2 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
-                      </g>
-                    );
-                  })}
+                  {bcGroups.map((g, gi) => (
+                    <g key={gi}>
+                      {gi > 0 && <line x1={g.left} y1={bcSystemRowBottom} x2={g.left} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />}
+                      <line x1={g.col1} y1={bcSystemRowBottom} x2={g.col1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
+                      <line x1={g.col2} y1={bcSystemRowBottom} x2={g.col2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
+                      <text x={g.col1 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                      <text x={g.col2 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                      <text x={g.col0 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                      <text x={g.col1 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
+                      <text x={g.col2 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
+                      {bcShown.slice(gi * bcRowsPerCol, (gi + 1) * bcRowsPerCol).map((b, k) => {
+                        const y = bcTop + bcFirstRowOffset + k * BC_ROW_H;
+                        return (
+                          <g key={b.id}>
+                            <text x={g.col0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
+                            <text x={g.col1 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
+                            <text x={g.col2 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
+                          </g>
+                        );
+                      })}
+                    </g>
+                  ))}
                 </>
               ));
             })()}
@@ -2108,7 +2234,24 @@ export function GeneralPlanView() {
   };
 
   return (
-    <div className="space-y-4">
+    // Sidebar layout (client req 2026-09-05, screenshots circling the
+    // "General Plan details"/"Sheet reference panel" cards: "move to the
+    // side just like sidebar" — these two form cards used to stack above
+    // the actual sheet preview; now they sit in a left column next to it
+    // instead, same as the reference screenshots' own left-hand panel).
+    // Stacks back to a single column on narrow screens (lg: breakpoint)
+    // rather than squeezing a sidebar into a phone-width layout.
+    //
+    // Narrowed + shifted left, sheet preview grown to fill the freed space
+    // (client req 2026-09-05 follow-up: "sidebar ko left per thora shift
+    // karo ur right wali jo general plan wala section hai uski width ur
+    // height increase kardo takay page pe fit ho sake") — w-96 -> w-80 and
+    // the gap tightened (gap-4 -> gap-3) leaves the sidebar hugging the
+    // left edge more closely; the sheet's own max-w-5xl -> max-w-7xl and
+    // the scroll box's 82vh -> 90vh let it actually use that extra room
+    // instead of staying capped at its old width/height regardless.
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="General Plan details">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Layout / township name"><Input value={meta.name} onChange={set("name")} /></Field>
@@ -2174,11 +2317,23 @@ export function GeneralPlanView() {
                 as 12 drawing sheets when really it's 1 layout sheet + 11
                 beacon-coordinate list pages (every distinct beacon needs a
                 row somewhere; COORDS_PER_SHEET=48 rows/page), which isn't a
-                pagination bug, just an unlabelled appendix. */}
+                pagination bug, just an unlabelled appendix.
+                The "(Sheet N of sheetCount)" suffix was added 2026-09-06:
+                the printed "SHEET No" in the sheet's own corner (client req
+                2026-08-31/09-01) always counts the WHOLE document — layout
+                sheets AND coordinate-schedule pages together, e.g. "1 of
+                15" for 2 layout + 13 coordinate sheets — same as any bound
+                multi-page survey document numbers its pages. Client
+                screenshot showed this ("Layout Sheet 1 of 2" here vs.
+                "SHEET No - 1 of 15" on the sheet) and read it as a bug; the
+                total was correct all along, it's this label that was only
+                telling half the story. Printed sheet content/logic
+                untouched — only this on-screen label now states both counts
+                together so the two never look inconsistent again. */}
             <span className="text-slate-600">
               {sheet < layoutSheetCount
-                ? `Layout Sheet ${sheet + 1} of ${layoutSheetCount}`
-                : `Coordinate Schedule ${sheet - layoutSheetCount + 1} of ${coordChunks.length}`}
+                ? `Layout Sheet ${sheet + 1} of ${layoutSheetCount} (Sheet ${sheet + 1} of ${sheetCount})`
+                : `Coordinate Schedule ${sheet - layoutSheetCount + 1} of ${coordChunks.length} (Sheet ${sheet + 1} of ${sheetCount})`}
             </span>
             <Button variant="ghost" onClick={() => setSheet((x) => Math.min(sheetCount - 1, x + 1))} disabled={sheet >= sheetCount - 1}>Next →</Button>
           </span>
@@ -2238,6 +2393,21 @@ export function GeneralPlanView() {
           </span>
         </div>
         <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Block Corner table columns</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, blockCornerCols: n }))}
+                className={`w-10 py-1.5 text-sm font-medium ${meta.blockCornerCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div className="mt-3">
           <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
           <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
             {[50, 100, 200].map((n) => (
@@ -2253,7 +2423,9 @@ export function GeneralPlanView() {
           </span>
         </div>
       </Card>
+      </div>
 
+      <div className="min-w-0 flex-1">
       <Card title={`${sheetMode === "working" ? "Working" : "General"} Plan — Sheet ${sheet + 1}`}>
         {sheet < layoutSheetCount && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -2299,7 +2471,36 @@ export function GeneralPlanView() {
             {gpZoom !== 1 && (
               <Button variant="ghost" onClick={() => setGpZoom(1)}>Reset zoom</Button>
             )}
-            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button, then drag, to pan.</span>
+            {/* Two extra zoom tools (client req 2026-09-05: "add this zoom
+                features under general plan" / "ye icon use karo... client ne
+                kaha hai") — a "fit to frame" icon (same effect as Reset
+                zoom above, just the icon form) and a "zoom to selection"
+                marquee tool. Existing zoom controls untouched. */}
+            <Button
+              variant="ghost"
+              onClick={() => { setGpZoom(1); const box = panBoxRef.current; if (box) { box.scrollLeft = 0; box.scrollTop = 0; } }}
+              title="Fit to frame"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M1 5V2a1 1 0 0 1 1-1h3" />
+                <path d="M11 1h3a1 1 0 0 1 1 1v3" />
+                <path d="M15 11v3a1 1 0 0 1-1 1h-3" />
+                <path d="M5 15H2a1 1 0 0 1-1-1v-3" />
+                <path d="M8 8h.01" strokeWidth="2" />
+              </svg>
+            </Button>
+            <Button
+              variant={marqueeZoomActive ? "primary" : "ghost"}
+              onClick={() => setMarqueeZoomActive((v) => !v)}
+              title="Zoom to selection — drag a box on the sheet to zoom into it"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+                <rect x="1" y="1" width="8" height="8" rx="1" strokeDasharray="2 1.5" />
+                <circle cx="10.5" cy="10.5" r="3" />
+                <path d="M12.6 12.6 15 15" strokeLinecap="round" />
+              </svg>
+            </Button>
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button, then drag, to pan.{marqueeZoomActive ? " Drag a box on the sheet to zoom into it." : ""}</span>
           </div>
         )}
         {/* Render all sheets (so refs exist for print-all); show only the active one.
@@ -2308,18 +2509,43 @@ export function GeneralPlanView() {
             2026-09-01: "without moving the whole window"). overflow-auto lets the
             user pan around the sheet with the browser's own scrollbars once
             zoomed past what fits, or via middle-mouse-button drag (client req
-            2026-09-02) below. */}
+            2026-09-02, repeated 2026-09-06: "down press the scroll button to
+            pan the window") below. This box is capped to the SAME max-w-7xl
+            as the sheet it scrolls (mx-auto max-w-7xl below), not left to
+            stretch to its now-wider parent column (the General Plan tab's
+            page shell lost its own max-width cap earlier today) — otherwise
+            on a wide screen the box's own width could exceed the sheet's
+            pre-zoom width, so at 100–150% zoom the scaled sheet still fit
+            entirely inside the box with nothing to scroll into, making the
+            middle-button drag silently do nothing at exactly the zoom levels
+            most likely to be tested. Matching the cap guarantees real
+            scrollable overflow — and therefore a working pan — the moment
+            zoom passes 100%, on any screen width. */}
         <div
           ref={panBoxRef}
-          className="overflow-auto rounded border border-slate-100"
-          style={{ maxHeight: "82vh", cursor: isPanning ? "grabbing" : undefined }}
+          className="mx-auto max-w-7xl overflow-auto rounded border border-slate-100"
+          style={{
+            maxHeight: "90vh",
+            position: "relative",
+            cursor: isPanning ? "grabbing" : marqueeZoomActive ? "crosshair" : undefined,
+          }}
           onWheel={(e) => {
             e.preventDefault();
             setGpZoom((z) => Math.max(GP_ZOOM_MIN, Math.min(GP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
           }}
-          onMouseDown={handlePanMouseDown}
+          onMouseDown={(e) => { handlePanMouseDown(e); handleMarqueeMouseDown(e); }}
         >
-        <div className="relative mx-auto max-w-5xl" style={{ transform: `scale(${gpZoom})`, transformOrigin: "top center" }}>
+        {marqueeRect && (
+          <div
+            style={{
+              position: "absolute",
+              left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.w, height: marqueeRect.h,
+              border: "1.5px dashed #2563eb", background: "rgba(37,99,235,0.08)",
+              pointerEvents: "none", zIndex: 10,
+            }}
+          />
+        )}
+        <div className="relative mx-auto max-w-7xl" style={{ transform: `scale(${gpZoom})`, transformOrigin: "top center" }}>
           {layoutGroups.map((_, idx) => (
             <div key={idx} style={{ display: sheet === idx ? "block" : "none" }}>{renderLayoutSheet(idx)}</div>
           ))}
@@ -2359,6 +2585,7 @@ export function GeneralPlanView() {
         </div>
         </div>
       </Card>
+      </div>
     </div>
   );
 }
