@@ -1674,14 +1674,11 @@ export function GeneralPlanView() {
         {(() => {
           const n = groupUsedBeacons.length;
           if (n > 250) return null;
-          // Base (low-density) radius set to 1.3333 — diameter 2.6667
-          // (client req 2026-09-05: "recheck block corner diameter",
-          // confirming the Radius/Diameter values sent earlier). The
-          // medium/dense tiers scale down by the same ratio as before
-          // (0.7x / 0.45x) rather than keeping their old absolute values,
-          // so density-based shrinking still behaves the same relative to
-          // this new base.
-          const r = n > 150 ? 0.6 : n > 60 ? 0.9333 : 1.3333;
+          // Reduced further (client req 2026-09-05: "also reduce block
+          // corner circles"), all three tiers scaled down by the same 0.7x
+          // ratio from the previous round so density-based shrinking still
+          // behaves the same relative to each other.
+          const r = n > 150 ? 0.42 : n > 60 ? 0.6533 : 0.9333;
           const cornerFS = Math.max(MIN_EDGE_TEXT_FS, EDGE_TEXT_GROUND_M * t.s);
           const off = cornerFS + 2;
           return groupUsedBeacons.map((b) => {
