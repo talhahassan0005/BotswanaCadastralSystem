@@ -1214,7 +1214,15 @@ export function GeneralPlanView() {
     if (si > 0) panelCursorY += 6;
     const rowYs = section.rows.map((row) => {
       const y = panelCursorY;
-      panelCursorY += row.heading ? 14 : 12;
+      // Heading's own line-height reduced (client req 2026-09-05,
+      // screenshot bracketing the gap under each of "SHEET INDEX"/"BEACON
+      // DESCRIPTION"/"SPLAY INFORMATION"/"PED WAY": "inke darmaaya space
+      // reduce karo heading ur text ke darmayan" — this value is the gap
+      // BEFORE the row that follows it, so a heading row's own 14 is what
+      // set the distance down to its own content line beneath it). Content-
+      // row and between-section spacing left untouched, per "kuch bi
+      // disturb na karna."
+      panelCursorY += row.heading ? 10 : 12;
       return y;
     });
     return { ...section, rowYs };
@@ -1779,11 +1787,11 @@ export function GeneralPlanView() {
                   key={i}
                   x={panelX}
                   y={section.rowYs[i]}
-                  // Capped against this row's own fixed line-height (14 for a
+                  // Capped against this row's own fixed line-height (10 for a
                   // heading row, 12 otherwise — panelSectionLayouts' own
                   // spacing) so a very fine plan scale can't grow the font
                   // past what that fixed spacing has room for.
-                  fontSize={row.heading ? Math.min(panelHeadingFS, 14 * 0.65) : Math.min(panelFS, 12 * 0.65)}
+                  fontSize={row.heading ? Math.min(panelHeadingFS, 10 * 0.65) : Math.min(panelFS, 12 * 0.65)}
                   fontWeight={row.heading ? 700 : 400}
                   fill={row.heading ? "#0f172a" : "#334155"}
                 >
