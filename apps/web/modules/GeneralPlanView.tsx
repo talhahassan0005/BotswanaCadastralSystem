@@ -1886,7 +1886,7 @@ export function GeneralPlanView() {
               // losing rows to an auto-truncated note.
               const bcSorted = [...groupUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
               const bcShown = bcSorted;
-              const bcBottom = bcTop + 49 + bcShown.length * BC_ROW_H;
+              const bcBottom = bcTop + 41 + bcShown.length * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
               // req 2026-09-05), each capped against its own fixed line
@@ -1895,7 +1895,7 @@ export function GeneralPlanView() {
               // plan scale can't blow either one up past what that fixed
               // spacing actually has room for.
               const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
-              const bcHeadingFS = Math.min(panelHeadingFS, 13 * 0.65);
+              const bcHeadingFS = Math.min(panelHeadingFS, 11 * 0.65); // client req 2026-09-05: heading row height reduced further (13 -> 11)
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
               // block corner page: "isko table ki form main hi rakhna
@@ -1904,7 +1904,7 @@ export function GeneralPlanView() {
               // Areas table's own outer-rect + column-divider + header-rule
               // convention just above, not a new style of its own).
               const bcBoxTop = bcTop + 5;
-              const bcHeaderRuleY = bcTop + 42; // client req 2026-09-05: "heading wali row... uski height bi kam karo" (49 -> 42)
+              const bcHeaderRuleY = bcTop + 35; // client req 2026-09-05: heading row height reduced further (42 -> 35)
               // Column bounds RESET to fractions of the table's own width
               // (client req 2026-09-05: "reset the columns size of the
               // block corner table" — the two hand-picked divider positions
@@ -1929,23 +1929,23 @@ export function GeneralPlanView() {
                   <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={bcCol1} y1={bcBoxTop} x2={bcCol1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={bcCol2} y1={bcBoxTop} x2={bcCol2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
-                  <text x={panelX} y={bcTop + 13} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  <text x={bcCol1 + bcPad} y={bcTop + 24} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
-                  <text x={bcCol2 + bcPad} y={bcTop + 24} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                  <text x={bcCol0 + bcPad} y={bcTop + 35} fontSize={bcFS} fill="#475569">CONSTANTS</text>
-                  <text x={bcCol1 + bcPad} y={bcTop + 35} fontSize={bcFS} fill="#475569">+0,00</text>
-                  <text x={bcCol2 + bcPad} y={bcTop + 35} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={panelX} y={bcTop + 11} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 20} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 20} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                  <text x={bcCol0 + bcPad} y={bcTop + 29} fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                  <text x={bcCol1 + bcPad} y={bcTop + 29} fontSize={bcFS} fill="#475569">+0,00</text>
+                  <text x={bcCol2 + bcPad} y={bcTop + 29} fontSize={bcFS} fill="#475569">+0,00</text>
                   {/* Row dividers (client req 2026-09-05: "block corner
                       table ur lot Area table dono ke rows ke divider nahi
                       hain?? fix karo") — one between each pair of
                       consecutive beacon rows, at the midpoint of their two
                       baselines. */}
                   {bcShown.slice(1).map((b, ri) => {
-                    const ly = bcTop + 49 + (ri + 0.5) * BC_ROW_H;
+                    const ly = bcTop + 41 + (ri + 0.5) * BC_ROW_H;
                     return <line key={`rd-${b.id}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
                   })}
                   {bcShown.map((b, k) => {
-                    const y = bcTop + 49 + k * BC_ROW_H;
+                    const y = bcTop + 41 + k * BC_ROW_H;
                     return (
                       <g key={b.id}>
                         <text x={bcCol0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
