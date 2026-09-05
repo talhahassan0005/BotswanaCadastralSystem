@@ -240,7 +240,24 @@ export function CogoWorkspace({
   const [lines, setLines] = useState<WLine[]>(savedDoc.lines ?? []);
   const [arcs, setArcs] = useState<WArc[]>(savedDoc.arcs ?? []);
   const [polygons, setPolygons] = useState<WPolygon[]>(savedDoc.polygons ?? []);
-  const [texts, setTexts] = useState<WText[]>(savedDoc.texts ?? []);
+  // Deleting a line already sweeps its own seg-label going forward (see
+  // removeSegLabelsAt below) — but that fix, like any write-time fix, can't
+  // reach labels already orphaned in a PROJECT SAVED BEFORE it existed
+  // (client req 2026-09-02, screenshot showing exactly this: a subdivision's
+  // worth of deleted lines' leftover bearing/distance text piled up into an
+  // unreadable overlapping mass). Sanitizing here, once, at load — same
+  // "fix forward AND clean what's already saved" pattern used for GP's own
+  // scale field — drops any already-saved seg-label whose midpoint no
+  // longer matches any currently-saved line, so a stale project opens clean
+  // without waiting on the user to manually hunt down and delete each one.
+  const [texts, setTexts] = useState<WText[]>(() => {
+    const savedLines = savedDoc.lines ?? [];
+    const savedTexts = savedDoc.texts ?? [];
+    const midpoints = savedLines.map((l) => ({ e: (l.aE + l.bE) / 2, n: (l.aN + l.bN) / 2 }));
+    return savedTexts.filter(
+      (t) => t.kind !== "seglabel" || midpoints.some((m) => Math.abs(m.e - t.east) < 0.01 && Math.abs(m.n - t.north) < 0.01)
+    );
+  });
   const [selected, setSelected] = useState<string | null>(null);
   // ---- Multi-select (Part 10) — click-to-add / box-drag / lasso-drag build
   // up this set; Delete and (for points) Move act on it as a group. ----
@@ -1925,6 +1942,34 @@ export function CogoWorkspace({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
+
+  // Ctrl+Z (or Cmd+Z) as a real, always-available Undo — Ctrl+Shift+Z /
+  // Ctrl+Y as Redo (client req 2026-09-06: "Ctrl+Z should be undo"). Before
+  // this, Ctrl+Z only did anything mid-draw (the effect above, which just
+  // removes the last placed vertex) — outside of that it silently did
+  // nothing at all, even though a full undo()/redo() already existed,
+  // reachable only via the toolbar's Undo/Redo buttons. Skips while a
+  // shape is being drawn (draft.length) so it doesn't fight the effect
+  // above, and skips while typing in a text field so it doesn't hijack
+  // that field's own native text-undo. Deliberately not gated to any
+  // particular tool/mode — unlike the effect above, undo/redo should work
+  // everywhere.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      if (draft.length) return;
+      e.preventDefault();
+      if (key === "y" || (key === "z" && e.shiftKey)) redo();
+      else undo();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, extra, hidden, lines, arcs, polygons, texts]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
