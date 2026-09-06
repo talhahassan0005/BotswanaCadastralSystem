@@ -91,16 +91,29 @@ export function GeneralPlanView() {
   // page zoom/scroll.
   const [gpZoom, setGpZoom] = useState(1);
   const GP_ZOOM_MIN = 0.4, GP_ZOOM_MAX = 6;
-  // Pan (client req 2026-09-02: "pan with down press the scroll button") —
-  // press-and-hold the mouse's middle/scroll-wheel button and drag, the same
-  // convention CAD viewers use. Drives the zoom box's own scrollLeft/Top
-  // directly rather than a separate offset state, since overflow-auto
-  // already gives it real scrollable range once gpZoom > 1.
+  // Pan (client req 2026-09-02, repeated 2026-09-06: "pan with down press
+  // the scroll button") — press-and-hold the mouse's middle/scroll-wheel
+  // button and drag, the same convention CAD viewers use. Drives the zoom
+  // box's own scrollLeft/Top directly rather than a separate offset state,
+  // since overflow-auto already gives it real scrollable range once
+  // gpZoom > 1 (see the panBoxRef max-w-7xl cap below for why that wasn't
+  // always true).
+  //
+  // Also accepts the RIGHT mouse button (2026-09-06) as a second trigger
+  // for the exact same pan, alongside the middle button — not a
+  // replacement. The client kept reporting the middle-button pan as "not
+  // implemented" even after it was verified working and deployed; a
+  // laptop trackpad has no physical scroll-wheel button to press at all
+  // (only left/right click + a two-finger scroll gesture), which would
+  // make the feature genuinely unusable no matter how correct the code is
+  // — a right-click-drag works on any trackpad. onContextMenu below
+  // suppresses the browser's own right-click menu so it doesn't pop up
+  // after the drag.
   const panBoxRef = useRef<HTMLDivElement | null>(null);
   const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   function handlePanMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
-    if (e.button !== 1) return; // middle button only — left click still selects/places labels normally
+    if (e.button !== 1 && e.button !== 2) return; // middle or right button — left click still selects/places labels normally
     e.preventDefault();
     const box = panBoxRef.current;
     if (!box) return;
@@ -227,7 +240,7 @@ export function GeneralPlanView() {
   );
 
   const savedGp = (generalPlanInput ?? null) as Partial<{
-    name: string; location: string; surveyor: string; gpNo: string; scale: number;
+    name: string; surveyor: string; gpNo: string; scale: number;
     gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
     parentLotNumber: string; tribalArea: string; parentDsmNo: string;
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
@@ -241,7 +254,6 @@ export function GeneralPlanView() {
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
-    location: "",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
     gpNo: "",
     gcNo: "",       // "GC-122" compilation/grid code, small red text top-right
@@ -410,7 +422,7 @@ export function GeneralPlanView() {
   const extraTitleLines: string[] = [];
   if (meta.parentLotNumber.trim()) extraTitleLines.push(`PORTIONS OF LOT ${meta.parentLotNumber.trim()} ${meta.name}`);
   if (sheetMode === "general" && meta.parentDsmNo.trim()) extraTitleLines.push(`VIDE DIAGRAM DSM NO. ${meta.parentDsmNo.trim()} ANNEXED TO`);
-  if (meta.tribalArea.trim()) extraTitleLines.push(`SITUATE AT ${(meta.location || meta.name).trim()} IN THE ${meta.tribalArea.trim()} TRIBAL AREA`);
+  if (meta.tribalArea.trim()) extraTitleLines.push(`SITUATE AT ${meta.name.trim()} IN THE ${meta.tribalArea.trim()} TRIBAL AREA`);
   // Scale moved up into the heading itself (client req 2026-08-31, matching
   // the GC-122/WP_CH reference — "SCALE 1:1000" is the title's own last
   // line, not a separate caption under the drawing) — always shown, unlike
@@ -1011,7 +1023,7 @@ export function GeneralPlanView() {
       W / 2, TITLE_LINE2_Y,
       lotRangeText
         ? `LOTS ${lotRangeText} ${meta.name}`
-        : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}${meta.location ? ` — ${meta.location}` : ""}`,
+        : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}`,
       MIN_SUBTITLE_FS, "middle"
     );
     extraTitleLines.forEach((ln, i) => text(W / 2, TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H, ln, MIN_SUBTITLE_FS, "middle"));
@@ -1329,7 +1341,7 @@ export function GeneralPlanView() {
   const rightColTop = lotTableTop + 24;
   const rightColBottom = FY1 + 20;
   const rightColH = Math.max(0, rightColBottom - rightColTop);
-  const BC_ROW_H = 9; // client req 2026-09-05: "reduce spacing... make them close like that" (13 -> 9)
+  const BC_ROW_H = 7; // client req 2026-09-05: "reduce spacing... make them close like that" (13 -> 9); 2026-09-06: "space reduce karo" (9 -> 7)
   // What the Block Corner Table would need if every beacon were listed,
   // clamped to at most half the column so the Lot Areas table above always
   // keeps usable room no matter how many beacons the layout produces.
@@ -1344,7 +1356,7 @@ export function GeneralPlanView() {
   // to reserve here now, not room for either line's own text).
   const LOT_FOOTER_H = 12;
   const availableLotH = Math.max(0, rightColH - bcReserve - LOT_FOOTER_H);
-  const DEFAULT_LOT_ROW_H = 10, MIN_LOT_ROW_H = 6; // client req 2026-09-05: "reduce table and spacing" (14 -> 10, matching the Block Corner Table's own just-tightened row spacing)
+  const DEFAULT_LOT_ROW_H = 7, MIN_LOT_ROW_H = 5; // client req 2026-09-05: "reduce table and spacing" (14 -> 10); 2026-09-06: "space reduce karo" (10 -> 7)
   // How many "LOT No. | SQ. METRES" column-pairs (client req 2026-09-02:
   // "for tables i think the user should choose whether they want 1/2/3/4
   // columns" — was always fixed at 2, or 1 when everything fit in one).
@@ -1388,7 +1400,7 @@ export function GeneralPlanView() {
     // 1-3 columns keeps each pair the same size 4 columns already gets
     // right — it just uses fewer of them (and a narrower total table),
     // not wider ones.
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.7;
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.55; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.7 -> 0.55)
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
@@ -1486,7 +1498,7 @@ export function GeneralPlanView() {
         // appended) when there's nothing numbered yet to range over.
         const line2 = lotRangeText
           ? `LOTS ${lotRangeText} ${meta.name}`
-          : `${label}${meta.name ? ` ${meta.name}` : ""}${meta.location ? ` — ${meta.location}` : ""}`;
+          : `${label}${meta.name ? ` ${meta.name}` : ""}`;
         return (
           <g
             transform={`translate(${meta.titleOffset.dx},${meta.titleOffset.dy})`}
@@ -1903,28 +1915,39 @@ export function GeneralPlanView() {
               const laX = tblL - 8, laY = lotTableTop - 20;
               const laW = lotBoxRight - tblL + 16;
               const laH = lotTableTop + 30 + usedLotRows * lotRowH + LOT_FOOTER_H - lotTableTop + 20;
-              const boxTop = lotTableTop + 5;
+              // "LOT AREAS" is itself a table heading, not a caption sitting
+              // above the table (client req 2026-09-06, screenshot circling
+              // both this and "BLOCK CORNER TABLE" as floating outside their
+              // own boxes: "ye dono table se bahar ku hain ye bi table
+              // headings hi hain") — the box top now sits ABOVE the title
+              // text instead of just below it, so the title becomes the
+              // table's own first row, with titleRuleY as the line
+              // separating it from the LOT No./SQ. METRES header row below.
+              const titleRuleY = lotTableTop + 5; // was the box's own top edge before this fix
+              const boxTop = lotTableTop - 9;
               const headerRuleY = lotTableTop + 16; // client req 2026-09-05: "heading wali row... uski height bi kam karo" (20 -> 16)
               const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
               return panelResizable("lotAreas", { x: laX, y: laY, w: laW, h: laH }, (
                 <>
                   <text x={panelX} y={lotTableTop} fontSize={panelHeadingFS} fontWeight={700} fill="#0f172a">LOT AREAS</text>
                   <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={titleRuleY} x2={lotBoxRight} y2={titleRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   {lotColBounds.slice(0, usedLotCols).map((col, c) => (
                     <g key={c}>
                       {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 13, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
-                      <line x1={col.divider} y1={boxTop} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
-                      {c > 0 && <line x1={col.left} y1={boxTop} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
-                      {/* Row dividers (client req 2026-09-05: "block corner
-                          table ur lot Area table dono ke rows ke divider
-                          nahi hain?? fix karo") — one between each pair of
-                          consecutive rows, at the midpoint of their two
-                          baselines. */}
-                      {Array.from({ length: Math.max(0, Math.min(rowsPerCol, groupSortedPlots.length - c * rowsPerCol) - 1) }).map((_, ri) => {
-                        const ly = lotTableTop + 22 + (ri + 0.5) * lotRowH;
-                        return <line key={`rd${ri}`} x1={col.left} y1={ly} x2={col.right} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
-                      })}
+                      {/* Column dividers start at titleRuleY, not boxTop —
+                          "LOT AREAS" spans the full table width like a
+                          colspan header, so no vertical line should cross
+                          through it (same convention as the Block Corner
+                          Table's own SYSTEM row below). */}
+                      <line x1={col.divider} y1={titleRuleY} x2={col.divider} y2={boxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                      {c > 0 && <line x1={col.left} y1={titleRuleY} x2={col.left} y2={boxBottom} stroke="#0f172a" strokeWidth={0.7} />}
+                      {/* Row dividers removed again (client req 2026-09-06:
+                          "dono tables main se row devider delete kardo" —
+                          reversing the 2026-09-05 addition above this
+                          comment). Column dividers/outer border are
+                          untouched. */}
                       {groupSortedPlots.slice(c * rowsPerCol, (c + 1) * rowsPerCol).map((p, k) => {
                         const y = lotTableTop + 22 + k * lotRowH;
                         return (
@@ -1992,8 +2015,9 @@ export function GeneralPlanView() {
               // req 2026-09-05), each capped against BC_ROW_H so a very
               // fine plan scale can't blow either one up past what a single
               // row actually has room for. bcHeadingFS is for the "BLOCK
-              // CORNER TABLE" title only now (outside the box, own line) —
-              // the header lines inside the box use bcFS like every row.
+              // CORNER TABLE" title only — its own row inside the box now
+              // (see bcBoxTop below) — the header lines below it use bcFS
+              // like every other row.
               const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
               const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
               // Actual bordered grid (client req 2026-09-05, reference
@@ -2003,7 +2027,16 @@ export function GeneralPlanView() {
               // rows ur columns ki ur kuch nahi karna" — matches the Lot
               // Areas table's own outer-rect + column-divider + header-rule
               // convention just above, not a new style of its own).
-              const bcBoxTop = bcTop + 5;
+              // "BLOCK CORNER TABLE" is itself a table heading, not a
+              // caption above the table (client req 2026-09-06, screenshot
+              // circling both this and "LOT AREAS" as floating outside
+              // their own boxes: "ye dono table se bahar ku hain ye bi
+              // table headings hi hain") — the box top now sits ABOVE the
+              // title instead of just below it, so the title becomes the
+              // table's own first row, with bcTitleRuleY (the box's old top
+              // edge) as the line separating it from the SYSTEM row below.
+              const bcTitleRuleY = bcTop + 5;
+              const bcBoxTop = bcTop - 9;
               // Header block shrunk further (client req 2026-09-05: "ye jo
               // heading diver hai isko thora uper karo na takay heading
               // walai jo row hai iski height kam ho jae ur x,y ur ye jo
@@ -2043,7 +2076,7 @@ export function GeneralPlanView() {
               // groups' true combined width, the same way Lot Areas' own
               // lotBoxRight is never capped independently of its columns
               // either — leaves the Lot Areas table above it untouched).
-              const bcGroupW = (tblR - tblL) * 0.35;
+              const bcGroupW = (tblR - tblL) * 0.28; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28)
               const bcTblR = tblL + bcGroupW * Math.max(usedBcCols, 1);
               const bcPad = 6;
               const bcGroups = Array.from({ length: usedBcCols }, (_, g) => {
@@ -2054,6 +2087,7 @@ export function GeneralPlanView() {
                 <>
                   <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
                   <rect x={tblL} y={bcBoxTop} width={bcTblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                  <line x1={tblL} y1={bcTitleRuleY} x2={bcTblR} y2={bcTitleRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   {/* SYSTEM row spans all columns, no vertical divider through
                       it (client req 2026-09-05: "ye heading wali row main
                       coumns ku banay hue hain columne psan use karo...
@@ -2065,19 +2099,10 @@ export function GeneralPlanView() {
                   <line x1={tblL} y1={bcSystemRowBottom} x2={bcTblR} y2={bcSystemRowBottom} stroke="#0f172a" strokeWidth={0.5} />
                   <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   <text x={panelX} y={bcSystemY} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
-                  {/* Row dividers span the table's FULL width, drawn once per
-                      row index rather than once per group (client req
-                      2026-09-05: "table per pura tarah lines nahi hai" — a
-                      divider drawn separately inside each group only ever
-                      covered that one group's own width, leaving visible
-                      gaps at every group boundary instead of one continuous
-                      line all the way across). bcRowsPerCol is the same for
-                      every group, so one set of lines lines up with all of
-                      them. */}
-                  {Array.from({ length: Math.max(0, bcRowsPerCol - 1) }).map((_, ri) => {
-                    const ly = bcTop + bcFirstRowOffset + (ri + 0.5) * BC_ROW_H;
-                    return <line key={`rd${ri}`} x1={tblL} y1={ly} x2={bcTblR} y2={ly} stroke="#cbd5e1" strokeWidth={0.4} />;
-                  })}
+                  {/* Row dividers removed again (client req 2026-09-06: "dono
+                      tables main se row devider delete kardo" — reversing
+                      the 2026-09-05 addition above this comment). Column
+                      dividers/outer border are untouched. */}
                   {bcGroups.map((g, gi) => (
                     <g key={gi}>
                       {gi > 0 && <line x1={g.left} y1={bcSystemRowBottom} x2={g.left} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />}
@@ -2254,8 +2279,16 @@ export function GeneralPlanView() {
       <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="General Plan details">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* "Location" used to be a separate field here, but it only ever
+              duplicated "Layout / township name" — every place that read it
+              (the title's "SITUATE AT ..." line, the fallback subtitle)
+              already fell back to meta.name whenever Location was left
+              blank, and both fields were routinely filled with the same
+              town/township name anyway (client screenshot: "CHARLES" in one,
+              "CharlesHi[ll]" in the other). Removed 2026-09-06 per client
+              request — one field, meta.name, is now the single source for
+              all of it. */}
           <Field label="Layout / township name"><Input value={meta.name} onChange={set("name")} /></Field>
-          <Field label="Location"><Input value={meta.location} onChange={set("location")} placeholder="e.g. Mogoditshane" /></Field>
           <Field label="Surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
           <Field label="G.P. No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
           <Field label="Scale 1:">
@@ -2280,7 +2313,7 @@ export function GeneralPlanView() {
         <p className="mt-1 text-xs text-slate-400">
           Fill in "Portions of Lot" / "Tribal area" / "Vide diagram DSM No." to add the matching title lines
           ("LOTS {lotRangeText || "…"} {meta.name}" / "PORTIONS OF LOT {meta.parentLotNumber || "…"} {meta.name}" /
-          "SITUATE AT {meta.location || meta.name} IN THE {meta.tribalArea || "…"} TRIBAL AREA") — leave any of them
+          "SITUATE AT {meta.name} IN THE {meta.tribalArea || "…"} TRIBAL AREA") — leave any of them
           blank to keep today's shorter title.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2500,7 +2533,7 @@ export function GeneralPlanView() {
                 <path d="M12.6 12.6 15 15" strokeLinecap="round" />
               </svg>
             </Button>
-            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button, then drag, to pan.{marqueeZoomActive ? " Drag a box on the sheet to zoom into it." : ""}</span>
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button (or the right mouse button), then drag, to pan.{marqueeZoomActive ? " Drag a box on the sheet to zoom into it." : ""}</span>
           </div>
         )}
         {/* Render all sheets (so refs exist for print-all); show only the active one.
@@ -2534,6 +2567,7 @@ export function GeneralPlanView() {
             setGpZoom((z) => Math.max(GP_ZOOM_MIN, Math.min(GP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
           }}
           onMouseDown={(e) => { handlePanMouseDown(e); handleMarqueeMouseDown(e); }}
+          onContextMenu={(e) => e.preventDefault()}
         >
         {marqueeRect && (
           <div
