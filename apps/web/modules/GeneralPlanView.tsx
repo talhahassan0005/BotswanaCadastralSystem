@@ -81,7 +81,7 @@ interface GpBeacon { id: string; east: number; north: number }
  *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
  *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { cogoPlots, config, setConfig, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
+  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
@@ -532,7 +532,21 @@ export function GeneralPlanView() {
       const x = ox + (e - minX) * s;
       return flipOverride ? 2 * rotPivotX - x : x;
     };
-    const sy0 = (n: number) => FY1 - oyOff - (n - minY) * s;
+    // Client req 2026-09-07: root-cause fix for the recurring "polygon comes
+    // inverted" complaint, replacing the manual Rotate 90°/Flip workarounds
+    // added earlier (client: "we cant have these tool at all... find a
+    // solution to why the polygon comes inverted"). The client's own
+    // diagnosis, from a diagram comparing the expected vs. rendered
+    // orientation: north was increasing UPWARD on screen (the standard
+    // north-up cartographic convention — larger north = smaller screen y),
+    // but the real beacon data this system actually plots renders correctly
+    // only the OTHER way — larger north further DOWN the screen. Whatever
+    // upstream convention produces that (a local grid, an import step, etc.)
+    // is out of scope here; this is the one place every GP drawing's screen
+    // position is derived, so flipping the mapping here — mirrored around
+    // the same frame box, same span/scale — fixes every sheet at once
+    // without a per-sheet manual control.
+    const sy0 = (n: number) => FY0 + oyOff + (n - minY) * s;
     const rRad = (rotationOverride * Math.PI) / 180;
     const cR = Math.cos(rRad), sR = Math.sin(rRad);
     // sx/sy now take BOTH east and north — a rotation couples the two axes,
@@ -559,7 +573,10 @@ export function GeneralPlanView() {
         y = rotPivotY - dx * sR + dy * cR;
       }
       if (flipOverride) x = 2 * rotPivotX - x;
-      return { east: (x - ox) / s + minX, north: minY + (FY1 - oyOff - y) / s };
+      // Inverse of the sy0 direction fix above — solves n from
+      // y = FY0 + oyOff + (n - minY) * s instead of the old
+      // y = FY1 - oyOff - (n - minY) * s.
+      return { east: (x - ox) / s + minX, north: minY + (y - FY0 - oyOff) / s };
     };
     const bounds = { minX, maxX, minY, maxY };
     return { sx, sy, screenToWorld, bounds, s };
@@ -1400,7 +1417,7 @@ export function GeneralPlanView() {
     // 1-3 columns keeps each pair the same size 4 columns already gets
     // right — it just uses fewer of them (and a narrower total table),
     // not wider ones.
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.55; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.7 -> 0.55)
+    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.42; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.7 -> 0.55 -> 0.42)
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
@@ -1679,7 +1696,18 @@ export function GeneralPlanView() {
     // possibly shrunk) row height has room for — otherwise a row height
     // squeezed down toward MIN_LOT_ROW_H would render text taller than its
     // own row, overlapping the next one.
-    const lotLabels = lotFontsFor(usedLotCols);
+    // Always the narrowest label tier (as if there were 4 columns), not
+    // lotFontsFor(usedLotCols) — computeLotColBounds' own pairW has sized
+    // every column-pair as if there were always at least 4 of them since
+    // the 2026-09-05 fix above, so a 1- or 2-column layout gets the EXACT
+    // same narrow pairW a 4-column one does, not a wider one. Picking the
+    // label tier by usedLotCols instead kept using the long "LOT No." /
+    // "SQ. METRES" form whenever usedLotCols < 3, even though the actual
+    // available width never got any wider to fit it — client screenshot
+    // 2026-09-06 circling "SQ. METRES" running past the table's own right
+    // border confirms the overflow this caused, made worse by this same
+    // session's own further pairW cuts (0.7 -> 0.55 -> 0.42).
+    const lotLabels = lotFontsFor(4);
     const lotFonts = { headerFS: panelFS, valueFS: Math.min(panelFS, lotRowH * 0.65), lotLabel: lotLabels.lotLabel, sqmLabel: lotLabels.sqmLabel };
     const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
@@ -2045,7 +2073,20 @@ export function GeneralPlanView() {
               // from a full BC_ROW_H to 6). First data row (bcFirstRowOffset
               // below) is untouched, so this only affects the header's own
               // height, not the row rhythm below it.
-              const bcSystemY = bcTop + BC_ROW_H;
+              //
+              // bcSystemY no longer tracks BC_ROW_H directly (client req
+              // 2026-09-07, screenshot circling the left border right at
+              // this row as if broken) — BC_ROW_H has been repeatedly
+              // shrunk since (13 -> 9 -> 7) to tighten the DATA rows, and
+              // each cut also silently squeezed THIS gap along with it,
+              // down to just 2 units between bcTitleRuleY (bcTop+5) and the
+              // SYSTEM text's own baseline — too little room for the text's
+              // ascender, which ended up overlapping/crossing the rule
+              // right where the border sits. A fixed 9 keeps this one gap
+              // (title row -> SYSTEM row) at the comfortable spacing it had
+              // before any of those data-row cuts, independent of how
+              // tight BC_ROW_H gets from here on.
+              const bcSystemY = bcTop + 9;
               const bcYXY = bcSystemY + 6;
               const bcSystemRowBottom = (bcSystemY + bcYXY) / 2;
               const bcConstY = bcYXY + 6;
@@ -2076,7 +2117,7 @@ export function GeneralPlanView() {
               // groups' true combined width, the same way Lot Areas' own
               // lotBoxRight is never capped independently of its columns
               // either — leaves the Lot Areas table above it untouched).
-              const bcGroupW = (tblR - tblL) * 0.28; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28)
+              const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
               const bcTblR = tblL + bcGroupW * Math.max(usedBcCols, 1);
               const bcPad = 6;
               const bcGroups = Array.from({ length: usedBcCols }, (_, g) => {
@@ -2486,13 +2527,14 @@ export function GeneralPlanView() {
             {selectedLabel && (
               <Button variant="ghost" onClick={deleteSelectedLabel}>✕ Delete selected label</Button>
             )}
-            <Button
-              variant="ghost"
-              onClick={() => setConfig({ displayRotation: ((config.displayRotation ?? 0) + 90) % 360 })}
-              title="Each sheet is scaled to fill the page as much as possible, but a real subdivision's own shape (taller than wide, or vice versa) doesn't always match the landscape page — rotating the drawing 90° at a time can close that gap and use more of the sheet."
-            >
-              Rotate 90°
-            </Button>
+            {/* "Rotate 90°" removed (client req 2026-09-07: "we cant have
+                these tool at all... find a solution to why the polygon
+                comes inverted") — it was a manual per-sheet workaround for
+                the same inverted-orientation issue the sy0 direction fix
+                above now fixes at the source, so it's no longer needed.
+                config.displayRotation itself is left alone (still read by
+                computeTransform, still shared with CogoWorkspace's own
+                controls elsewhere) — only this GP-specific button is gone. */}
             {/* Zoom (client req 2026-09-01: "zoom this GP only with a scroll
                 button without moving the whole window") — mouse wheel over
                 the sheet below zooms just this preview; +/- and Reset here
