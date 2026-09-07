@@ -1065,16 +1065,31 @@ export function GeneralPlanView() {
       text(x, y, s, groundMetres / metresPerUnit, anchor);
     }
 
-    text(W / 2, TITLE_Y1, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, MIN_TITLE_FS, "middle");
-    text(W / 2, TITLE_OF_Y, "OF", MIN_SUBTITLE_FS, "middle");
+    // Title block lines stack with their own generous, DXF-specific gap
+    // (client req 2026-09-07, screenshot: "heading ur subheading ke
+    // darmayan space doo" — every line was running into the next).
+    // TITLE_OF_Y/TITLE_LINE2_Y/TITLE_EXTRA_LINE_H are shared with the SVG
+    // titleBlock(), tuned there against its own dynamic (scale-dependent)
+    // font size — reusing that same fixed 10-unit gap here against DXF's
+    // fixed MIN_TITLE_FS/MIN_SUBTITLE_FS sizes (13/10) left barely any
+    // room at all, since the gap was smaller than the text height itself.
+    // A local running cursor with a gap sized relative to THESE fonts
+    // fixes this without touching the shared constants (and so without
+    // touching the SVG's own title spacing, which was never reported as
+    // an issue).
+    let dxfTitleY = TITLE_Y1;
+    text(W / 2, dxfTitleY, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, MIN_TITLE_FS, "middle");
+    dxfTitleY += MIN_TITLE_FS * 1.5;
+    text(W / 2, dxfTitleY, "OF", MIN_SUBTITLE_FS, "middle");
+    dxfTitleY += MIN_SUBTITLE_FS * 1.4;
     text(
-      W / 2, TITLE_LINE2_Y,
+      W / 2, dxfTitleY,
       lotRangeText
         ? `LOTS ${lotRangeText} ${meta.name}`
         : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}`,
       MIN_SUBTITLE_FS, "middle"
     );
-    extraTitleLines.forEach((ln, i) => text(W / 2, TITLE_LINE2_Y + (i + 1) * TITLE_EXTRA_LINE_H, ln, MIN_SUBTITLE_FS, "middle"));
+    extraTitleLines.forEach((ln) => { dxfTitleY += MIN_SUBTITLE_FS * 1.4; text(W / 2, dxfTitleY, ln, MIN_SUBTITLE_FS, "middle"); });
     // Registration box (GC-No/SHEET-No/DSM-No/Surveyed-in/By-me/Land-Surveyor)
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
