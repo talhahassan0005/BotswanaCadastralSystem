@@ -545,21 +545,21 @@ export function GeneralPlanView() {
       const x = ox + (e - minX) * s;
       return flipOverride ? 2 * rotPivotX - x : x;
     };
-    // Client req 2026-09-07: root-cause fix for the recurring "polygon comes
-    // inverted" complaint, replacing the manual Rotate 90°/Flip workarounds
-    // added earlier (client: "we cant have these tool at all... find a
-    // solution to why the polygon comes inverted"). The client's own
-    // diagnosis, from a diagram comparing the expected vs. rendered
-    // orientation: north was increasing UPWARD on screen (the standard
-    // north-up cartographic convention — larger north = smaller screen y),
-    // but the real beacon data this system actually plots renders correctly
-    // only the OTHER way — larger north further DOWN the screen. Whatever
-    // upstream convention produces that (a local grid, an import step, etc.)
-    // is out of scope here; this is the one place every GP drawing's screen
-    // position is derived, so flipping the mapping here — mirrored around
-    // the same frame box, same span/scale — fixes every sheet at once
-    // without a per-sheet manual control.
-    const sy0 = (n: number) => FY0 + oyOff + (n - minY) * s;
+    // REVERTED (client req 2026-09-07: "the diagram is ok. But GP still
+    // upside down" — after living with the flip below for a while, the
+    // client confirmed it did NOT fix the orientation, comparing against
+    // the Diagrams module's own diagramLayout.ts (toY = offY + (maxN -
+    // north) * sc — larger north = SMALLER screen y = further UP), which
+    // the client separately confirmed renders correctly ("the diagram is
+    // ok"). Commit 109a8fe's fix — inverting this to larger-north-further-
+    // DOWN, based on the client's own earlier diagram comparison — was
+    // therefore the wrong direction: this now matches Diagrams' own,
+    // confirmed-correct, standard north-up convention again instead.
+    // Whatever actually caused the original "polygon comes inverted"
+    // complaint was something else (rotation/flip state, vertex order,
+    // etc.), not the axis direction itself — worth re-diagnosing fresh
+    // rather than re-inverting this again on another guess.
+    const sy0 = (n: number) => FY1 - oyOff - (n - minY) * s;
     const rRad = (rotationOverride * Math.PI) / 180;
     const cR = Math.cos(rRad), sR = Math.sin(rRad);
     // sx/sy now take BOTH east and north — a rotation couples the two axes,
@@ -586,10 +586,8 @@ export function GeneralPlanView() {
         y = rotPivotY - dx * sR + dy * cR;
       }
       if (flipOverride) x = 2 * rotPivotX - x;
-      // Inverse of the sy0 direction fix above — solves n from
-      // y = FY0 + oyOff + (n - minY) * s instead of the old
-      // y = FY1 - oyOff - (n - minY) * s.
-      return { east: (x - ox) / s + minX, north: minY + (y - FY0 - oyOff) / s };
+      // Inverse of the reverted sy0 above.
+      return { east: (x - ox) / s + minX, north: minY + (FY1 - oyOff - y) / s };
     };
     const bounds = { minX, maxX, minY, maxY };
     return { sx, sy, screenToWorld, bounds, s };
@@ -1041,26 +1039,16 @@ export function GeneralPlanView() {
     const polylines: ImportedDrawing["polylines"] = [];
     const beaconPoints: ImportedDrawing["points"] = [];
 
-    // Client req 2026-09-07, screenshot of the actual exported DXF: every
-    // fixed sheet element (title, registration box, tables, panel) was
-    // rendering vertically MIRRORED — "GENERAL PLAN" at the bottom of its
-    // own block instead of the top, table headings below their own data
-    // instead of above it. Root cause: commit 109a8fe intentionally
-    // inverted computeTransform's own north<->screen-y direction to fix
-    // the client's own "polygon comes inverted" complaint — correct for
-    // PLOT/BEACON data (which goes through toExportWorld's liveT/baseT
-    // round-trip, unaffected by this), but baseT.screenToWorld alone is
-    // also what this text() helper uses to place fixed, non-survey sheet
-    // furniture, which has nothing to do with that inversion and never
-    // should have inherited it. FY0 + FY1 - y mirrors the y coordinate
-    // around the frame's own vertical centre before handing it to
-    // screenToWorld, which exactly recovers the ORIGINAL (pre-109a8fe)
-    // north direction for these fixed elements only — verified
-    // algebraically: NEW_north(FY0+FY1-y) == OLD_north(y). East/x is
-    // untouched (109a8fe never changed that mapping).
+    // The FY0+FY1-y mirror compensation this text() helper (and screenPt()
+    // below) briefly carried is gone (client req 2026-09-07: "GP still
+    // upside down" — commit 109a8fe's sy0 inversion it was compensating
+    // for has itself been reverted just above computeTransform, since the
+    // client confirmed it was the wrong direction, not the fixed sheet
+    // furniture math here). Plain screenToWorld again, matching how this
+    // worked before any of that.
     function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
       if (!s) return;
-      const p = baseT.screenToWorld(x, FY0 + FY1 - y);
+      const p = baseT.screenToWorld(x, y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
     // For content the SVG sizes as a real GROUND METRE height (panelFS/
@@ -1174,10 +1162,8 @@ export function GeneralPlanView() {
     // was already handled before any of this — it was never the actual
     // cause of anything looking wrong, just genuinely missing content.
     function screenPt(x: number, y: number) {
-      // Same y-mirror fix as text() above, for the same reason — frame
-      // border/north arrow geometry is fixed sheet furniture, not survey
-      // data, and must not inherit 109a8fe's polygon-only north inversion.
-      const w = baseT.screenToWorld(x, FY0 + FY1 - y);
+      // Mirror compensation removed, same reason as text() above.
+      const w = baseT.screenToWorld(x, y);
       return { x: w.east, y: w.north };
     }
     function screenPolyline(pts: [number, number][], closed: boolean, layer: string) {
