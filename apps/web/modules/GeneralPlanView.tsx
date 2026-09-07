@@ -2057,6 +2057,11 @@ export function GeneralPlanView() {
               // space under it.
               const bcBottom = bcTop + bcFirstRowOffset + (bcRowsPerCol - 0.4) * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
+              // bcGroupW/bcPad hoisted up from where the column layout is
+              // built below (bcTblR/bcGroups) — needed here already so bcFS
+              // can be capped against actual column WIDTH, not just row
+              // height. Values themselves are unchanged/untouched.
+              const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
               const bcPad = 6;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
               // req 2026-09-05), each capped against BC_ROW_H so a very
@@ -2065,25 +2070,28 @@ export function GeneralPlanView() {
               // CORNER TABLE" title only — its own row inside the box now
               // (see bcBoxTop below) — the header lines below it use bcFS
               // like every other row.
-              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
-              const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
-              // bcGroupW now GROWS to fit bcFS's text instead of bcFS
-              // shrinking to fit bcGroupW (client req 2026-09-07: "font kam
-              // na karo buss table ka size increase karo" — reversing the
-              // previous round's approach, which kept the column width
-              // fixed and shrank the font to fit inside it). 0.20 stays the
-              // FLOOR (the width already agreed on in earlier rounds), but
-              // grows past it whenever bcFS at its normal (row-height-only)
-              // size would otherwise overflow "CONSTANTS" (col0, 9 chars)
-              // or a full coordinate value like "+2 465 370,65" (col1/col2,
-              // 13 chars, from fmtCoord) — the same two strings the
-              // previous round sized the FONT down for, sized here as a
-              // minimum WIDTH instead. 0.6 is a standard average character-
+              //
+              // bcFS now ALSO capped against column WIDTH, not just row
+              // height (client req 2026-09-07, screenshot: "CONSTANTS" and
+              // "+0,00" running into each other, coordinate values crossing
+              // into the next column — "ye data table ke andar se fit hona
+              // chahiye... columns space ya row space ko disturb na
+              // karna"). bcGroupW was cut hard across several rounds (0.35
+              // -> 0.28 -> 0.20) purely to tighten column SPACING, but
+              // nothing ever re-checked whether the actual text still fit
+              // in what was left — bcFS stayed sized only for the ROW
+              // height. Column/row spacing itself is untouched here per
+              // this request; only the font shrinks further, just enough
+              // that "CONSTANTS" (col0's longest label) and a full
+              // coordinate value like "+2 465 370,65" (col1/col2's longest,
+              // from fmtCoord) both fit inside their own column before the
+              // next one starts. 0.55 is a standard average character-
               // width-to-font-size ratio for a sans-serif at this weight.
-              const BC_CHAR_W_RATIO = 0.6;
-              const bcMinGroupWForCol0 = (9 * bcFS * BC_CHAR_W_RATIO + bcPad + 2) / 0.22;
-              const bcMinGroupWForCol12 = (13 * bcFS * BC_CHAR_W_RATIO + bcPad + 2) / (0.61 - 0.22);
-              const bcGroupW = Math.max((tblR - tblL) * 0.20, bcMinGroupWForCol0, bcMinGroupWForCol12);
+              const BC_CHAR_W_RATIO = 0.55;
+              const bcCol0Fit = (bcGroupW * 0.22 - bcPad - 2) / (9 * BC_CHAR_W_RATIO); // "CONSTANTS" = 9 chars
+              const bcCol12Fit = (bcGroupW * (0.61 - 0.22) - bcPad - 2) / (13 * BC_CHAR_W_RATIO); // "+2 465 370,65" = 13 chars
+              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65, Math.max(2, bcCol0Fit), Math.max(2, bcCol12Fit));
+              const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
               // block corner page: "isko table ki form main hi rakhna
