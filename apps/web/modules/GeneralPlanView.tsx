@@ -474,7 +474,20 @@ export function GeneralPlanView() {
   // reserves room for a subheading that isn't there.
   const TITLE_Y1 = mapY(34);
   const TITLE_OF_Y = TITLE_Y1 + 10, TITLE_LINE2_Y = TITLE_OF_Y + 10; // client req 2026-09-05: "inke darmayan bi space reduce karo" (13/14 -> 10/10)
-  const FX0 = mapX(30), FY0 = TITLE_LINE2_Y + 22 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
+  // Buffer below the title block's own last line widened 22 -> 40 (client
+  // req 2026-09-07: "plots headings ur subheading ke niche niche hi rehne
+  // chahiye... DXF per bi ur general plan per bi" — the drawing area's
+  // own top edge, so this affects where plots/beacons are fit on BOTH
+  // the SVG and the DXF export, since both read FY0 from computeTransform
+  // the same way). The old 22-unit buffer was tight enough that DXF's own
+  // title-block fix just above (giving each line real breathing room,
+  // since DXF's fixed font sizes need more vertical room than the SVG's
+  // dynamic-scale title does) pushed the title's own last line PAST FY0
+  // — plots started overlapping the title instead of clearing it. A
+  // bigger buffer here covers that, and gives the SVG itself more
+  // headroom too (e.g. if the title's been manually resized bigger via
+  // its own drag/resize handles).
+  const FX0 = mapX(30), FY0 = TITLE_LINE2_Y + 40 + extraTitleLines.length * TITLE_EXTRA_LINE_H, FX1 = mapX(660), FY1 = mapY(H - 150);
   const pad = 30;
   // Shared display rotation (client req 2026-08-28) — applied AFTER the
   // fit-to-bounds projection below, spinning the drawing around the centre
