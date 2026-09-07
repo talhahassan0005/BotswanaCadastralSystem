@@ -2601,6 +2601,21 @@ export function GeneralPlanView() {
     const colW = 230;
     const cols = Math.min(3, Math.ceil(chunk.length / 16) || 1);
     const perCol = Math.ceil(chunk.length / cols);
+    // Header/first-row y now derived from FY0 (client req 2026-09-07,
+    // screenshot: table content colliding with the title on the
+    // Coordinate Schedule sheet specifically, while the layout sheet's
+    // own plots — also gated by FY0 — were clear of it) — this sheet's
+    // header used to start at a plain fixed y=88 regardless of how tall
+    // the title block actually grew (each optional "Portions of
+    // Lot"/"Tribal area"/"Vide diagram DSM No." line the layout sheet
+    // adds pushes titleBlock() taller here too, since both call the same
+    // function), so a title with several of those lines filled in grew
+    // past y=88 into the header row. FY0 is exactly "the y already
+    // computed to clear the title, whatever it currently contains" —
+    // reusing it here keeps this sheet in sync with the same title
+    // instead of a number that never adjusts for it.
+    const coordHeaderY = FY0 + 8;
+    const coordFirstRowY = coordHeaderY + 16;
     return (
       <svg key={idx} ref={(el) => { refs.current[layoutSheetCount + idx] = el; }} viewBox={`0 0 ${W} ${H}`} className="w-full bg-white" style={{ border: "1px solid #cbd5e1" }}>
         {titleBlock(layoutSheetCount + idx + 1, "Beacon coordinate schedule")}
@@ -2609,11 +2624,11 @@ export function GeneralPlanView() {
           const part = chunk.slice(c * perCol, (c + 1) * perCol);
           return (
             <g key={c}>
-              <text x={x0} y={88} fontSize={10} fontWeight={600} fill="#475569">Beacon</text>
-              <text x={x0 + 70} y={88} fontSize={10} fontWeight={600} fill="#475569">East (Y)</text>
-              <text x={x0 + 150} y={88} fontSize={10} fontWeight={600} fill="#475569">North (X)</text>
+              <text x={x0} y={coordHeaderY} fontSize={10} fontWeight={600} fill="#475569">Beacon</text>
+              <text x={x0 + 70} y={coordHeaderY} fontSize={10} fontWeight={600} fill="#475569">East (Y)</text>
+              <text x={x0 + 150} y={coordHeaderY} fontSize={10} fontWeight={600} fill="#475569">North (X)</text>
               {part.map((b, r) => {
-                const y = 104 + r * 13.5;
+                const y = coordFirstRowY + r * 13.5;
                 return (
                   <g key={b.id}>
                     <text x={x0} y={y} fontSize={9} fill="#0f172a">{b.id}</text>
