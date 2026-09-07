@@ -2057,7 +2057,6 @@ export function GeneralPlanView() {
               // space under it.
               const bcBottom = bcTop + bcFirstRowOffset + (bcRowsPerCol - 0.4) * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
-              const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
               const bcPad = 6;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
               // req 2026-09-05), each capped against BC_ROW_H so a very
@@ -2067,14 +2066,31 @@ export function GeneralPlanView() {
               // (see bcBoxTop below) — the header lines below it use bcFS
               // like every other row.
               //
-              // bcFS now literally SHARES the Lot Areas table's own value
-              // font size (client req 2026-09-07: "block corner table main
-              // jo text hai uska font size wohi rakho jo Lot area table ke
+              // bcFS literally SHARES the Lot Areas table's own value font
+              // size (client req 2026-09-07: "block corner table main jo
+              // text hai uska font size wohi rakho jo Lot area table ke
               // text ka hai") — referencing lotFonts.valueFS directly (not
               // just a similar formula) so the two stay byte-for-byte equal
               // even if either row height changes independently later.
               const bcFS = lotFonts.valueFS;
               const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
+              // bcGroupW grows to fit THIS font size instead of the font
+              // shrinking to fit a fixed table (client req 2026-09-07,
+              // screenshot showing "CONSTANTS"/"+0,00" and coordinate values
+              // overlapping again: "text left align nahi ho raha" — matching
+              // Lot Areas' own, generally larger, value font size in the
+              // edit above only reintroduced the overflow this same table
+              // width already caused before, at the smaller row-height-only
+              // font). 0.20 stays the floor (today's agreed narrow width);
+              // it only widens past that when bcFS at the Lot-Areas-matched
+              // size would otherwise overflow "CONSTANTS" (col0, 9 chars) or
+              // a full coordinate value like "+2 465 370,65" (col1/col2, 13
+              // chars, from fmtCoord). 0.6 is a standard average character-
+              // width-to-font-size ratio for a sans-serif at this weight.
+              const BC_CHAR_W_RATIO = 0.6;
+              const bcMinGroupWForCol0 = (9 * bcFS * BC_CHAR_W_RATIO + bcPad + 2) / 0.22;
+              const bcMinGroupWForCol12 = (13 * bcFS * BC_CHAR_W_RATIO + bcPad + 2) / (0.61 - 0.22);
+              const bcGroupW = Math.max((tblR - tblL) * 0.20, bcMinGroupWForCol0, bcMinGroupWForCol12);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
               // block corner page: "isko table ki form main hi rakhna
