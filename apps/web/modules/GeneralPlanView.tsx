@@ -2057,10 +2057,6 @@ export function GeneralPlanView() {
               // space under it.
               const bcBottom = bcTop + bcFirstRowOffset + (bcRowsPerCol - 0.4) * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
-              // bcGroupW/bcPad hoisted up from where the column layout is
-              // built below (bcTblR/bcGroups) — needed here already so bcFS
-              // can be capped against actual column WIDTH, not just row
-              // height. Values themselves are unchanged/untouched.
               const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
               const bcPad = 6;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
@@ -2071,26 +2067,15 @@ export function GeneralPlanView() {
               // (see bcBoxTop below) — the header lines below it use bcFS
               // like every other row.
               //
-              // bcFS now ALSO capped against column WIDTH, not just row
-              // height (client req 2026-09-07, screenshot: "CONSTANTS" and
-              // "+0,00" running into each other, coordinate values crossing
-              // into the next column — "ye data table ke andar se fit hona
-              // chahiye... columns space ya row space ko disturb na
-              // karna"). bcGroupW was cut hard across several rounds (0.35
-              // -> 0.28 -> 0.20) purely to tighten column SPACING, but
-              // nothing ever re-checked whether the actual text still fit
-              // in what was left — bcFS stayed sized only for the ROW
-              // height. Column/row spacing itself is untouched here per
-              // this request; only the font shrinks further, just enough
-              // that "CONSTANTS" (col0's longest label) and a full
-              // coordinate value like "+2 465 370,65" (col1/col2's longest,
-              // from fmtCoord) both fit inside their own column before the
-              // next one starts. 0.55 is a standard average character-
-              // width-to-font-size ratio for a sans-serif at this weight.
-              const BC_CHAR_W_RATIO = 0.55;
-              const bcCol0Fit = (bcGroupW * 0.22 - bcPad - 2) / (9 * BC_CHAR_W_RATIO); // "CONSTANTS" = 9 chars
-              const bcCol12Fit = (bcGroupW * (0.61 - 0.22) - bcPad - 2) / (13 * BC_CHAR_W_RATIO); // "+2 465 370,65" = 13 chars
-              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65, Math.max(2, bcCol0Fit), Math.max(2, bcCol12Fit));
+              // bcFS back to row-height-only sizing, NOT also capped by
+              // column width (client req 2026-09-07: "table main jo text
+              // hai iska size pehlye jesa karo sirf text ka table ka nahi" —
+              // text size back to what it was, table size left exactly as
+              // is). This reintroduces the column-width overflow risk the
+              // brief column-width cap (and, before that, the table-grows
+              // approach) were both trying to avoid — accepted per this
+              // explicit instruction.
+              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
               const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
