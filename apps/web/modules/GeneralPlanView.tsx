@@ -1406,7 +1406,7 @@ export function GeneralPlanView() {
    *  aligned (client req 2026-09-03: "these table values should be left
    *  align" — was right-aligned against each sub-column's own right edge,
    *  which read as a dead gap in the middle of a wide pair). */
-  function computeLotColBounds(cols: number) {
+  function computeLotColBounds(cols: number, minPairW: number = 0) {
     // Each column-pair's own width no longer grows just because fewer
     // columns were picked (client req 2026-09-05, two screenshots: "jab
     // option 2 per click karta hon tu inki width ziadah hoti hai ur jab 4
@@ -1417,7 +1417,14 @@ export function GeneralPlanView() {
     // 1-3 columns keeps each pair the same size 4 columns already gets
     // right — it just uses fewer of them (and a narrower total table),
     // not wider ones.
-    const pairW = Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.42; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.7 -> 0.55 -> 0.42)
+    //
+    // minPairW (client req 2026-09-07: "lot area ko bi isi tarah set karo
+    // jese block corner table ko kiya hai") — same grows-to-fit-its-own-
+    // text pattern just applied to the Block Corner Table: the 0.42
+    // multiplier below stays the FLOOR, widening only when the caller
+    // (which knows the actual font size and label/value text) says the
+    // floor isn't enough to avoid overflow.
+    const pairW = Math.max(Math.min((tblR - tblL) / 2, (tblR - tblL) / Math.max(cols, 4)) * 0.42, minPairW); // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.7 -> 0.55 -> 0.42)
     return Array.from({ length: cols }, (_, i) => {
       const left = tblL + i * pairW;
       const right = tblL + (i + 1) * pairW;
@@ -1687,7 +1694,6 @@ export function GeneralPlanView() {
     const rowsPerCol = usedLotCols === 0 ? 0 : Math.ceil(totalLots / usedLotCols);
     const lotRowH = rowsPerCol === 0 ? DEFAULT_LOT_ROW_H : Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / rowsPerCol));
     const usedLotRows = rowsPerCol;
-    const lotColBounds = computeLotColBounds(usedLotCols);
     // Header/value size now comes from panelFS (client req 2026-09-05, "make
     // all text 1.8 and proportional to scaling") — lotFontsFor still supplies
     // the per-column-count LABEL TEXT ("LOT No." vs "LOT" etc., abbreviated
@@ -1709,6 +1715,19 @@ export function GeneralPlanView() {
     // session's own further pairW cuts (0.7 -> 0.55 -> 0.42).
     const lotLabels = lotFontsFor(4);
     const lotFonts = { headerFS: panelFS, valueFS: Math.min(panelFS, lotRowH * 0.65), lotLabel: lotLabels.lotLabel, sqmLabel: lotLabels.sqmLabel };
+    // Column-pair width now also grows to fit its own text, same pattern
+    // as the Block Corner Table (client req 2026-09-07: "lot area ko bi
+    // isi tarah set karo jese block corner table ko kiya hai") — pairW's
+    // own 0.42-multiplier formula stays the floor, widening only if the
+    // header label ("LOT"/"SQ.M") or a realistic value ("(none)" as the
+    // longest lot-number fallback, an 8-digit area like "12345.67") would
+    // otherwise overflow at lotFonts' actual sizes. Same 0.46 character-
+    // width ratio as Block Corner's own tightened fit.
+    const LOT_CHAR_W_RATIO = 0.46;
+    const lotMaxFS = Math.max(lotFonts.headerFS, lotFonts.valueFS);
+    const lotMinPairWForCol0 = (6 * lotMaxFS * LOT_CHAR_W_RATIO + 6) / 0.42; // "(none)" = 6 chars
+    const lotMinPairWForCol1 = (8 * lotMaxFS * LOT_CHAR_W_RATIO + 6) / 0.58; // e.g. "12345.67" = 8 chars
+    const lotColBounds = computeLotColBounds(usedLotCols, Math.max(lotMinPairWForCol0, lotMinPairWForCol1));
     const lotBoxRight = usedLotCols > 0 ? lotColBounds[usedLotCols - 1].right : tblL;
     const isFirstSheet = groupIdx === 0;
     // Only labels anchored within this sheet's own drawing bounds — a label
