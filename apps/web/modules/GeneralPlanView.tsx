@@ -1942,7 +1942,6 @@ export function GeneralPlanView() {
             {groupSortedPlots.length > 0 && (() => {
               const laX = tblL - 8, laY = lotTableTop - 20;
               const laW = lotBoxRight - tblL + 16;
-              const laH = lotTableTop + 30 + usedLotRows * lotRowH + LOT_FOOTER_H - lotTableTop + 20;
               // "LOT AREAS" is itself a table heading, not a caption sitting
               // above the table (client req 2026-09-06, screenshot circling
               // both this and "BLOCK CORNER TABLE" as floating outside their
@@ -1954,7 +1953,20 @@ export function GeneralPlanView() {
               const titleRuleY = lotTableTop + 5; // was the box's own top edge before this fix
               const boxTop = lotTableTop - 9;
               const headerRuleY = lotTableTop + 16; // client req 2026-09-05: "heading wali row... uski height bi kam karo" (20 -> 16)
-              const boxBottom = lotTableTop + 30 + usedLotRows * lotRowH;
+              // Bottom padding below the last row now scales with lotRowH
+              // instead of a fixed "+30" (client req 2026-09-07, screenshot
+              // circling a large empty gap under the last row: "dono tables
+              // ke bottom main space hai extra usko bi reduce karo"). That
+              // "+30" was sized back when lotRowH was much taller (14, then
+              // 10) — as row height got tightened across later rounds down
+              // to 7, this fixed padding stayed the same in absolute terms
+              // and became disproportionately large. 0.7 row-heights of
+              // clearance below the last baseline is kept (not 0, so
+              // descenders/the border still have a little breathing room),
+              // it just shrinks along with lotRowH from here on instead of
+              // staying frozen at the old, taller-row value.
+              const boxBottom = lotTableTop + 22 + (usedLotRows - 0.3) * lotRowH;
+              const laH = boxBottom - lotTableTop + LOT_FOOTER_H + 20;
               return panelResizable("lotAreas", { x: laX, y: laY, w: laW, h: laH }, (
                 <>
                   <text x={panelX} y={lotTableTop} fontSize={panelHeadingFS} fontWeight={700} fill="#0f172a">LOT AREAS</text>
@@ -2037,8 +2049,20 @@ export function GeneralPlanView() {
               // the Y/X labels and CONSTANTS values landing on the exact
               // same y and rendering on top of each other).
               const bcFirstRowOffset = BC_ROW_H * 4;
-              const bcBottom = bcTop + bcFirstRowOffset + bcRowsPerCol * BC_ROW_H;
+              // Bottom padding below the last row trimmed from a full
+              // BC_ROW_H to 0.6 of one (client req 2026-09-07: "dono tables
+              // ke bottom main space hai extra usko bi reduce karo") — still
+              // enough clearance for the last row's own descenders before
+              // the border, just not a whole extra row's worth of blank
+              // space under it.
+              const bcBottom = bcTop + bcFirstRowOffset + (bcRowsPerCol - 0.4) * BC_ROW_H;
               const bcHitX = mapX(680), bcHitY = bcTop - 20, bcHitW = 300 * FRAME_SCALE_X, bcHitH = bcBottom - bcTop + 24;
+              // bcGroupW/bcPad hoisted up from where the column layout is
+              // built below (bcTblR/bcGroups) — needed here already so bcFS
+              // can be capped against actual column WIDTH, not just row
+              // height. Values themselves are unchanged/untouched.
+              const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
+              const bcPad = 6;
               // Same panelFS/panelHeadingFS as the rest of the panel (client
               // req 2026-09-05), each capped against BC_ROW_H so a very
               // fine plan scale can't blow either one up past what a single
@@ -2046,7 +2070,27 @@ export function GeneralPlanView() {
               // CORNER TABLE" title only — its own row inside the box now
               // (see bcBoxTop below) — the header lines below it use bcFS
               // like every other row.
-              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
+              //
+              // bcFS now ALSO capped against column WIDTH, not just row
+              // height (client req 2026-09-07, screenshot: "CONSTANTS" and
+              // "+0,00" running into each other, coordinate values crossing
+              // into the next column — "ye data table ke andar se fit hona
+              // chahiye... columns space ya row space ko disturb na
+              // karna"). bcGroupW was cut hard across several rounds (0.35
+              // -> 0.28 -> 0.20) purely to tighten column SPACING, but
+              // nothing ever re-checked whether the actual text still fit
+              // in what was left — bcFS stayed sized only for the ROW
+              // height. Column/row spacing itself is untouched here per
+              // this request; only the font shrinks further, just enough
+              // that "CONSTANTS" (col0's longest label) and a full
+              // coordinate value like "+2 465 370,65" (col1/col2's longest,
+              // from fmtCoord) both fit inside their own column before the
+              // next one starts. 0.55 is a standard average character-
+              // width-to-font-size ratio for a sans-serif at this weight.
+              const BC_CHAR_W_RATIO = 0.55;
+              const bcCol0Fit = (bcGroupW * 0.22 - bcPad - 2) / (9 * BC_CHAR_W_RATIO); // "CONSTANTS" = 9 chars
+              const bcCol12Fit = (bcGroupW * (0.61 - 0.22) - bcPad - 2) / (13 * BC_CHAR_W_RATIO); // "+2 465 370,65" = 13 chars
+              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65, Math.max(2, bcCol0Fit), Math.max(2, bcCol12Fit));
               const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
@@ -2117,9 +2161,7 @@ export function GeneralPlanView() {
               // groups' true combined width, the same way Lot Areas' own
               // lotBoxRight is never capped independently of its columns
               // either — leaves the Lot Areas table above it untouched).
-              const bcGroupW = (tblR - tblL) * 0.20; // client req 2026-09-06: "columns ke darmayan space reduce karo" (0.35 -> 0.28 -> 0.20)
               const bcTblR = tblL + bcGroupW * Math.max(usedBcCols, 1);
-              const bcPad = 6;
               const bcGroups = Array.from({ length: usedBcCols }, (_, g) => {
                 const left = tblL + g * bcGroupW;
                 return { left, col0: left, col1: left + bcGroupW * 0.22, col2: left + bcGroupW * 0.61, right: left + bcGroupW };
