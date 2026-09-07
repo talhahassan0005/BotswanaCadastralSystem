@@ -1028,9 +1028,26 @@ export function GeneralPlanView() {
     const polylines: ImportedDrawing["polylines"] = [];
     const beaconPoints: ImportedDrawing["points"] = [];
 
+    // Client req 2026-09-07, screenshot of the actual exported DXF: every
+    // fixed sheet element (title, registration box, tables, panel) was
+    // rendering vertically MIRRORED — "GENERAL PLAN" at the bottom of its
+    // own block instead of the top, table headings below their own data
+    // instead of above it. Root cause: commit 109a8fe intentionally
+    // inverted computeTransform's own north<->screen-y direction to fix
+    // the client's own "polygon comes inverted" complaint — correct for
+    // PLOT/BEACON data (which goes through toExportWorld's liveT/baseT
+    // round-trip, unaffected by this), but baseT.screenToWorld alone is
+    // also what this text() helper uses to place fixed, non-survey sheet
+    // furniture, which has nothing to do with that inversion and never
+    // should have inherited it. FY0 + FY1 - y mirrors the y coordinate
+    // around the frame's own vertical centre before handing it to
+    // screenToWorld, which exactly recovers the ORIGINAL (pre-109a8fe)
+    // north direction for these fixed elements only — verified
+    // algebraically: NEW_north(FY0+FY1-y) == OLD_north(y). East/x is
+    // untouched (109a8fe never changed that mapping).
     function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
       if (!s) return;
-      const p = baseT.screenToWorld(x, y);
+      const p = baseT.screenToWorld(x, FY0 + FY1 - y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
 
@@ -1103,7 +1120,10 @@ export function GeneralPlanView() {
     // was already handled before any of this — it was never the actual
     // cause of anything looking wrong, just genuinely missing content.
     function screenPt(x: number, y: number) {
-      const w = baseT.screenToWorld(x, y);
+      // Same y-mirror fix as text() above, for the same reason — frame
+      // border/north arrow geometry is fixed sheet furniture, not survey
+      // data, and must not inherit 109a8fe's polygon-only north inversion.
+      const w = baseT.screenToWorld(x, FY0 + FY1 - y);
       return { x: w.east, y: w.north };
     }
     function screenPolyline(pts: [number, number][], closed: boolean, layer: string) {
