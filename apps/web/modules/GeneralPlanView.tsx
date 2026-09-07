@@ -1050,6 +1050,20 @@ export function GeneralPlanView() {
       const p = baseT.screenToWorld(x, FY0 + FY1 - y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
+    // For content the SVG sizes as a real GROUND METRE height (panelFS/
+    // panelHeadingFS/bcFS, all `Math.max(MIN_FS, GROUND_M * t.s)` —
+    // client req 2026-09-07: "make it more exact to the general plan
+    // sheet") rather than a fixed SVG-pixel count — the Lot Areas/Block
+    // Corner tables and the sheet reference panel, all below. Converts
+    // the ground-metre value into the `heightUnits` text() itself expects
+    // (which gets multiplied back by metresPerUnit), so the two cancel
+    // out to the real metre height requested, independent of plan scale
+    // — title/registration/SR No above and the bottom traverse table
+    // below are genuinely fixed-pixel-sized in the SVG (not ground-
+    // metre), so they correctly stay on the plain text() convention.
+    function textM(x: number, y: number, s: string, groundMetres: number, anchor?: "middle" | "end") {
+      text(x, y, s, groundMetres / metresPerUnit, anchor);
+    }
 
     text(W / 2, TITLE_Y1, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, MIN_TITLE_FS, "middle");
     text(W / 2, TITLE_OF_Y, "OF", MIN_SUBTITLE_FS, "middle");
@@ -1148,19 +1162,30 @@ export function GeneralPlanView() {
     // t.sx/t.sy; averaging first in world space and transforming once
     // gives the identical point, since every transform involved is
     // affine).
+    // Text height here is a real GROUND METRE value used directly, not an
+    // SVG-pixel value run through metresPerUnit (client req 2026-09-07:
+    // "make it more exact to the general plan sheet" — the SVG sizes these
+    // two labels as `Math.max(MIN_FS, GROUND_M * t.s)`, i.e. a size that
+    // represents a fixed real-world height on screen; the DXF's own
+    // coordinate space already IS real-world metres, so the ground-metre
+    // constant translates directly with no extra conversion — using
+    // metresPerUnit here, as the fixed sheet-furniture text above does,
+    // would size these to an arbitrary SVG-pixel count instead of their
+    // actual intended real-world size, which also made them cluster
+    // together more than the SVG does at real subdivision density).
     for (const p of groupGpPlots) {
       if (!p.number || p.points.length < 3) continue;
       const cE = p.points.reduce((a, pt) => a + pt.east, 0) / p.points.length;
       const cN = p.points.reduce((a, pt) => a + pt.north, 0) / p.points.length;
       const w = toExportWorld(cE, cN);
-      notes.push({ x: w.east, y: w.north, text: p.number, height: 6 * metresPerUnit, layer: "PLOT_NUMBERS", anchor: "middle" });
+      notes.push({ x: w.east, y: w.north, text: p.number, height: LOT_NUMBER_GROUND_M, layer: "PLOT_NUMBERS", anchor: "middle" });
     }
 
     // Edge bearing/distance labels (road-facing/unmatched edges only,
     // same set the SVG's sheetDimLabels filters to via inBounds).
     for (const d of edgeDimensionLabels.filter((d) => inBounds({ id: d.id, east: d.east, north: d.north, text: "" }))) {
       const w = toExportWorld(d.east, d.north);
-      notes.push({ x: w.east, y: w.north, text: `${d.distance}m ${d.bearing}`, height: 5 * metresPerUnit, layer: "DIMENSIONS", anchor: "middle" });
+      notes.push({ x: w.east, y: w.north, text: `${d.distance}m ${d.bearing}`, height: EDGE_TEXT_GROUND_M, layer: "DIMENSIONS", anchor: "middle" });
     }
 
     // Lot Areas table — same source data (layoutGroups[activeGroupIdx])
@@ -1178,15 +1203,15 @@ export function GeneralPlanView() {
         [[tblL, lotTableTop - 9], [dxfLotBoxRight, lotTableTop - 9], [dxfLotBoxRight, dxfLotBoxBottom], [tblL, dxfLotBoxBottom]],
         true, "LOT_AREAS"
       );
-      text(panelX, lotTableTop, "LOT AREAS", 6);
+      textM(panelX, lotTableTop, "LOT AREAS", PANEL_HEADING_GROUND_M);
       for (let c = 0; c < lotTableCols; c++) {
         const col = dxfLotColBounds[c];
-        text(col.lotColL, lotTableTop + 13, "LOT", 4);
-        text(col.sqmColL, lotTableTop + 13, "SQ.M", 4);
+        textM(col.lotColL, lotTableTop + 13, "LOT", LOT_NUMBER_GROUND_M);
+        textM(col.sqmColL, lotTableTop + 13, "SQ.M", LOT_NUMBER_GROUND_M);
         dxfSortedPlots.slice(c * dxfRowsPerCol, (c + 1) * dxfRowsPerCol).forEach((p, k) => {
           const y = lotTableTop + 22 + k * DEFAULT_LOT_ROW_H;
-          text(col.lotColL, y, p.number || "(none)", 4);
-          text(col.sqmColL, y, p.fig.area_m2.toFixed(2), 4);
+          textM(col.lotColL, y, p.number || "(none)", LOT_NUMBER_GROUND_M);
+          textM(col.sqmColL, y, p.fig.area_m2.toFixed(2), LOT_NUMBER_GROUND_M);
         });
       }
     }
@@ -1207,22 +1232,22 @@ export function GeneralPlanView() {
         [[tblL, dxfBcTop - 9], [dxfBcTblR, dxfBcTop - 9], [dxfBcTblR, dxfBcBottom], [tblL, dxfBcBottom]],
         true, "BLOCK_CORNER"
       );
-      text(panelX, dxfBcTop, "BLOCK CORNER TABLE", 6);
+      textM(panelX, dxfBcTop, "BLOCK CORNER TABLE", PANEL_HEADING_GROUND_M);
       const dxfBcSystemY = dxfBcTop + 9;
-      text(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, 4);
+      textM(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, LOT_NUMBER_GROUND_M);
       for (let g = 0; g < dxfBcCols; g++) {
         const left = tblL + g * dxfBcGroupW;
         const col0 = left, col1 = left + dxfBcGroupW * 0.22, col2 = left + dxfBcGroupW * 0.61;
-        text(col1 + 6, dxfBcSystemY + 6, "Y", 4);
-        text(col2 + 6, dxfBcSystemY + 6, "X", 4);
-        text(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", 4);
-        text(col1 + 6, dxfBcSystemY + 12, "+0,00", 4);
-        text(col2 + 6, dxfBcSystemY + 12, "+0,00", 4);
+        textM(col1 + 6, dxfBcSystemY + 6, "Y", LOT_NUMBER_GROUND_M);
+        textM(col2 + 6, dxfBcSystemY + 6, "X", LOT_NUMBER_GROUND_M);
+        textM(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", LOT_NUMBER_GROUND_M);
+        textM(col1 + 6, dxfBcSystemY + 12, "+0,00", LOT_NUMBER_GROUND_M);
+        textM(col2 + 6, dxfBcSystemY + 12, "+0,00", LOT_NUMBER_GROUND_M);
         dxfBcSorted.slice(g * dxfBcRowsPerCol, (g + 1) * dxfBcRowsPerCol).forEach((b, k) => {
           const y = dxfBcTop + dxfBcFirstRowOffset + k * BC_ROW_H;
-          text(col0 + 6, y, b.id, 4);
-          text(col1 + 6, y, fmtCoord(b.east), 4);
-          text(col2 + 6, y, fmtCoord(b.north), 4);
+          textM(col0 + 6, y, b.id, LOT_NUMBER_GROUND_M);
+          textM(col1 + 6, y, fmtCoord(b.east), LOT_NUMBER_GROUND_M);
+          textM(col2 + 6, y, fmtCoord(b.north), LOT_NUMBER_GROUND_M);
         });
       }
     }
@@ -1231,7 +1256,9 @@ export function GeneralPlanView() {
     // Information / Ped Way) — panelSectionLayouts already has every
     // row's own default (un-dragged) y position precomputed.
     for (const section of panelSectionLayouts) {
-      section.rows.forEach((row, i) => text(panelX, section.rowYs[i], row.text, row.heading ? 5 : 4));
+      section.rows.forEach((row, i) =>
+        textM(panelX, section.rowYs[i], row.text, row.heading ? PANEL_HEADING_GROUND_M : LOT_NUMBER_GROUND_M)
+      );
     }
 
     // Bottom outer-boundary traverse table (sheet 1 only, matching the
