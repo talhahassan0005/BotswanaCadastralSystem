@@ -497,11 +497,27 @@ export function GeneralPlanView() {
   // DXF export) reads real east/north straight from `cogoPlots`, untouched —
   // only where shapes/labels are DRAWN moves, never the numbers a legal
   // document depends on.
-  const rotation = config.displayRotation ?? 0;
-  // Horizontal mirror (client req 2026-08-28) — rotation alone can never fix
-  // a mirrored shape, so this covers that case too; same shared, persisted,
-  // display-only setting CogoWorkspace's Flip button uses.
-  const flip = config.displayFlip ?? false;
+  // No longer reads config.displayRotation/displayFlip (client req
+  // 2026-09-08, root-caused via git history rather than another guess:
+  // Talha confirmed the client's project rendered correctly right after
+  // first importing coordinates, and only "after some days" turned
+  // upside down — commit 5963a61 (2026-08-31) had added GP's own
+  // "Rotate 90°" button, which set this SAME shared, project-level,
+  // PERSISTED config.displayRotation value CogoWorkspace's own Rotate
+  // control also reads/writes; a single click there (or 2-3, landing on
+  // 90/180/270) would have silently rotated every GP sheet from that
+  // point on, matching "worked at first, broke later" exactly. That
+  // button was removed in commit 109a8fe per the client's own "we cant
+  // have this tool at all" — but GP kept reading the shared value with
+  // no way left to reset it back to 0 if it was already stuck non-zero,
+  // and no way to stop a DIFFERENT module's own rotate/flip control (or
+  // that project's own leftover saved value) from silently affecting GP
+  // again in the future. GP now always renders unrotated/unflipped,
+  // matching what removing its own control was already meant to
+  // guarantee, regardless of what this shared value holds or how it
+  // changes elsewhere.
+  const rotation = 0;
+  const flip = false;
   const rotPivotX = (FX0 + FX1) / 2, rotPivotY = (FY0 + FY1) / 2;
   const rotRad = (rotation * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
