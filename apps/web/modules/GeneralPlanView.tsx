@@ -2067,15 +2067,13 @@ export function GeneralPlanView() {
               // (see bcBoxTop below) — the header lines below it use bcFS
               // like every other row.
               //
-              // bcFS back to row-height-only sizing, NOT also capped by
-              // column width (client req 2026-09-07: "table main jo text
-              // hai iska size pehlye jesa karo sirf text ka table ka nahi" —
-              // text size back to what it was, table size left exactly as
-              // is). This reintroduces the column-width overflow risk the
-              // brief column-width cap (and, before that, the table-grows
-              // approach) were both trying to avoid — accepted per this
-              // explicit instruction.
-              const bcFS = Math.min(panelFS, BC_ROW_H * 0.65);
+              // bcFS now literally SHARES the Lot Areas table's own value
+              // font size (client req 2026-09-07: "block corner table main
+              // jo text hai uska font size wohi rakho jo Lot area table ke
+              // text ka hai") — referencing lotFonts.valueFS directly (not
+              // just a similar formula) so the two stay byte-for-byte equal
+              // even if either row height changes independently later.
+              const bcFS = lotFonts.valueFS;
               const bcHeadingFS = Math.min(panelHeadingFS, BC_ROW_H * 0.65);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
@@ -2166,7 +2164,7 @@ export function GeneralPlanView() {
                       box's own top). */}
                   <line x1={tblL} y1={bcSystemRowBottom} x2={bcTblR} y2={bcSystemRowBottom} stroke="#0f172a" strokeWidth={0.5} />
                   <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                  <text x={panelX} y={bcSystemY} fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={panelX} y={bcSystemY} textAnchor="start" fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
                   {/* Row dividers removed again (client req 2026-09-06: "dono
                       tables main se row devider delete kardo" — reversing
                       the 2026-09-05 addition above this comment). Column
@@ -2176,18 +2174,18 @@ export function GeneralPlanView() {
                       {gi > 0 && <line x1={g.left} y1={bcSystemRowBottom} x2={g.left} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />}
                       <line x1={g.col1} y1={bcSystemRowBottom} x2={g.col1} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                       <line x1={g.col2} y1={bcSystemRowBottom} x2={g.col2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
-                      <text x={g.col1 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
-                      <text x={g.col2 + bcPad} y={bcYXY} fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                      <text x={g.col0 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">CONSTANTS</text>
-                      <text x={g.col1 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
-                      <text x={g.col2 + bcPad} y={bcConstY} fontSize={bcFS} fill="#475569">+0,00</text>
+                      <text x={g.col1 + bcPad} y={bcYXY} textAnchor="start" fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
+                      <text x={g.col2 + bcPad} y={bcYXY} textAnchor="start" fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
+                      <text x={g.col0 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                      <text x={g.col1 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">+0,00</text>
+                      <text x={g.col2 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">+0,00</text>
                       {bcShown.slice(gi * bcRowsPerCol, (gi + 1) * bcRowsPerCol).map((b, k) => {
                         const y = bcTop + bcFirstRowOffset + k * BC_ROW_H;
                         return (
                           <g key={b.id}>
-                            <text x={g.col0 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{b.id}</text>
-                            <text x={g.col1 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
-                            <text x={g.col2 + bcPad} y={y} fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
+                            <text x={g.col0 + bcPad} y={y} textAnchor="start" fontSize={bcFS} fill="#0f172a">{b.id}</text>
+                            <text x={g.col1 + bcPad} y={y} textAnchor="start" fontSize={bcFS} fill="#0f172a">{fmtCoord(b.east)}</text>
+                            <text x={g.col2 + bcPad} y={y} textAnchor="start" fontSize={bcFS} fill="#0f172a">{fmtCoord(b.north)}</text>
                           </g>
                         );
                       })}
