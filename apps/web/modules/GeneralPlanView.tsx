@@ -2085,17 +2085,16 @@ export function GeneralPlanView() {
               // it only widens past that when bcFS at the Lot-Areas-matched
               // size would otherwise overflow "CONSTANTS" (col0, 9 chars) or
               // a full coordinate value like "+2 465 370,65" (col1/col2, 13
-              // chars, from fmtCoord). 0.6 was a deliberately generous
-              // average character-width-to-font-size ratio; tightened to
-              // 0.52 (client req 2026-09-07: "columns main space kam
-              // karo") — still enough clearance for these actual digit-
-              // heavy strings (digits render narrower than 0.6 assumed in
-              // most sans-serifs), just without the extra leftover
-              // whitespace 0.6's safety margin left between the end of the
-              // text and the next divider.
-              const BC_CHAR_W_RATIO = 0.52;
-              const bcMinGroupWForCol0 = (9 * bcFS * BC_CHAR_W_RATIO + bcPad + 1) / 0.22;
-              const bcMinGroupWForCol12 = (13 * bcFS * BC_CHAR_W_RATIO + bcPad + 1) / (0.61 - 0.22);
+              // chars, from fmtCoord). Ratio/margin tightened further
+              // (client req 2026-09-07, second round: "columns main space
+              // ur reduce karo") — 0.52 -> 0.46 and the extra clearance
+              // margin 1 -> 0 (bcPad alone is still the left-padding before
+              // the text itself); digits in most sans-serifs render closer
+              // to 0.45-0.5em, so this is close to the real minimum rather
+              // than a safety-padded estimate.
+              const BC_CHAR_W_RATIO = 0.46;
+              const bcMinGroupWForCol0 = (9 * bcFS * BC_CHAR_W_RATIO + bcPad) / 0.22;
+              const bcMinGroupWForCol12 = (13 * bcFS * BC_CHAR_W_RATIO + bcPad) / (0.61 - 0.22);
               const bcGroupW = Math.max((tblR - tblL) * 0.20, bcMinGroupWForCol0, bcMinGroupWForCol12);
               // Actual bordered grid (client req 2026-09-05, reference
               // screenshot of the real GC document's own tightly-ruled
