@@ -1079,9 +1079,21 @@ export function GeneralPlanView() {
     // stays in sync with the SVG preview above — General Plan only, absent
     // from the real Working Plan reference sheet.
     if (sheetMode === "general") {
+      // Border + the two internal divider lines, and "Approved"/"Director
+      // of Surveys and Mapping" text, were all missing from the DXF
+      // entirely (client req 2026-09-07, screenshot: "signature box dekho
+      // top right corner per usko exactly karo") — this box's own <rect>
+      // and <line>s below use screenPt/screenPolyline (hoisted function
+      // declarations, callable here despite being defined later in this
+      // same function body).
+      screenPolyline([[regX, regY], [regX + regW, regY], [regX + regW, regY + regSize], [regX, regY + regSize]], true, "REG_BOX");
+      screenPolyline([[regX, regY + 30 * regScale], [regX + regW, regY + 30 * regScale]], false, "REG_BOX");
+      screenPolyline([[regX, regY + 86 * regScale], [regX + regW, regY + 86 * regScale]], false, "REG_BOX");
       text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 5);
       text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 5, "end");
       text(regX + 6 * regScale, regY + 24 * regScale, `DSM No: ${meta.dsmNo || "—"}`, 9.5 * regScale);
+      text(regX + 6 * regScale, regY + 46 * regScale, "Approved", 8.5 * regScale);
+      text(regX + 6 * regScale, regY + 76 * regScale, "Director of Surveys and Mapping", 7.5 * regScale);
       text(regX + 6 * regScale, regY + 100 * regScale, "Surveyed in", 8 * regScale);
       text(regX + regW - 6 * regScale, regY + 100 * regScale, meta.surveyedIn || "—", 8 * regScale, "end");
       text(regX + 6 * regScale, regY + 114 * regScale, "By me", 8 * regScale);
@@ -1196,22 +1208,37 @@ export function GeneralPlanView() {
     let dxfLotBoxBottom = lotTableTop;
     if (dxfSortedPlots.length > 0) {
       const dxfRowsPerCol = Math.ceil(dxfSortedPlots.length / lotTableCols);
+      // Row height now shrinks toward MIN_LOT_ROW_H the same way the SVG's
+      // own lotRowH does when there isn't room for DEFAULT_LOT_ROW_H per
+      // row (client req 2026-09-07: "tables ki jaga dekho general plan ke
+      // according dekho") — using the fixed DEFAULT_LOT_ROW_H
+      // unconditionally made a sheet with many lots run the DXF table
+      // taller than its SVG counterpart, past where the SVG itself would
+      // have compressed it to stay within the available right-column
+      // space (rightColH/bcReserve/availableLotH are the SAME shared
+      // consts the SVG's own lotRowH is computed from).
+      const dxfLotRowH = Math.max(MIN_LOT_ROW_H, Math.min(DEFAULT_LOT_ROW_H, availableLotH / dxfRowsPerCol));
       const dxfLotColBounds = computeLotColBounds(lotTableCols);
       const dxfLotBoxRight = dxfLotColBounds[lotTableCols - 1].right;
-      dxfLotBoxBottom = lotTableTop + 22 + (dxfRowsPerCol - 0.3) * DEFAULT_LOT_ROW_H;
+      dxfLotBoxBottom = lotTableTop + 22 + (dxfRowsPerCol - 0.3) * dxfLotRowH;
       screenPolyline(
         [[tblL, lotTableTop - 9], [dxfLotBoxRight, lotTableTop - 9], [dxfLotBoxRight, dxfLotBoxBottom], [tblL, dxfLotBoxBottom]],
         true, "LOT_AREAS"
       );
       textM(panelX, lotTableTop, "LOT AREAS", PANEL_HEADING_GROUND_M);
+      // Value text height capped to the row's own height (matching the
+      // SVG's valueFS = Math.min(panelFS, lotRowH*0.65)) — otherwise a
+      // shrunk row (many lots) would still get full-size ground-metre
+      // text taller than the row itself, overlapping the next one.
+      const dxfLotValueM = Math.min(LOT_NUMBER_GROUND_M, dxfLotRowH * 0.65 * metresPerUnit);
       for (let c = 0; c < lotTableCols; c++) {
         const col = dxfLotColBounds[c];
-        textM(col.lotColL, lotTableTop + 13, "LOT", LOT_NUMBER_GROUND_M);
-        textM(col.sqmColL, lotTableTop + 13, "SQ.M", LOT_NUMBER_GROUND_M);
+        textM(col.lotColL, lotTableTop + 13, "LOT", dxfLotValueM);
+        textM(col.sqmColL, lotTableTop + 13, "SQ.M", dxfLotValueM);
         dxfSortedPlots.slice(c * dxfRowsPerCol, (c + 1) * dxfRowsPerCol).forEach((p, k) => {
-          const y = lotTableTop + 22 + k * DEFAULT_LOT_ROW_H;
-          textM(col.lotColL, y, p.number || "(none)", LOT_NUMBER_GROUND_M);
-          textM(col.sqmColL, y, p.fig.area_m2.toFixed(2), LOT_NUMBER_GROUND_M);
+          const y = lotTableTop + 22 + k * dxfLotRowH;
+          textM(col.lotColL, y, p.number || "(none)", dxfLotValueM);
+          textM(col.sqmColL, y, p.fig.area_m2.toFixed(2), dxfLotValueM);
         });
       }
     }
@@ -1234,30 +1261,45 @@ export function GeneralPlanView() {
       );
       textM(panelX, dxfBcTop, "BLOCK CORNER TABLE", PANEL_HEADING_GROUND_M);
       const dxfBcSystemY = dxfBcTop + 9;
-      textM(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, LOT_NUMBER_GROUND_M);
+      // Same row-height cap as Lot Areas' own dxfLotValueM, against
+      // BC_ROW_H (fixed, unlike Lot Areas' — the SVG's Block Corner Table
+      // doesn't shrink its row height, but its text still can't exceed
+      // that fixed row without overlapping the next one).
+      const dxfBcValueM = Math.min(LOT_NUMBER_GROUND_M, BC_ROW_H * 0.65 * metresPerUnit);
+      textM(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, dxfBcValueM);
       for (let g = 0; g < dxfBcCols; g++) {
         const left = tblL + g * dxfBcGroupW;
         const col0 = left, col1 = left + dxfBcGroupW * 0.22, col2 = left + dxfBcGroupW * 0.61;
-        textM(col1 + 6, dxfBcSystemY + 6, "Y", LOT_NUMBER_GROUND_M);
-        textM(col2 + 6, dxfBcSystemY + 6, "X", LOT_NUMBER_GROUND_M);
-        textM(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", LOT_NUMBER_GROUND_M);
-        textM(col1 + 6, dxfBcSystemY + 12, "+0,00", LOT_NUMBER_GROUND_M);
-        textM(col2 + 6, dxfBcSystemY + 12, "+0,00", LOT_NUMBER_GROUND_M);
+        textM(col1 + 6, dxfBcSystemY + 6, "Y", dxfBcValueM);
+        textM(col2 + 6, dxfBcSystemY + 6, "X", dxfBcValueM);
+        textM(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", dxfBcValueM);
+        textM(col1 + 6, dxfBcSystemY + 12, "+0,00", dxfBcValueM);
+        textM(col2 + 6, dxfBcSystemY + 12, "+0,00", dxfBcValueM);
         dxfBcSorted.slice(g * dxfBcRowsPerCol, (g + 1) * dxfBcRowsPerCol).forEach((b, k) => {
           const y = dxfBcTop + dxfBcFirstRowOffset + k * BC_ROW_H;
-          textM(col0 + 6, y, b.id, LOT_NUMBER_GROUND_M);
-          textM(col1 + 6, y, fmtCoord(b.east), LOT_NUMBER_GROUND_M);
-          textM(col2 + 6, y, fmtCoord(b.north), LOT_NUMBER_GROUND_M);
+          textM(col0 + 6, y, b.id, dxfBcValueM);
+          textM(col1 + 6, y, fmtCoord(b.east), dxfBcValueM);
+          textM(col2 + 6, y, fmtCoord(b.north), dxfBcValueM);
         });
       }
     }
 
     // Sheet reference panel (Sheet Index / Beacon Description / Splay
     // Information / Ped Way) — panelSectionLayouts already has every
-    // row's own default (un-dragged) y position precomputed.
+    // row's own default (un-dragged) y position precomputed. Text height
+    // now matches the SVG's OWN exact formula (client req 2026-09-07:
+    // "headings ke darmayan thori space honi chahiye DXF main" — plain
+    // textM(..., PANEL_HEADING_GROUND_M) ignored the SVG's own 6-unit-
+    // row-height cap entirely, letting consecutive rows' text run into
+    // each other) — min(panelHeadingFS, 6*0.65) for a heading row,
+    // min(panelFS, 12*0.65) otherwise, same as the JSX just below. These
+    // are SVG-unit sizes already capped to fit the row rhythm, so they go
+    // through the plain text() convention, not textM's ground-metre one.
+    const dxfPanelFS = Math.max(MIN_LOT_NUMBER_FS, LOT_NUMBER_GROUND_M * liveT.s);
+    const dxfPanelHeadingFS = Math.max(MIN_PANEL_HEADING_FS, PANEL_HEADING_GROUND_M * liveT.s);
     for (const section of panelSectionLayouts) {
       section.rows.forEach((row, i) =>
-        textM(panelX, section.rowYs[i], row.text, row.heading ? PANEL_HEADING_GROUND_M : LOT_NUMBER_GROUND_M)
+        text(panelX, section.rowYs[i], row.text, row.heading ? Math.min(dxfPanelHeadingFS, 6 * 0.65) : Math.min(dxfPanelFS, 12 * 0.65))
       );
     }
 
