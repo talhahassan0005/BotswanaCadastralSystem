@@ -1084,6 +1084,155 @@ export function GeneralPlanView() {
       notes.push({ x: w.east, y: w.north, text: tt.text, height: 7.5 * metresPerUnit, layer: "BOUNDARY_LABELS" });
     }
 
+    // Everything below (client req 2026-09-07: "DXF bhi exactly same to
+    // same General Plan hi hai, buss format change hai file ka, baqi
+    // content 100% exactly same General Plan hi hona chahiye") — until
+    // now the DXF deliberately scoped OUT the frame/grid, north arrow,
+    // plot number labels, edge bearing/distance labels, Lot Areas table,
+    // Block Corner Table, sheet reference panel, and the bottom outer-
+    // boundary traverse table, on the assumption a DXF only needed the
+    // raw survey geometry (boundary/beacons/labels) since the app's own
+    // print/PDF output already covered the rest. The client wants full
+    // parity instead — same content, just a different file format — so
+    // all of it is added here, walking the SAME positions/values the SVG
+    // preview above already computes wherever they're shared (panelX,
+    // tblL/tblR, lotTableTop, panelSectionLayouts, outerSides, etc. are
+    // all component-level consts, not local to renderLayoutSheet, so
+    // there's nothing to re-derive for those). "%%d" for the degree sign
+    // in DMS bearings elsewhere in this file (asciiSafeDxfText in dxf.ts)
+    // was already handled before any of this — it was never the actual
+    // cause of anything looking wrong, just genuinely missing content.
+    function screenPt(x: number, y: number) {
+      const w = baseT.screenToWorld(x, y);
+      return { x: w.east, y: w.north };
+    }
+    function screenPolyline(pts: [number, number][], closed: boolean, layer: string) {
+      polylines.push({ pts: pts.map(([x, y]) => screenPt(x, y)), closed, layer });
+    }
+
+    // Frame border.
+    screenPolyline([[FRAME_X, FRAME_Y], [FRAME_R, FRAME_Y], [FRAME_R, FRAME_B], [FRAME_X, FRAME_B]], true, "FRAME");
+
+    // North arrow (default position — a drag offset here, if the client
+    // moved it, isn't replicated; matches the shaft+arrowhead+"N" the SVG
+    // draws at northX/northY).
+    {
+      const northX = FX1 + 15, northY = FY0 + 16;
+      screenPolyline([[northX, northY + 12], [northX, northY - 10]], false, "NORTH_ARROW");
+      screenPolyline([[northX, northY - 14], [northX - 5, northY - 5], [northX + 5, northY - 5]], true, "NORTH_ARROW");
+      text(northX, northY + 26, "N", 10, "middle");
+    }
+
+    // Plot number labels, at each plot's own centroid — same mean-of-
+    // vertices centroid the SVG computes (in screen space there via
+    // t.sx/t.sy; averaging first in world space and transforming once
+    // gives the identical point, since every transform involved is
+    // affine).
+    for (const p of groupGpPlots) {
+      if (!p.number || p.points.length < 3) continue;
+      const cE = p.points.reduce((a, pt) => a + pt.east, 0) / p.points.length;
+      const cN = p.points.reduce((a, pt) => a + pt.north, 0) / p.points.length;
+      const w = toExportWorld(cE, cN);
+      notes.push({ x: w.east, y: w.north, text: p.number, height: 6 * metresPerUnit, layer: "PLOT_NUMBERS", anchor: "middle" });
+    }
+
+    // Edge bearing/distance labels (road-facing/unmatched edges only,
+    // same set the SVG's sheetDimLabels filters to via inBounds).
+    for (const d of edgeDimensionLabels.filter((d) => inBounds({ id: d.id, east: d.east, north: d.north, text: "" }))) {
+      const w = toExportWorld(d.east, d.north);
+      notes.push({ x: w.east, y: w.north, text: `${d.distance}m ${d.bearing}`, height: 5 * metresPerUnit, layer: "DIMENSIONS", anchor: "middle" });
+    }
+
+    // Lot Areas table — same source data (layoutGroups[activeGroupIdx])
+    // and column geometry (computeLotColBounds) the SVG uses; DEFAULT_LOT_
+    // ROW_H/panelX/tblL/tblR/lotTableTop are all shared component-level
+    // consts already, not local to renderLayoutSheet.
+    const dxfSortedPlots = layoutGroups[activeGroupIdx];
+    let dxfLotBoxBottom = lotTableTop;
+    if (dxfSortedPlots.length > 0) {
+      const dxfRowsPerCol = Math.ceil(dxfSortedPlots.length / lotTableCols);
+      const dxfLotColBounds = computeLotColBounds(lotTableCols);
+      const dxfLotBoxRight = dxfLotColBounds[lotTableCols - 1].right;
+      dxfLotBoxBottom = lotTableTop + 22 + (dxfRowsPerCol - 0.3) * DEFAULT_LOT_ROW_H;
+      screenPolyline(
+        [[tblL, lotTableTop - 9], [dxfLotBoxRight, lotTableTop - 9], [dxfLotBoxRight, dxfLotBoxBottom], [tblL, dxfLotBoxBottom]],
+        true, "LOT_AREAS"
+      );
+      text(panelX, lotTableTop, "LOT AREAS", 6);
+      for (let c = 0; c < lotTableCols; c++) {
+        const col = dxfLotColBounds[c];
+        text(col.lotColL, lotTableTop + 13, "LOT", 4);
+        text(col.sqmColL, lotTableTop + 13, "SQ.M", 4);
+        dxfSortedPlots.slice(c * dxfRowsPerCol, (c + 1) * dxfRowsPerCol).forEach((p, k) => {
+          const y = lotTableTop + 22 + k * DEFAULT_LOT_ROW_H;
+          text(col.lotColL, y, p.number || "(none)", 4);
+          text(col.sqmColL, y, p.fig.area_m2.toFixed(2), 4);
+        });
+      }
+    }
+
+    // Block Corner Table — activeUsedBeacons is the same "beacons actually
+    // used on this sheet" set the SVG's groupUsedBeacons/bcSorted derives
+    // from; positioned below wherever the Lot Areas table (if any) ended.
+    const dxfBcSorted = [...activeUsedBeacons].sort((a, b) => comparePointNames(a.id, b.id));
+    if (dxfBcSorted.length > 0) {
+      const dxfBcTop = dxfLotBoxBottom + 24;
+      const dxfBcCols = blockCornerCols;
+      const dxfBcRowsPerCol = Math.ceil(dxfBcSorted.length / dxfBcCols);
+      const dxfBcGroupW = (tblR - tblL) * 0.20;
+      const dxfBcTblR = tblL + dxfBcGroupW * dxfBcCols;
+      const dxfBcFirstRowOffset = BC_ROW_H * 4;
+      const dxfBcBottom = dxfBcTop + dxfBcFirstRowOffset + Math.max(0, dxfBcRowsPerCol - 0.4) * BC_ROW_H;
+      screenPolyline(
+        [[tblL, dxfBcTop - 9], [dxfBcTblR, dxfBcTop - 9], [dxfBcTblR, dxfBcBottom], [tblL, dxfBcBottom]],
+        true, "BLOCK_CORNER"
+      );
+      text(panelX, dxfBcTop, "BLOCK CORNER TABLE", 6);
+      const dxfBcSystemY = dxfBcTop + 9;
+      text(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, 4);
+      for (let g = 0; g < dxfBcCols; g++) {
+        const left = tblL + g * dxfBcGroupW;
+        const col0 = left, col1 = left + dxfBcGroupW * 0.22, col2 = left + dxfBcGroupW * 0.61;
+        text(col1 + 6, dxfBcSystemY + 6, "Y", 4);
+        text(col2 + 6, dxfBcSystemY + 6, "X", 4);
+        text(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", 4);
+        text(col1 + 6, dxfBcSystemY + 12, "+0,00", 4);
+        text(col2 + 6, dxfBcSystemY + 12, "+0,00", 4);
+        dxfBcSorted.slice(g * dxfBcRowsPerCol, (g + 1) * dxfBcRowsPerCol).forEach((b, k) => {
+          const y = dxfBcTop + dxfBcFirstRowOffset + k * BC_ROW_H;
+          text(col0 + 6, y, b.id, 4);
+          text(col1 + 6, y, fmtCoord(b.east), 4);
+          text(col2 + 6, y, fmtCoord(b.north), 4);
+        });
+      }
+    }
+
+    // Sheet reference panel (Sheet Index / Beacon Description / Splay
+    // Information / Ped Way) — panelSectionLayouts already has every
+    // row's own default (un-dragged) y position precomputed.
+    for (const section of panelSectionLayouts) {
+      section.rows.forEach((row, i) => text(panelX, section.rowYs[i], row.text, row.heading ? 5 : 4));
+    }
+
+    // Bottom outer-boundary traverse table (sheet 1 only, matching the
+    // SVG's isFirstSheet gate).
+    if (activeGroupIdx === 0 && outerSides.length > 0) {
+      text(mapX(30), FY1 + 44, "OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES", 5);
+      text(mapX(30), FY1 + 58, "Point", 4);
+      text(mapX(110), FY1 + 58, "Direction", 4);
+      text(mapX(230), FY1 + 58, "Distance (m)", 4);
+      text(mapX(340), FY1 + 58, "Y", 4);
+      text(mapX(430), FY1 + 58, "X", 4);
+      outerSides.slice(0, 8).forEach((s, k) => {
+        const y = FY1 + 72 + k * 12;
+        text(mapX(30), y, s.point, 4);
+        text(mapX(110), y, s.bearing, 4);
+        text(mapX(230), y, s.distance.toFixed(2), 4);
+        text(mapX(340), y, fmtCoord(s.east), 4);
+        text(mapX(430), y, fmtCoord(s.north), 4);
+      });
+    }
+
     const drawing: ImportedDrawing = { points: beaconPoints, polylines, texts: notes };
     const dxf = writeDxf(drawing);
     const blob = new Blob([dxf], { type: "application/dxf" });
