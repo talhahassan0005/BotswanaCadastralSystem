@@ -98,6 +98,14 @@ interface Props {
   onLabelPointerMove?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelPointerUp?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
   onLabelResize?: (name: string, delta: number) => void;
+  /** Beacon points marked as block corners (client req 2026-09-07: "only
+   *  under working plan, add an option to add double circles on block
+   *  corners" — reference screenshot showed a beacon drawn as two
+   *  concentric circles instead of the usual single hollow one, the
+   *  standard cadastral convention for marking a block corner). Click the
+   *  beacon's own circle (not its label) to toggle it. */
+  blockCornerIds?: Set<string>;
+  onToggleBlockCorner?: (name: string) => void;
   /** Same select/move/resize treatment as the beacon labels above, but for
    *  the manual text notes — keyed by the note's own `id` instead of a point
    *  name (client req 2026-08-28: "I want to be able to select, resize, and
@@ -223,6 +231,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onLabelPointerMove,
     onLabelPointerUp,
     onLabelResize,
+    blockCornerIds,
+    onToggleBlockCorner,
     textOffsets,
     selectedTextId,
     onTextClick,
@@ -680,9 +690,29 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const ly = pl?.labelY ?? by;
         const isSel = !!p.name && selectedLabel === p.name;
         const boxW = 10 * scale, boxH = 7 * scale;
+        const isBlockCorner = !!p.name && !!blockCornerIds?.has(p.name);
         return (
           <g key={`b${i}`}>
-            {showDot && <circle cx={bx} cy={by} r={beaconR} fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)} />}
+            {showDot && (
+              <circle
+                cx={bx} cy={by} r={beaconR}
+                fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)}
+                style={{ cursor: p.name ? "pointer" : "default" }}
+                onClick={(e) => { e.stopPropagation(); if (p.name) onToggleBlockCorner?.(p.name); }}
+              />
+            )}
+            {/* Double circle for a block corner (client req 2026-09-07:
+                "only under working plan, add an option to add double
+                circles on block corners") — a second, larger ring around
+                the same centre, matching the reference screenshot's
+                convention. Click the inner circle above to toggle. */}
+            {showDot && isBlockCorner && (
+              <circle
+                cx={bx} cy={by} r={beaconR * 2.4}
+                fill="none" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)}
+                style={{ pointerEvents: "none" }}
+              />
+            )}
             {pl?.leader && (
               <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />
             )}

@@ -71,6 +71,23 @@ export function WorkingPlanView() {
     (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }> }).labelOffsets : null) ?? {}
   );
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  // Beacons marked as block corners, drawn as a double circle instead of
+  // the usual single one (client req 2026-09-07: "only under working
+  // plan, add an option to add double circles on block corners" —
+  // reference screenshot of the standard cadastral convention for it).
+  // Stored as an array in the saved project (Sets aren't JSON-
+  // serialisable) and converted here at load.
+  const [blockCornerIds, setBlockCornerIds] = useState<Set<string>>(
+    new Set((isWrappedSave ? (savedRaw as { blockCornerIds?: string[] }).blockCornerIds : null) ?? [])
+  );
+  function toggleBlockCorner(name: string) {
+    setBlockCornerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
   // Same select/move/resize treatment, but for the manual text notes (client
   // req 2026-08-28) — its own offset store keyed by note id, kept separate
   // from `labelOffsets` (which is keyed by point name) and from the
@@ -225,8 +242,8 @@ export function WorkingPlanView() {
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
   useEffect(() => {
-    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers });
-  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, setWorkingPlanInput]);
+    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds: Array.from(blockCornerIds) });
+  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds, setWorkingPlanInput]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
@@ -621,6 +638,7 @@ export function WorkingPlanView() {
         <p className="mb-2 text-xs text-slate-400">
           Click a beacon letter, a text note, or the title block to select it, then drag to reposition, or use the +/− buttons to
           resize it — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
+          Click a beacon's own circle to mark/unmark it as a block corner (drawn as a double circle).
         </p>
         <div className="mx-auto max-w-3xl" onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
           <WorkingPlan
@@ -639,6 +657,8 @@ export function WorkingPlanView() {
             onLabelPointerMove={handleLabelPointerMove}
             onLabelPointerUp={handleLabelPointerUp}
             onLabelResize={handleLabelResize}
+            blockCornerIds={blockCornerIds}
+            onToggleBlockCorner={toggleBlockCorner}
             textOffsets={textOffsets}
             selectedTextId={selectedTextId}
             onTextClick={(id) => handleTextClick(id)}
