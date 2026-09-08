@@ -213,7 +213,7 @@ export function WorkingPlanView() {
   const autoRotationDeg = useMemo(() => {
     const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
     const angle = estimateDominantAngle(pts);
-    return angle == null ? 0 : -angle;
+    return angle == null ? 0 : angle;
   }, [resolvedPlots, points]);
 
   function addPlot() {

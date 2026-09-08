@@ -233,17 +233,22 @@ export function GeneralPlanView() {
   // against the real Charleshill file (client req 2026-08-31: "one block
   // is exactly axis-aligned, an adjoining one sits at a consistent -2.6°")
   // for its rotation-tolerant detectRectangularLots pass — instead of
-  // writing a second copy of that estimation logic. Negated so the
-  // dominant edge direction ends up vertical/horizontal on the sheet,
-  // matching how the client's surveyor hand-rotated the reference sheet
-  // for presentation. Computed once from every point across the WHOLE
+  // writing a second copy of that estimation logic. Used unnegated: that
+  // function's own straightening step (rotateAroundCentroid(pts, angle))
+  // applies this exact value to align the dominant edge to an axis, and
+  // world rotateWorldPoint(angle) maps to the SAME-signed screen rotation
+  // once composed with the standard north-up/east-right screen projection
+  // (verified: a world rotation of +angle moves a point due north of the
+  // pivot toward the right on screen, i.e. clockwise, same sense as this
+  // component's own rotationOverride convention) — so no sign flip is
+  // needed to reuse it here. Computed once from every point across the WHOLE
   // layout (not per-sheet) so every sheet of the same subdivision agrees
   // on one consistent orientation; falls back to 0° (today's plain grid-
   // north-up behaviour) whenever there isn't enough data to trust a tilt
   // estimate, or the data already reads as axis-aligned.
   const autoRotationDeg = useMemo(() => {
     const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
-    return angle == null ? 0 : -angle;
+    return angle == null ? 0 : angle;
   }, [gpPlots]);
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
   // reference sheets' title exactly) — the WHOLE layout's range, not just

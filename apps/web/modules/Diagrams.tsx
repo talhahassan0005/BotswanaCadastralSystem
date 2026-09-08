@@ -208,7 +208,7 @@ export function Diagrams() {
   // GeneralPlanView.tsx/WorkingPlanView.tsx's own copies of this.
   const autoRotationDeg = useMemo(() => {
     const angle = estimateDominantAngle(points);
-    return angle == null ? 0 : -angle;
+    return angle == null ? 0 : angle;
   }, [points]);
   const sides = useMemo(
     () =>
