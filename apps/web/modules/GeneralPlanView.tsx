@@ -247,8 +247,21 @@ export function GeneralPlanView() {
   // north-up behaviour) whenever there isn't enough data to trust a tilt
   // estimate, or the data already reads as axis-aligned.
   const autoRotationDeg = useMemo(() => {
+    // BASE_ORIENTATION_DEG (client req 2026-09-09) — the small-angle estimate
+    // above (from estimateDominantAngle) only ever detects a residual tilt
+    // folded into (-45,45], so it's structurally blind to any 90 degrees
+    // multiple of rotation. Empirically confirmed on the real production
+    // data (client's own hands-on test: applying the old 90 degrees-per-
+    // click "Rotate" control twice — 180 degrees total — matched the
+    // reference sheet's orientation), the real dataset needs a 180 degrees
+    // base correction that no amount of small-angle sign flipping could
+    // ever produce. Combined with the residual small-angle estimate below
+    // (still valid and independent of this, since folding into (-45,45] is
+    // rotation-invariant mod 90 degrees) for the documented sub-degree
+    // block-to-block tilt on top of it.
+    const BASE_ORIENTATION_DEG = 180;
     const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
-    return angle == null ? 0 : angle;
+    return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
   }, [gpPlots]);
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
   // reference sheets' title exactly) — the WHOLE layout's range, not just

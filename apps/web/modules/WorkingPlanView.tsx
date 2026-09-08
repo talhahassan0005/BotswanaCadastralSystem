@@ -210,10 +210,16 @@ export function WorkingPlanView() {
   // to whichever point set is actually on the sheet (the multi-plot
   // picker's resolvedPlots when any are picked, else the single active
   // figure's own points).
+  // BASE_ORIENTATION_DEG — see GeneralPlanView.tsx's own copy of this
+  // constant for the full explanation: the real data is bulk-imported in
+  // Botswana's Lo-grid (south/west-positive) convention with no conversion
+  // applied at import, and empirically needs a 180 degrees correction that
+  // the small-angle residual estimate below is structurally blind to.
   const autoRotationDeg = useMemo(() => {
+    const BASE_ORIENTATION_DEG = 180;
     const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
     const angle = estimateDominantAngle(pts);
-    return angle == null ? 0 : angle;
+    return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
   }, [resolvedPlots, points]);
 
   function addPlot() {
@@ -686,13 +692,15 @@ export function WorkingPlanView() {
             onTitlePointerUp={handleTitlePointerUp}
             onTitleResize={handleTitleResize}
             onTransform={(t) => { transformRef.current = t; }}
-            // No longer config.displayRotation (client req 2026-09-09,
-            // same reasoning as GeneralPlanView.tsx's own fix: that value
-            // is shared with CogoWorkspace's own Rotate control and could
-            // get silently stuck non-zero from a click anywhere in the
-            // app) — autoRotationDeg above replaces it entirely.
+            // No longer config.displayRotation/displayFlip (client req
+            // 2026-09-09, same reasoning as GeneralPlanView.tsx's own fix:
+            // those values were shared with CogoWorkspace's own removed
+            // Rotate/Flip controls and could be silently stuck non-zero/true
+            // from before those controls were deleted, with no way left to
+            // reset them) — autoRotationDeg above replaces rotation
+            // entirely; flip is hardcoded false for the same reason.
             rotation={autoRotationDeg}
-            flip={config.displayFlip ?? false}
+            flip={false}
           />
         </div>
       </Card>

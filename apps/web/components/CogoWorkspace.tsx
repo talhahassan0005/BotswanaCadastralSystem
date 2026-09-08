@@ -109,18 +109,31 @@ export function CogoWorkspace({
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
   const [autoDetectStart, setAutoDetectStart] = useState("");
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
-  // Display-only rotation (client req 2026-08-28: "add a rotator... 360
-  // takay rotate kar sako", like an image editor's rotate control) lives in
-  // `config.displayRotation` — a SHARED project-wide setting, not local view
-  // state, so the same rotation the surveyor dials in here also applies in
-  // Diagrams/Working Plan/General Plan (client req 2026-08-28: "rotated
-  // diagram doesn't show... sirf cogo per hi rotate show hai"). Persisted
-  // automatically with the rest of `config`, same as coordinateSystem etc.
-  const rotation = config.displayRotation ?? 0;
-  // Horizontal mirror (client req 2026-08-28) — rotation alone can never fix
-  // a mirrored shape (no angle does that), so this covers that case too;
-  // same shared, persisted, display-only setting as rotation above.
-  const flip = config.displayFlip ?? false;
+  // BASE_ORIENTATION_DEG (client req 2026-09-09) — no longer reads
+  // `config.displayRotation`. That field was a shared, persisted setting
+  // driven by a Rotate slider that was fully removed from the UI on
+  // 2026-08-30 (see the dead comment further down where it used to sit) —
+  // with the control gone, nothing in this app can ever write to that field
+  // again, so any project whose stored value was left non-zero from before
+  // that removal was permanently, invisibly stuck with it. Root cause of the
+  // actual orientation bug turned out to be real: this project's real survey
+  // data is bulk-imported/auto-detected straight from the client's raw file
+  // in Botswana's official Lo-grid convention (`lib/server/crs.ts`: "Lo
+  // (Gauss-Conform) — Y west-positive, X south-positive"; default
+  // `config.coordinateSystem` is "Lo 21 Botswana", store.tsx), and the
+  // import path (bulkImportPlots) copies the file's east/north columns
+  // in untouched — no conversion to true north-positive/east-positive is
+  // ever applied. Confirmed empirically on the real project data (client's
+  // own hands-on test: applying the old 90-degree-per-click Rotate control
+  // twice, 180 degrees total, matched the reference sheet). Hardcoded here
+  // (not a shared/persisted setting, so it can never get silently stuck
+  // again) rather than reviving the removed control, per client req
+  // 2026-09-09: "client ko lagna nahi chahiye ke rotate hua hai" — this
+  // must read as the canvas's own correct, native orientation, not a
+  // rotation bolted on top of it.
+  const BASE_ORIENTATION_DEG = 180;
+  const rotation = BASE_ORIENTATION_DEG;
+  const flip = false;
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
   /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
