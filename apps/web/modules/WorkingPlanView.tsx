@@ -6,7 +6,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
-import { dedupePoints } from "@/lib/plots";
+import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
 
 /**
  * Working Plan (Module D / M3) — a cadastral working plan in the WP-Model.pdf
@@ -203,6 +203,18 @@ export function WorkingPlanView() {
         })),
     [plotNumbers, cogoPlots]
   );
+  // Automatic presentation rotation (client req 2026-09-09: zero user
+  // action — no button, no field, correctly oriented the very first time
+  // the sheet opens) — same estimateDominantAngle reuse and reasoning as
+  // General Plan's own copy of this (GeneralPlanView.tsx), applied here
+  // to whichever point set is actually on the sheet (the multi-plot
+  // picker's resolvedPlots when any are picked, else the single active
+  // figure's own points).
+  const autoRotationDeg = useMemo(() => {
+    const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
+    const angle = estimateDominantAngle(pts);
+    return angle == null ? 0 : -angle;
+  }, [resolvedPlots, points]);
 
   function addPlot() {
     const n = plotNumberInput.trim();
@@ -674,7 +686,12 @@ export function WorkingPlanView() {
             onTitlePointerUp={handleTitlePointerUp}
             onTitleResize={handleTitleResize}
             onTransform={(t) => { transformRef.current = t; }}
-            rotation={config.displayRotation ?? 0}
+            // No longer config.displayRotation (client req 2026-09-09,
+            // same reasoning as GeneralPlanView.tsx's own fix: that value
+            // is shared with CogoWorkspace's own Rotate control and could
+            // get silently stuck non-zero from a click anywhere in the
+            // app) — autoRotationDeg above replaces it entirely.
+            rotation={autoRotationDeg}
             flip={config.displayFlip ?? false}
           />
         </div>

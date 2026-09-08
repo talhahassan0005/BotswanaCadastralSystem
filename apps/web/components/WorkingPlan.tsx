@@ -557,8 +557,15 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         );
       })()}
 
-      {/* ---------- North arrow (top-right) — "T N" below the arrow ---------- */}
-      <g transform={`translate(${VB_W - 60}, 70)`}>
+      {/* ---------- North arrow (top-right) — "T N" below the arrow ----------
+          Rotates WITH `rotation` (client req 2026-09-09) — the arrow's own
+          local shape is still drawn straight up around (0,0), same as
+          before; `rotate(rotation)` after the translate spins it in place
+          around its own anchor point, so it keeps correctly pointing to
+          true north's actual direction once the figure itself is rotated
+          for presentation, instead of always pointing straight up
+          regardless of what the drawing is doing. */}
+      <g transform={`translate(${VB_W - 60}, 70) rotate(${rotation})`}>
         <line x1={0} y1={24} x2={0} y2={-20} stroke="black" strokeWidth={1.2} />
         <polygon points="0,-28 -6,-14 6,-14" fill="black" />
         <line x1={0} y1={30} x2={0} y2={44} stroke="black" strokeWidth={0.6} />

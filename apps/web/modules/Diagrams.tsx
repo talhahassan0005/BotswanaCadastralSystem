@@ -18,6 +18,7 @@ import {
   type ManualText,
 } from "@/components/SgDiagram";
 import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem } from "@/lib/diagramLayout";
+import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -201,6 +202,14 @@ export function Diagrams() {
     () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
     [fig]
   );
+  // Automatic presentation rotation (client req 2026-09-09: zero user
+  // action — no button, no field, correctly oriented the very first time
+  // the sheet opens) — same estimateDominantAngle reuse and reasoning as
+  // GeneralPlanView.tsx/WorkingPlanView.tsx's own copies of this.
+  const autoRotationDeg = useMemo(() => {
+    const angle = estimateDominantAngle(points);
+    return angle == null ? 0 : -angle;
+  }, [points]);
   const sides = useMemo(
     () =>
       (fig?.legs ?? []).map((l) => ({
@@ -1467,7 +1476,12 @@ export function Diagrams() {
                 onTextDoubleClick={handleTextDoubleClick}
                 onTextHandleDown={handleTextHandleDown}
                 onTransform={(t) => { transformRef.current = t; }}
-                rotation={config.displayRotation ?? 0}
+                // No longer config.displayRotation (client req 2026-09-09,
+                // same reasoning as GeneralPlanView.tsx/WorkingPlanView.tsx's
+                // own fix: that value is shared with CogoWorkspace's own
+                // Rotate control and could get silently stuck non-zero) —
+                // autoRotationDeg above replaces it entirely.
+                rotation={autoRotationDeg}
                 flip={config.displayFlip ?? false}
               />
             )}

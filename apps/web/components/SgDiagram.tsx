@@ -437,7 +437,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           2026-08-22) — a plain unfilled arrow silhouette threaded by a
           single vertical line down through the "T | N" label beneath it,
           not a bold solid-filled or symmetric shape. */}
-      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200})`}>
+      {/* Rotates WITH `rotation` (client req 2026-09-09) — same reasoning
+          as WorkingPlan.tsx's own copy of this fix: the arrow's own local
+          shape stays drawn straight up around (0,0); `rotate(rotation)`
+          after the translate spins it in place around its own anchor so
+          it keeps correctly pointing to true north's actual direction
+          once the figure itself is rotated for presentation. */}
+      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200}) rotate(${rotation})`}>
         <line x1={0} y1={-170} x2={0} y2={54} stroke="black" strokeWidth={1} />
         <polygon points="0,-170 -14,-55 4,-30" fill="none" stroke="black" strokeWidth={1.2} strokeLinejoin="round" />
         <text x={-6} y={24} textAnchor="end" fontSize={FS_BEACON_HEAD}>T</text>

@@ -268,7 +268,7 @@ function detectAxisAlignedPass<T extends PlotPoint>(pts: T[], tol: number): { lo
  *  minority of leftover points that aren't part of any grid at all, e.g.
  *  splayed corners or block corners). Returns null when there's too little
  *  data to trust, or the set already reads as axis-aligned. */
-function estimateDominantAngle(points: PlotPoint[]): number | null {
+export function estimateDominantAngle(points: PlotPoint[]): number | null {
   if (points.length < 4) return null;
   interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: PlotPoint }
   const tree = new RBush<PtBox>();

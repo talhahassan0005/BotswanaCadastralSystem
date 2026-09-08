@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStore } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
-import { dedupePoints, dropClosingDuplicate, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
+import { dedupePoints, dropClosingDuplicate, estimateDominantAngle, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtCoord, fmtSystem, toDotted } from "@/lib/diagramLayout";
 import { inverse } from "@/lib/server/geometry";
@@ -226,6 +226,25 @@ export function GeneralPlanView() {
     () => cogoPlots.map((p) => ({ number: p.number, points: dropClosingDuplicate(p.fig.points) })),
     [cogoPlots]
   );
+  // Automatic presentation rotation (client req 2026-09-09: must need ZERO
+  // user action — no button, no field, correctly oriented the very first
+  // time the sheet opens). Reuses lib/plots.ts's own estimateDominantAngle
+  // — the exact same nearest-neighbour-pair tilt estimator already proven
+  // against the real Charleshill file (client req 2026-08-31: "one block
+  // is exactly axis-aligned, an adjoining one sits at a consistent -2.6°")
+  // for its rotation-tolerant detectRectangularLots pass — instead of
+  // writing a second copy of that estimation logic. Negated so the
+  // dominant edge direction ends up vertical/horizontal on the sheet,
+  // matching how the client's surveyor hand-rotated the reference sheet
+  // for presentation. Computed once from every point across the WHOLE
+  // layout (not per-sheet) so every sheet of the same subdivision agrees
+  // on one consistent orientation; falls back to 0° (today's plain grid-
+  // north-up behaviour) whenever there isn't enough data to trust a tilt
+  // estimate, or the data already reads as axis-aligned.
+  const autoRotationDeg = useMemo(() => {
+    const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
+    return angle == null ? 0 : -angle;
+  }, [gpPlots]);
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
   // reference sheets' title exactly) — the WHOLE layout's range, not just
   // whichever sheet is currently showing, same source `cogoPlots` the rest
@@ -515,8 +534,21 @@ export function GeneralPlanView() {
   // again in the future. GP now always renders unrotated/unflipped,
   // matching what removing its own control was already meant to
   // guarantee, regardless of what this shared value holds or how it
-  // changes elsewhere.
-  const rotation = 0;
+  // changes elsewhere. Still doesn't read it — replaced with
+  // autoRotationDeg (client req 2026-09-09), the automatic presentation
+  // rotation computed above from the data's own dominant tilt, applied
+  // through this SAME existing rotationOverride mechanism (screen-space,
+  // around rotPivotX/Y below) rather than building a second rotation
+  // path — DXF export already round-trips a drawn point through this
+  // live rotation and back through an unrotated baseT (client req
+  // 2026-08-28: "DXF main rotation working nahi kar raha"), so the
+  // exported drawing picks up the same auto-rotation the live preview
+  // shows for free, while every TABLE/DXF text value (Block Corner, Lot
+  // Areas, outer-boundary traverse, GC/DSM numbers) still reads real
+  // east/north directly and never calls this transform at all, so those
+  // numbers are never affected by presentation rotation, automatic or
+  // otherwise.
+  const rotation = autoRotationDeg;
   const flip = false;
   const rotPivotX = (FX0 + FX1) / 2, rotPivotY = (FY0 + FY1) / 2;
   const rotRad = (rotation * Math.PI) / 180;
@@ -1191,12 +1223,29 @@ export function GeneralPlanView() {
 
     // North arrow (default position — a drag offset here, if the client
     // moved it, isn't replicated; matches the shaft+arrowhead+"N" the SVG
-    // draws at northX/northY).
+    // draws at northX/northY). Rotated the same way the SVG preview's own
+    // north arrow now is (client req 2026-09-09) — screenPolyline/text
+    // above always go through baseT (rotation forced to 0, so the frame/
+    // fixed sheet furniture never inherits the live auto-rotation), but
+    // the boundary/beacon geometry elsewhere in this export DOES pick it
+    // up via the toExportWorld round-trip; without this, the exported
+    // arrow would always point straight up even when the drawing next to
+    // it is rotated. rotSPt applies the SAME screen-space rotation sx/sy
+    // use (around rotPivotX/Y, using the already-computed cosR/sinR from
+    // the live `rotation`), just for these few fixed points.
     {
       const northX = FX1 + 15, northY = FY0 + 16;
-      screenPolyline([[northX, northY + 12], [northX, northY - 10]], false, "NORTH_ARROW");
-      screenPolyline([[northX, northY - 14], [northX - 5, northY - 5], [northX + 5, northY - 5]], true, "NORTH_ARROW");
-      text(northX, northY + 26, "N", 10, "middle");
+      const rotSPt = (x: number, y: number): [number, number] => [
+        rotPivotX + (x - rotPivotX) * cosR - (y - rotPivotY) * sinR,
+        rotPivotY + (x - rotPivotX) * sinR + (y - rotPivotY) * cosR,
+      ];
+      screenPolyline([rotSPt(northX, northY + 12), rotSPt(northX, northY - 10)], false, "NORTH_ARROW");
+      screenPolyline(
+        [rotSPt(northX, northY - 14), rotSPt(northX - 5, northY - 5), rotSPt(northX + 5, northY - 5)],
+        true, "NORTH_ARROW"
+      );
+      const [ntx, nty] = rotSPt(northX, northY + 26);
+      text(ntx, nty, "N", 10, "middle");
     }
 
     // Plot number labels, at each plot's own centroid — same mean-of-
@@ -2035,11 +2084,20 @@ export function GeneralPlanView() {
           const northX = FX1 + 15, northY = FY0 + 16;
           const northBox = { x: northX - 10, y: northY - 18, w: 20, h: 48 };
           return panelResizable("northArrow", northBox, (
-            <>
+            // Rotates WITH the same auto-computed presentation rotation
+            // (client req 2026-09-09) so it keeps correctly pointing to
+            // true north's actual direction on the now-rotated page,
+            // matching how a surveyor tilts the T-N symbol by hand on a
+            // hand-rotated reference sheet. SVG's own rotate() is
+            // clockwise-positive around the given pivot, same sense
+            // `rotation` already rotates sx/sy in — nested inside
+            // panelResizable's own transform, not replacing it, so drag/
+            // resize still work the same as before.
+            <g transform={`rotate(${rotation} ${northX} ${northY})`}>
               <line x1={northX} y1={northY + 12} x2={northX} y2={northY - 10} stroke="#0f172a" strokeWidth={1.5} />
               <polygon points={`${northX},${northY - 14} ${northX - 5},${northY - 5} ${northX + 5},${northY - 5}`} fill="#0f172a" />
               <text x={northX} y={northY + 26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
-            </>
+            </g>
           ));
         })()}
         {/* parcels — plain black outline, no fill (client req 2026-08-31:
