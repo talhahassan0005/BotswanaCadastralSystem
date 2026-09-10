@@ -180,13 +180,23 @@ export function Editor() {
   }, []);
 
   // ---- transforms ----
+  // 180-degree base orientation correction (client req 2026-09-09/10) —
+  // same root cause and fix as CogoWorkspace.tsx's own toScreen/toWorld: a
+  // DXF/SHP file loaded here holds real coordinates in Botswana's Lo-grid
+  // (south/west-positive) convention with no conversion applied on import,
+  // so a plain north-up plot renders it upside down. This editor is a
+  // separate rendering pipeline from Cadastral/General Plan/Working Plan/
+  // Diagrams (it draws an imported file's own doc.points/lines, not
+  // cogoPlots), so it needed this correction applied here independently —
+  // it was missed when those other views were fixed. A 180-degree rotation
+  // about the view centre is just negating both offsets from centre.
   const toScreen = (x: number, y: number): [number, number] => [
-    (x - view.cx) * view.zoom + W / 2,
-    H / 2 - (y - view.cy) * view.zoom,
+    W / 2 - (x - view.cx) * view.zoom,
+    H / 2 + (y - view.cy) * view.zoom,
   ];
   const toWorld = (sx: number, sy: number): [number, number] => [
-    view.cx + (sx - W / 2) / view.zoom,
-    view.cy - (sy - H / 2) / view.zoom,
+    view.cx + (W / 2 - sx) / view.zoom,
+    view.cy + (sy - H / 2) / view.zoom,
   ];
   function eventToVb(e: RPointerEvent | React.WheelEvent): [number, number] {
     const r = svgRef.current!.getBoundingClientRect();
