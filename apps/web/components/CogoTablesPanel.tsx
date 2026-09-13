@@ -7,7 +7,7 @@
 // canvas<->table highlight sync live in CogoWorkspace, this component is
 // presentational + local metadata editing only.
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { inverse, polygonArea, formatArea } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import type { WLine, WPoint, WPolygon } from "@/lib/cogoTools/types";
@@ -39,7 +39,9 @@ export function CogoTablesPanel({
   onSetPointMeta,
   onSetLineMeta,
   onSetPolygonMeta,
+  onRenamePoint,
   onDeleteSelection,
+  onClearSelection,
   onOpenPolygonAttrs,
   onClose,
 }: {
@@ -57,7 +59,9 @@ export function CogoTablesPanel({
   onSetPointMeta: (id: string, patch: Partial<PointMeta>) => void;
   onSetLineMeta: (id: string, patch: Partial<LineMeta>) => void;
   onSetPolygonMeta: (id: string, patch: Partial<PolygonMeta>) => void;
+  onRenamePoint: (id: string, name: string) => void;
   onDeleteSelection: () => void;
+  onClearSelection: () => void;
   onOpenPolygonAttrs: (id: string) => void;
   onClose: () => void;
 }) {
@@ -90,6 +94,12 @@ export function CogoTablesPanel({
           {selected.size > 0 && (
             <>
               <span className="text-slate-400">{selected.size} selected</span>
+              {/* Client req 2026-09-14: "add a tool for clear selection" —
+                  the only way to drop a table row selection used to be
+                  closing the whole panel (onClose already resets it). */}
+              <button type="button" onClick={onClearSelection} className="rounded border border-slate-200 px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50">
+                Clear
+              </button>
               <button type="button" onClick={onDeleteSelection} className="rounded border border-red-200 px-2 py-0.5 font-medium text-red-600 hover:bg-red-50">
                 Delete
               </button>
@@ -122,7 +132,16 @@ export function CogoTablesPanel({
                     onMouseEnter={() => { if (draggingRef.current) onRowMouseEnter(p.id); }}
                     className={`cursor-pointer select-none ${isSel ? "bg-brand-light/40" : "hover:bg-slate-50"}`}
                   >
-                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-medium">{p.name}</td>
+                    {/* Client req 2026-09-14: "i want to be able to edit
+                        names in point table" — was plain, read-only text.
+                        Committed on blur/Enter rather than per keystroke:
+                        renaming an IMPORTED point swaps its underlying row
+                        id (see renamePointById in CogoWorkspace), which
+                        would otherwise remount this input and drop focus
+                        mid-word. */}
+                    <td className="border-b border-slate-100 px-1 py-0.5 font-medium">
+                      <NameCell id={p.id} name={p.name} onRename={onRenamePoint} />
+                    </td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{p.east.toFixed(3)}</td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{p.north.toFixed(3)}</td>
                     {(["height", "sdNumber", "epoch", "klass", "subclass", "description"] as const).map((k) => (
@@ -245,5 +264,22 @@ export function CogoTablesPanel({
         )}
       </div>
     </div>
+  );
+}
+
+/** Staged local draft so typing a new name doesn't touch the real point
+ *  until blur/Enter — see the Name cell's own comment above for why. */
+function NameCell({ id, name, onRename }: { id: string; name: string; onRename: (id: string, name: string) => void }) {
+  const [draft, setDraft] = useState(name);
+  useEffect(() => setDraft(name), [id, name]);
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onMouseDown={(e) => e.stopPropagation()}
+      onBlur={() => { if (draft.trim() && draft !== name) onRename(id, draft); }}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-brand focus:bg-white focus:outline-none"
+    />
   );
 }

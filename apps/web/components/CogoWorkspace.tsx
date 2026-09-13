@@ -427,21 +427,33 @@ export function CogoWorkspace({
     const p = visible.find((pp) => pp.id === nextId);
     if (p) { setPointQueryId(nextId); setPointQueryName(p.name); }
   }
-  function applyPointRename() {
-    if (!pointQueryId) return;
-    const name = pointQueryName.trim();
-    if (!name) return;
+  /** Renames any visible point by id, imported ("imp-...") or drafted alike
+   *  — imported points aren't stored in mutable state, so renaming one
+   *  hides the original and adds a renamed copy to `extra` at the same
+   *  position instead; a drafted point's name is just updated in place.
+   *  Returns the id the point now lives under (unchanged, except for a
+   *  renamed imported point). Shared by the Point Query panel's inline
+   *  rename and the Points table's own Name column (client req 2026-09-14:
+   *  "i want to be able to edit names in point table"). */
+  function renamePointById(id: string, rawName: string): string | null {
+    const name = rawName.trim();
+    if (!name) return null;
     snapshot();
-    if (pointQueryId.startsWith("imp-")) {
-      const orig = basePoints.find((p) => p.id === pointQueryId);
-      if (!orig) return;
-      setHidden((h) => new Set(h).add(pointQueryId));
+    if (id.startsWith("imp-")) {
+      const orig = basePoints.find((p) => p.id === id);
+      if (!orig) return null;
+      setHidden((h) => new Set(h).add(id));
       const newId = `renamed-${Date.now()}`;
       setExtra((e) => [...e, { id: newId, name, east: orig.east, north: orig.north }]);
-      setPointQueryId(newId);
-    } else {
-      setExtra((e) => e.map((p) => (p.id === pointQueryId ? { ...p, name } : p)));
+      return newId;
     }
+    setExtra((e) => e.map((p) => (p.id === id ? { ...p, name } : p)));
+    return id;
+  }
+  function applyPointRename() {
+    if (!pointQueryId) return;
+    const newId = renamePointById(pointQueryId, pointQueryName);
+    if (newId) setPointQueryId(newId);
   }
   function zoomBy(f: number) {
     setView((v) => ({ ...v, zoom: Math.min(50, Math.max(0.01, v.zoom * f)) }));
@@ -1885,7 +1897,12 @@ export function CogoWorkspace({
     const magnitude = Math.abs(Number(input.value)) || 0;
     if (line && magnitude > 0) {
       try {
-        addToolResult(lineMath.offsetLine({ line, offset: magnitude * input.side }));
+        // Same "New{n}" auto-naming as Add Point (client req 2026-09-14:
+        // the offset line's two new ends need real, named points, not just
+        // a floating line) — read before addToolResult bumps idRef past them.
+        const nameA = `New${idRef.current}`;
+        const nameB = `New${idRef.current + 1}`;
+        addToolResult(lineMath.offsetLine({ line, offset: magnitude * input.side, nameA, nameB }));
       } catch (e: any) {
         window.alert(e.message ?? String(e));
       }
@@ -3391,7 +3408,9 @@ export function CogoWorkspace({
               onSetPointMeta={(id, patch) => setPointMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
               onSetLineMeta={(id, patch) => setLineMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
               onSetPolygonMeta={(id, patch) => setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
+              onRenamePoint={renamePointById}
               onDeleteSelection={deleteTableSelection}
+              onClearSelection={() => { setTableSelected(new Set()); setTableAnchor(null); }}
               onOpenPolygonAttrs={openPolygonAttrs}
               onClose={() => { setTablesOpen(false); setTableSelected(new Set()); setTableAnchor(null); }}
             />

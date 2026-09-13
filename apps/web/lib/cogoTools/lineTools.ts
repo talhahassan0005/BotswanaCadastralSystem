@@ -105,14 +105,29 @@ export function trimLine(v: Record<string, any>): ToolResult {
   return { lines: [{ name: v.name, aE: p.east, aN: p.north, bE: line.bE, bN: line.bN }] };
 }
 
+/** Client req 2026-09-14: "i was adding a parallel line. so i want the
+ *  system to automatically add points at the end." — a parallel/offset
+ *  line's two ends are freshly-computed positions with nothing already
+ *  there, unlike most other line tools which anchor to an existing point,
+ *  so this now also returns named points for them (same shape as
+ *  perpendicularLine below) instead of just the line. Caller passes
+ *  nameA/nameB (CogoWorkspace generates the next "New{n}" names, same
+ *  convention as the Add Point tool) since this module has no id counter
+ *  of its own. */
 export function offsetLine(v: Record<string, any>): ToolResult {
   const line = requireLine(v.line, "line");
   const offset = requireNumber(v.offset, "Offset");
   const brg = bearingOf(line);
   const perp = brg + 90;
-  const a2 = forward({ east: line.aE, north: line.aN }, perp, offset);
-  const b2 = forward({ east: line.bE, north: line.bN }, perp, offset);
-  return { lines: [{ name: v.name, aE: a2.east, aN: a2.north, bE: b2.east, bN: b2.north }] };
+  const a2 = forward({ east: line.aE, north: line.aN }, perp, offset, v.nameA || "New");
+  const b2 = forward({ east: line.bE, north: line.bN }, perp, offset, v.nameB || "New");
+  return {
+    points: [
+      { name: a2.name!, east: a2.east, north: a2.north },
+      { name: b2.name!, east: b2.east, north: b2.north },
+    ],
+    lines: [{ name: v.name, aE: a2.east, aN: a2.north, bE: b2.east, bN: b2.north }],
+  };
 }
 
 export function perpendicularLine(v: Record<string, any>): ToolResult {
