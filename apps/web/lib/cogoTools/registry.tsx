@@ -106,10 +106,17 @@ const POINT_TOOLS: ToolDef[] = [
     run: pt.intersectionBD,
   },
   {
+    // Opens the side Points on Line panel instead of the command bar
+    // (client req 2026-09-10/13 — intercepted in CogoWorkspace.tsx's
+    // "point" category toolbar, same pattern as "add-point" below): queue
+    // several new points at chosen chainages along a From/To line, preview
+    // each live on canvas, then Draw commits the whole batch at once. This
+    // entry's `fields`/`run` are unused (bypassed by the intercept) but
+    // kept so the toolbar still has an icon/label/tooltip to render.
     id: "point-on-line",
     category: "point",
     label: "Point on Line",
-    description: "A point at a given chainage (station distance) along the line from A to B.",
+    description: "Queue multiple new points at chosen distances along a From/To line, previewed live before committing.",
     icon: iconPointOnLine,
     fields: [
       { key: "pointA", label: "Line start (A)", type: "point" },

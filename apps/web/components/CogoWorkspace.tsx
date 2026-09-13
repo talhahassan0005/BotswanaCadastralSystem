@@ -14,6 +14,7 @@ import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoComm
 import { forward, inverse, polygonArea, formatArea } from "@/lib/server/geometry";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
+import { CogoPointsOnLinePanel } from "@/components/CogoPointsOnLinePanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore, type CogoPlot } from "@/lib/store";
 import { detectRectangularLots, sameWorldPoint } from "@/lib/plots";
@@ -240,6 +241,44 @@ export function CogoWorkspace({
   interface TravLeg { point: WPoint; direction: string; distance: string; lineId: string; labelId: string; fromName: string }
   const [travLegs, setTravLegs] = useState<TravLeg[]>([]);
   const travIdRef = useRef(1);
+
+  // ---- Points on Line panel (client req 2026-09-10/13) — mirrors the
+  // reference legacy desktop tool's "Points on Line Calculation" dialog:
+  // pick a From/To line, queue multiple new points at chosen distances
+  // along it (each queued row previewed live on canvas before anything is
+  // actually committed), then Draw commits the whole batch at once and
+  // resets for the next line. Each row stores its RESOLVED, absolute
+  // distance-from-From (`cumulative`) regardless of which input mode it was
+  // typed in — this is what a Remove/Undo/mode-toggle never needs to
+  // re-derive, and what both the segment distance and the running total
+  // shown per row are computed from. */
+  const [polOpen, setPolOpen] = useState(false);
+  const [polFrom, setPolFrom] = useState<WPoint | null>(null);
+  const [polTo, setPolTo] = useState<WPoint | null>(null);
+  const [polPickingFrom, setPolPickingFrom] = useState(false);
+  const [polPickingTo, setPolPickingTo] = useState(false);
+  const [polMode, setPolMode] = useState<"individual" | "accumulative">("individual");
+  const [polNewName, setPolNewName] = useState("");
+  const [polNewDistance, setPolNewDistance] = useState("");
+  interface PolRow { name: string; cumulative: number }
+  const [polRows, setPolRows] = useState<PolRow[]>([]);
+  const [polSelected, setPolSelected] = useState<number | null>(null);
+  // "Automatic Calculation" (client req: inferred from context, not fully
+  // shown in the reference recording) — when on (default), the canvas
+  // preview recomputes on every change to From/To/rows/mode; when off, the
+  // preview freezes at whatever Calc last computed, so a user typing
+  // several rows in a row doesn't have the canvas redraw on every
+  // keystroke. Calc always forces one recompute regardless of this toggle.
+  const [polAutoCalc, setPolAutoCalc] = useState(true);
+  // "Add Lines" (client req: inferred — most likely also draws connecting
+  // segments between the newly added points, per the task note) — when on
+  // (default), Draw also adds a line from From through each queued point
+  // in order, matching how every other multi-point COGO tool in this app
+  // (traverse legs, polylines) always pairs a new point with the segment
+  // that reached it.
+  const [polAddLines, setPolAddLines] = useState(true);
+  const [polFrozenPreview, setPolFrozenPreview] = useState<{ name: string; east: number; north: number; segDist: number } | null>(null);
+  const polIdRef = useRef(1);
   // ---- Polygon completion dialog (client req 2026-08-21, Part 16c) — shown
   // when Calculate finishes a traverse: computed Area + an editable Erf/Plot
   // Number pre-filled with the next number after whichever was last
@@ -702,6 +741,7 @@ export function CogoWorkspace({
     activateDrawTool("select");
     setFormTool(tool);
     setTravOpen(false);
+    setPolOpen(false);
   }
 
   // ---- traverse leg-entry panel (Part 6b) ----
@@ -709,6 +749,7 @@ export function CogoWorkspace({
     activateDrawTool("select");
     setFormTool(null);
     setTravOpen(true);
+    setPolOpen(false);
   }
   /** Live preview endpoint — recomputed on every render as travDir/travDist
    *  change, so the dashed preview line updates on every keystroke with no
@@ -905,6 +946,193 @@ export function CogoWorkspace({
     setTravChoosingTo(false);
     setTravEditIndex(null);
     setTravCompleteDialog(null);
+  }
+
+  // ---- Points on Line panel ----
+  function openPointsOnLinePanel() {
+    activateDrawTool("select");
+    setFormTool(null);
+    setTravOpen(false);
+    setPolOpen(true);
+  }
+  const polDirDist = polFrom && polTo ? inverse({ east: polFrom.east, north: polFrom.north }, { east: polTo.east, north: polTo.north }) : null;
+  const polDirection = polDirDist ? formatDms(polDirDist[0]) : "";
+  const polTotalDistance = polDirDist ? polDirDist[1] : null;
+  const polLastCumulative = polRows.length ? polRows[polRows.length - 1].cumulative : 0;
+  const polResidual = polTotalDistance != null ? polTotalDistance - polLastCumulative : null;
+  /** Resolved east/north + this row's own segment distance for every
+   *  queued (not yet drawn) row — feeds both the list's display and the
+   *  unconditional canvas preview markers/labels (client req: "each time a
+   *  row is added, show a live preview"). */
+  const polLivePreview: { name: string; east: number; north: number; segDist: number }[] = (() => {
+    if (!polFrom || !polDirDist) return [];
+    const [brg] = polDirDist;
+    let prevCum = 0;
+    return polRows.map((r) => {
+      const pt = forward({ east: polFrom.east, north: polFrom.north }, brg, r.cumulative);
+      const segDist = r.cumulative - prevCum;
+      prevCum = r.cumulative;
+      return { name: r.name, east: pt.east, north: pt.north, segDist };
+    });
+  })();
+  /** The row the current Name/Distance fields WOULD add next, if Add were
+   *  clicked now — separate from polLivePreview above, since this one
+   *  hasn't been queued yet. "Automatic Calculation" (client req: inferred
+   *  from context, not fully shown in the reference recording — no other
+   *  reading of that checkbox fit a dialog that already computes
+   *  Direction/Distance/queued-row previews live) gates whether this
+   *  pending-row preview updates on every keystroke or only when Calc is
+   *  clicked, so both the checkbox and the Calc button end up with a real,
+   *  distinct effect instead of Calc being a no-op. */
+  function polPendingPreview(): { name: string; east: number; north: number; segDist: number } | null {
+    if (!polFrom || !polDirDist) return null;
+    const typed = Number(polNewDistance);
+    if (!Number.isFinite(typed) || typed <= 0) return null;
+    const prevCum = polRows.length ? polRows[polRows.length - 1].cumulative : 0;
+    const cumulative = polMode === "individual" ? prevCum + typed : typed;
+    const [brg] = polDirDist;
+    const pt = forward({ east: polFrom.east, north: polFrom.north }, brg, cumulative);
+    return { name: polNewName.trim() || `P${polIdRef.current}`, east: pt.east, north: pt.north, segDist: cumulative - prevCum };
+  }
+  const polPendingPreviewShown = polAutoCalc ? polPendingPreview() : polFrozenPreview;
+  function polSetFrom(v: { east: number; north: number; existingId?: string }) {
+    if (!v.existingId) return;
+    const p = visible.find((pp) => pp.id === v.existingId)!;
+    setPolFrom(p);
+    setPolTo(null);
+    setPolRows([]);
+    setPolSelected(null);
+    setPolFrozenPreview(null);
+    setPolPickingFrom(false);
+  }
+  function polSetTo(v: { east: number; north: number; existingId?: string }) {
+    if (!v.existingId) { window.alert("Click an existing point for To."); return; }
+    if (!polFrom) { window.alert("Pick a From point first."); return; }
+    const p = visible.find((pp) => pp.id === v.existingId)!;
+    setPolTo(p);
+    setPolPickingTo(false);
+  }
+  function polAdd() {
+    if (!polFrom || !polTo || !polDirDist) { window.alert("Pick a From and To point first."); return; }
+    const typed = Number(polNewDistance);
+    if (!Number.isFinite(typed) || typed <= 0) { window.alert("Enter a valid distance."); return; }
+    const prevCum = polRows.length ? polRows[polRows.length - 1].cumulative : 0;
+    const cumulative = polMode === "individual" ? prevCum + typed : typed;
+    const name = polNewName.trim() || `P${polIdRef.current}`;
+    polIdRef.current += 1;
+    setPolRows((rows) => [...rows, { name, cumulative }]);
+    setPolNewName("");
+    setPolNewDistance("");
+    setPolFrozenPreview(null);
+  }
+  /** What "before" a row means for resolving a typed distance the same way
+   *  Add does — the row immediately preceding the affected position. */
+  function polResolveCumulative(beforeIdx: number, typed: number): number {
+    const prevCum = beforeIdx > 0 ? polRows[beforeIdx - 1].cumulative : 0;
+    return polMode === "individual" ? prevCum + typed : typed;
+  }
+  /** Insert/Update act on whichever row is selected by clicking it in the
+   *  list (client req: inferred — Insert/Update/Remove/Undo were named in
+   *  the recording without their exact click targets shown). Insert adds a
+   *  new row, from the current Name/Distance fields, immediately before the
+   *  selected row; Update replaces the selected row's own Name/Distance
+   *  with them instead. */
+  function polInsert() {
+    if (polSelected == null) { window.alert("Click a row in the list first, to insert before it."); return; }
+    const typed = Number(polNewDistance);
+    if (!Number.isFinite(typed) || typed <= 0) { window.alert("Enter a valid distance."); return; }
+    const name = polNewName.trim() || `P${polIdRef.current}`;
+    polIdRef.current += 1;
+    const cumulative = polResolveCumulative(polSelected, typed);
+    setPolRows((rows) => [...rows.slice(0, polSelected), { name, cumulative }, ...rows.slice(polSelected)]);
+    setPolSelected(null);
+    setPolNewName("");
+    setPolNewDistance("");
+    setPolFrozenPreview(null);
+  }
+  function polUpdate() {
+    if (polSelected == null) { window.alert("Click a row in the list first."); return; }
+    const typed = Number(polNewDistance);
+    if (!Number.isFinite(typed) || typed <= 0) { window.alert("Enter a valid distance."); return; }
+    const idx = polSelected;
+    const name = polNewName.trim() || polRows[idx].name;
+    const cumulative = polResolveCumulative(idx, typed);
+    setPolRows((rows) => rows.map((r, i) => (i === idx ? { name, cumulative } : r)));
+    setPolSelected(null);
+    setPolNewName("");
+    setPolNewDistance("");
+    setPolFrozenPreview(null);
+  }
+  function polRemove() {
+    if (polSelected == null) { window.alert("Click a row in the list first."); return; }
+    setPolRows((rows) => rows.filter((_, i) => i !== polSelected));
+    setPolSelected(null);
+  }
+  function polSelectRow(i: number) {
+    setPolSelected(i);
+    setPolNewName(polRows[i].name);
+    const prevCum = i > 0 ? polRows[i - 1].cumulative : 0;
+    setPolNewDistance(String(polRows[i].cumulative - prevCum));
+  }
+  function polUndo() {
+    setPolRows((rows) => rows.slice(0, -1));
+    setPolSelected(null);
+    setPolFrozenPreview(null);
+  }
+  function polClearRows() {
+    setPolRows([]);
+    setPolSelected(null);
+    setPolNewName("");
+    setPolNewDistance("");
+    setPolFrozenPreview(null);
+  }
+  function polCalc() {
+    setPolFrozenPreview(polPendingPreview());
+  }
+  function polDraw() {
+    if (!polFrom || !polDirDist || !polRows.length) { window.alert("Queue at least one point first."); return; }
+    snapshot();
+    const preview = polLivePreview;
+    const newPoints: WPoint[] = preview.map((p) => ({ id: `pol-${Date.now()}-${polIdRef.current++}`, name: p.name, east: p.east, north: p.north }));
+    setExtra((e) => [...e, ...newPoints]);
+    if (polAddLines) {
+      const chain: { east: number; north: number }[] = [polFrom, ...newPoints];
+      const newLines: WLine[] = [];
+      const newTexts: WText[] = [];
+      for (let i = 0; i < chain.length - 1; i++) {
+        const a = chain[i], b = chain[i + 1];
+        const lineId = `polline-${Date.now()}-${polIdRef.current++}`;
+        newLines.push({ id: lineId, aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+        const [, segDist] = inverse(a, b);
+        newTexts.push({
+          id: `pollabel-${Date.now()}-${polIdRef.current++}`,
+          text: `${segDist.toFixed(3)}m`,
+          east: (a.east + b.east) / 2,
+          north: (a.north + b.north) / 2,
+          size: 11,
+          kind: "seglabel",
+          angle: segLabelAngle(a, b),
+        });
+      }
+      setLines((ls) => [...ls, ...newLines]);
+      setTexts((ts) => [...ts, ...newTexts]);
+    }
+    // Reset for the next line's batch (client req: ready to start a new
+    // line's points immediately, without closing the dialog).
+    setPolFrom(null);
+    setPolTo(null);
+    setPolRows([]);
+    setPolSelected(null);
+    setPolNewName("");
+    setPolNewDistance("");
+    setPolFrozenPreview(null);
+  }
+  function polClose() {
+    setPolOpen(false);
+    setPolPickingFrom(false);
+    setPolPickingTo(false);
+    setPolSelected(null);
+    setPolFrozenPreview(null);
   }
 
   // ---- per-plot diagram generation (Part 7d) ----
@@ -1683,6 +1911,14 @@ export function CogoWorkspace({
         // Traverse panel's "Choose To" — click an existing point to back-fill
         // Direction/Distance instead of typing them.
         travChooseTo(resolveVertex(vbx, vby));
+      } else if (polPickingFrom) {
+        // Points on Line panel's "From" — click an existing point to set the
+        // line the queued points will be measured along.
+        polSetFrom(resolveVertex(vbx, vby));
+      } else if (polPickingTo) {
+        // Points on Line panel's "To" — click an existing point to set the
+        // line's other end (Direction/Distance auto-compute from these two).
+        polSetTo(resolveVertex(vbx, vby));
       } else if (formTool) {
         // Command bar open (Part 5): clicking a point/line on canvas fills
         // whichever field is focused (or the first empty matching field)
@@ -1928,7 +2164,7 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -1936,6 +2172,7 @@ export function CogoWorkspace({
         else if (diagramPrompt) setDiagramPrompt(null);
         else if (diagramPicking) setDiagramPicking(false);
         else if (travOpen) travClose();
+        else if (polOpen) polClose();
         else if (formTool) setFormTool(null);
         else if (coordEntry) setCoordEntry(null);
         else if (moveCoordInput) { setMoving(null); setSelected(null); setMoveCoordInput(null); }
@@ -1954,7 +2191,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
+  }, [draftTool, draft, formTool, travOpen, polOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
 
   // Ctrl+Z (or Cmd+Z) as a real, always-available Undo — Ctrl+Shift+Z /
   // Ctrl+Y as Redo (client req 2026-09-06: "Ctrl+Z should be undo"). Before
@@ -2173,13 +2410,16 @@ export function CogoWorkspace({
           </div>
 
           {/* Only the selected tab's tools render below. */}
-          {/* "Add Point" is click-to-draw (Part 1); the rest open the command bar (Part 5). */}
+          {/* "Add Point" is click-to-draw (Part 1); "Point on Line" opens the
+              side Points on Line panel (client req 2026-09-10/13, live
+              preview + queued multi-point batches — same reasoning as the
+              Traverse panel below); the rest open the command bar (Part 5). */}
           {activeGroup === "point" && (
             <CogoDrawingToolbar
               category="point"
               onOpenTool={openFormTool}
-              interceptIds={{ "add-point": () => activateDrawTool("addpoint") }}
-              activeId={draftTool === "addpoint" ? "add-point" : null}
+              interceptIds={{ "add-point": () => activateDrawTool("addpoint"), "point-on-line": () => openPointsOnLinePanel() }}
+              activeId={draftTool === "addpoint" ? "add-point" : polOpen ? "point-on-line" : null}
             />
           )}
           {/* Line and Offset are click-to-draw. Line by Bearing&Distance and
@@ -2530,6 +2770,53 @@ export function CogoWorkspace({
               const [x, y] = toScreen(travFrom.east, travFrom.north);
               return <circle cx={x} cy={y} r={7} fill="none" stroke="#0891b2" strokeWidth={2} />;
             })()}
+            {/* Points on Line panel: the full From->To line (faint), a small
+                circle + rotated distance label for every QUEUED row (client
+                req: "each time a row is added, show a live preview... before
+                it's actually committed"), and a dashed preview for whatever
+                Name/Distance is currently typed but not yet added. */}
+            {polOpen && polFrom && polTo && (() => {
+              const [x1, y1] = toScreen(polFrom.east, polFrom.north);
+              const [x2, y2] = toScreen(polTo.east, polTo.north);
+              return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c2410c" strokeWidth={1} strokeDasharray="3 5" opacity={0.5} />;
+            })()}
+            {polOpen && polFrom && polLivePreview.map((p, i) => {
+              const [x, y] = toScreen(p.east, p.north);
+              const prev = i === 0 ? polFrom! : polLivePreview[i - 1];
+              const angle = segLabelAngle(prev, p);
+              return (
+                <g key={`polrow-${i}`}>
+                  <circle cx={x} cy={y} r={4} fill="none" stroke="#c2410c" strokeWidth={1.6} />
+                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${x} ${y - 8})`}>
+                    {p.name} {p.segDist.toFixed(3)}m
+                  </text>
+                </g>
+              );
+            })}
+            {polOpen && polFrom && polPendingPreviewShown && (() => {
+              const p = polPendingPreviewShown;
+              const [x, y] = toScreen(p.east, p.north);
+              const last = polLivePreview.length ? polLivePreview[polLivePreview.length - 1] : polFrom;
+              const [lx, ly] = toScreen(last.east, last.north);
+              const angle = segLabelAngle(last, p);
+              return (
+                <g>
+                  <line x1={lx} y1={ly} x2={x} y2={y} stroke="#c2410c" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.85} />
+                  <circle cx={x} cy={y} r={4} fill="none" stroke="#c2410c" strokeWidth={1.4} strokeDasharray="2 2" />
+                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${x} ${y - 8})`}>
+                    {p.name} {p.segDist.toFixed(3)}m
+                  </text>
+                </g>
+              );
+            })()}
+            {polOpen && polFrom && (() => {
+              const [x, y] = toScreen(polFrom.east, polFrom.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#c2410c" strokeWidth={2} />;
+            })()}
+            {polOpen && polTo && (() => {
+              const [x, y] = toScreen(polTo.east, polTo.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#c2410c" strokeWidth={2} />;
+            })()}
             {/* Grip-based edit (client req 2026-08-24, Part 28 — matches the
                 client's AutoCAD demo): a single selected line gets draggable
                 grips at each endpoint (stretch that end freely; hold Shift
@@ -2847,6 +3134,42 @@ export function CogoWorkspace({
               onCalculate={travCalculate}
               onZoom={zoomExtents}
               onClose={travClose}
+            />
+          )}
+
+          {polOpen && (
+            <CogoPointsOnLinePanel
+              fromName={polFrom?.name ?? null}
+              toName={polTo?.name ?? null}
+              direction={polDirection}
+              distance={polTotalDistance}
+              residual={polResidual}
+              rows={polRows.map((r, i) => ({ name: r.name, cumulative: r.cumulative, segDist: polLivePreview[i]?.segDist ?? r.cumulative }))}
+              selected={polSelected}
+              newName={polNewName}
+              newDistance={polNewDistance}
+              mode={polMode}
+              autoCalc={polAutoCalc}
+              addLines={polAddLines}
+              pickingFrom={polPickingFrom}
+              pickingTo={polPickingTo}
+              onPickFrom={() => { setPolPickingFrom(true); setPolPickingTo(false); }}
+              onPickTo={() => { setPolPickingTo(true); setPolPickingFrom(false); }}
+              onNewName={setPolNewName}
+              onNewDistance={setPolNewDistance}
+              onMode={setPolMode}
+              onAutoCalc={setPolAutoCalc}
+              onAddLines={setPolAddLines}
+              onAdd={polAdd}
+              onInsert={polInsert}
+              onUpdate={polUpdate}
+              onRemove={polRemove}
+              onUndo={polUndo}
+              onClear={polClearRows}
+              onCalc={polCalc}
+              onSelectRow={polSelectRow}
+              onDraw={polDraw}
+              onClose={polClose}
             />
           )}
           </div>
