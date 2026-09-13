@@ -148,6 +148,13 @@ interface Props {
    *  is more useful as a stable orientation reference); the SIDES/DIRECTIONS
    *  values elsewhere never touch this at all. */
   rotation?: number;
+  /** North arrow's own rotation (client req 2026-09-15: "North arrow
+   *  should face up") — deliberately separate from `rotation` above, which
+   *  includes a 180 degrees Lo-grid sign-fix base that isn't a real
+   *  physical rotation of true north; applying it to the arrow flipped an
+   *  already-correct, straight-up arrow upside down. Defaults to 0 (facing
+   *  up) if not given. */
+  arrowRotation?: number;
   /** Shared display-only horizontal mirror (client req 2026-08-28) —
    *  rotation alone can never fix a mirrored shape, so this covers that
    *  case; same project-wide setting as CogoWorkspace's Flip button. */
@@ -249,6 +256,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTitleResize,
     onTransform,
     rotation: rotationProp,
+    arrowRotation: arrowRotationProp,
     flip: flipProp,
   },
   ref
@@ -353,6 +361,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // (see the Props doc above for why) and every SIDES/DIRECTIONS value
   // elsewhere reads real, unrotated east/north.
   const rotation = rotationProp || 0;
+  const arrowRotation = arrowRotationProp ?? rotation;
   const flip = flipProp ?? false;
   const figPivotX = draw.x + draw.w / 2, figPivotY = draw.y + draw.h / 2;
   const figRotRad = (rotation * Math.PI) / 180;
@@ -558,14 +567,17 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       })()}
 
       {/* ---------- North arrow (top-right) — "T N" below the arrow ----------
-          Rotates WITH `rotation` (client req 2026-09-09) — the arrow's own
-          local shape is still drawn straight up around (0,0), same as
-          before; `rotate(rotation)` after the translate spins it in place
-          around its own anchor point, so it keeps correctly pointing to
-          true north's actual direction once the figure itself is rotated
-          for presentation, instead of always pointing straight up
-          regardless of what the drawing is doing. */}
-      <g transform={`translate(${VB_W - 60}, 70) rotate(${rotation})`}>
+          Rotates WITH `arrowRotation`, not the full `rotation` (client req
+          2026-09-15: "North arrow should face up" — `rotation` includes a
+          180 degrees Lo-grid sign-fix base that isn't a real physical
+          rotation of true north, so using it here flipped an already-
+          correct, straight-up arrow upside down). The arrow's own local
+          shape is still drawn straight up around (0,0); `rotate(...)`
+          after the translate spins it in place around its own anchor
+          point, so it keeps correctly pointing to true north's actual
+          direction for whatever genuine tilt the data has, instead of
+          always pointing straight up regardless. */}
+      <g transform={`translate(${VB_W - 60}, 70) rotate(${arrowRotation})`}>
         <line x1={0} y1={24} x2={0} y2={-20} stroke="black" strokeWidth={1.2} />
         <polygon points="0,-28 -6,-14 6,-14" fill="black" />
         <line x1={0} y1={30} x2={0} y2={44} stroke="black" strokeWidth={0.6} />

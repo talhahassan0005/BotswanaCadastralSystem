@@ -221,6 +221,17 @@ export function WorkingPlanView() {
     const angle = estimateDominantAngle(pts);
     return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
   }, [resolvedPlots, points]);
+  // North arrow rotation (client req 2026-09-15: "North arrow should face
+  // up" — see GeneralPlanView.tsx's own copy of this for the full
+  // explanation). Deliberately excludes BASE_ORIENTATION_DEG: that 180
+  // degrees is a display sign-fix for the Lo-grid import bug, not a real
+  // physical rotation of true north, so applying it to the arrow flipped
+  // an already-correct, straight-up arrow upside down.
+  const northArrowRotationDeg = useMemo(() => {
+    const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
+    const angle = estimateDominantAngle(pts);
+    return angle == null ? 0 : angle;
+  }, [resolvedPlots, points]);
 
   function addPlot() {
     const n = plotNumberInput.trim();
@@ -700,6 +711,7 @@ export function WorkingPlanView() {
             // reset them) — autoRotationDeg above replaces rotation
             // entirely; flip is hardcoded false for the same reason.
             rotation={autoRotationDeg}
+            arrowRotation={northArrowRotationDeg}
             flip={false}
           />
         </div>

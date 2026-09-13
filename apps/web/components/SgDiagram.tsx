@@ -146,6 +146,13 @@ interface Props {
    *  registration-table positions around it, which stay exactly where the
    *  official template puts them regardless of rotation. */
   rotation?: number;
+  /** North arrow's own rotation (client req 2026-09-15: "North arrow
+   *  should face up") — deliberately separate from `rotation` above, which
+   *  includes a 180 degrees Lo-grid sign-fix base that isn't a real
+   *  physical rotation of true north; applying it to the arrow flipped an
+   *  already-correct, straight-up arrow upside down. Defaults to `rotation`
+   *  itself if not given, for any other caller that hasn't been updated. */
+  arrowRotation?: number;
   /** Shared display-only horizontal mirror (client req 2026-08-28) — same
    *  project-wide setting as CogoWorkspace's Flip button; rotation alone
    *  can never fix a mirrored shape. */
@@ -164,7 +171,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTransform,
-    rotation: rotationProp, flip: flipProp,
+    rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp,
   },
   ref
 ) {
@@ -244,6 +251,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // use their own fixed tx/ty/dsmBoxTop-style positions), so they're
   // untouched by construction — nothing to opt them out of.
   const rotation = rotationProp || 0;
+  const arrowRotation = arrowRotationProp ?? rotation;
   const flip = flipProp ?? false;
   const figPivotX = fig.x + fig.w / 2, figPivotY = fig.y + fig.h / 2;
   const figRotRad = (rotation * Math.PI) / 180;
@@ -437,13 +445,17 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           2026-08-22) — a plain unfilled arrow silhouette threaded by a
           single vertical line down through the "T | N" label beneath it,
           not a bold solid-filled or symmetric shape. */}
-      {/* Rotates WITH `rotation` (client req 2026-09-09) — same reasoning
-          as WorkingPlan.tsx's own copy of this fix: the arrow's own local
-          shape stays drawn straight up around (0,0); `rotate(rotation)`
-          after the translate spins it in place around its own anchor so
-          it keeps correctly pointing to true north's actual direction
-          once the figure itself is rotated for presentation. */}
-      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200}) rotate(${rotation})`}>
+      {/* Rotates WITH `arrowRotation`, not the full `rotation` (client req
+          2026-09-15: "North arrow should face up" — same fix as
+          WorkingPlan.tsx's own copy: `rotation` includes a 180 degrees
+          Lo-grid sign-fix base that isn't a real physical rotation of true
+          north, so using it here flipped an already-correct, straight-up
+          arrow upside down). The arrow's own local shape stays drawn
+          straight up around (0,0); `rotate(...)` after the translate spins
+          it in place around its own anchor so it keeps correctly pointing
+          to true north's actual direction for whatever genuine tilt the
+          data has. */}
+      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200}) rotate(${arrowRotation})`}>
         <line x1={0} y1={-170} x2={0} y2={54} stroke="black" strokeWidth={1} />
         <polygon points="0,-170 -14,-55 4,-30" fill="none" stroke="black" strokeWidth={1.2} strokeLinejoin="round" />
         <text x={-6} y={24} textAnchor="end" fontSize={FS_BEACON_HEAD}>T</text>

@@ -263,6 +263,19 @@ export function GeneralPlanView() {
     const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
     return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
   }, [gpPlots]);
+  // North arrow rotation (client req 2026-09-15: "North arrow should face
+  // up" — it was rotating by the FULL autoRotationDeg, including the 180
+  // degrees base, which is a display sign-fix for the Lo-grid import bug,
+  // not a genuine physical rotation of the site relative to true north.
+  // Applying it to the arrow flipped an already-correct, straight-up arrow
+  // upside down. Only the small residual estimate is a real physical fact
+  // about this data (the documented sub-degree block-to-block tilt) that
+  // the arrow should actually reflect — so it deliberately does NOT
+  // include BASE_ORIENTATION_DEG. */
+  const northArrowRotationDeg = useMemo(() => {
+    const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
+    return angle == null ? 0 : angle;
+  }, [gpPlots]);
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
   // reference sheets' title exactly) — the WHOLE layout's range, not just
   // whichever sheet is currently showing, same source `cogoPlots` the rest
@@ -571,6 +584,11 @@ export function GeneralPlanView() {
   const rotPivotX = (FX0 + FX1) / 2, rotPivotY = (FY0 + FY1) / 2;
   const rotRad = (rotation * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
+  // North arrow's own DXF rotation — northArrowRotationDeg only (the
+  // genuine small residual tilt), not the full `rotation` above; see the
+  // SVG north arrow's own comment for why (client req 2026-09-15).
+  const arrowRotRad = (northArrowRotationDeg * Math.PI) / 180;
+  const arrowCosR = Math.cos(arrowRotRad), arrowSinR = Math.sin(arrowRotRad);
   /** Fit-to-box transform for one sheet's own subset of beacons — each
    *  layout sheet is scaled independently to its own plots (client req
    *  2026-08-27: real geographic alignment across sheets isn't available
@@ -1242,20 +1260,18 @@ export function GeneralPlanView() {
     // North arrow (default position — a drag offset here, if the client
     // moved it, isn't replicated; matches the shaft+arrowhead+"N" the SVG
     // draws at northX/northY). Rotated the same way the SVG preview's own
-    // north arrow now is (client req 2026-09-09) — screenPolyline/text
-    // above always go through baseT (rotation forced to 0, so the frame/
-    // fixed sheet furniture never inherits the live auto-rotation), but
-    // the boundary/beacon geometry elsewhere in this export DOES pick it
-    // up via the toExportWorld round-trip; without this, the exported
-    // arrow would always point straight up even when the drawing next to
-    // it is rotated. rotSPt applies the SAME screen-space rotation sx/sy
-    // use (around rotPivotX/Y, using the already-computed cosR/sinR from
-    // the live `rotation`), just for these few fixed points.
+    // north arrow now is: by northArrowRotationDeg only — the genuine
+    // small residual tilt, NOT the full boundary `rotation` (which
+    // includes the 180 degrees Lo-grid sign-fix base that isn't a real
+    // physical rotation of true north — client req 2026-09-15, "North
+    // arrow should face up"). rotSPt applies that same screen-space
+    // rotation (around rotPivotX/Y, using arrowCosR/arrowSinR) just for
+    // these few fixed points.
     {
       const northX = FX1 + 15, northY = FY0 + 16;
       const rotSPt = (x: number, y: number): [number, number] => [
-        rotPivotX + (x - rotPivotX) * cosR - (y - rotPivotY) * sinR,
-        rotPivotY + (x - rotPivotX) * sinR + (y - rotPivotY) * cosR,
+        rotPivotX + (x - rotPivotX) * arrowCosR - (y - rotPivotY) * arrowSinR,
+        rotPivotY + (x - rotPivotX) * arrowSinR + (y - rotPivotY) * arrowCosR,
       ];
       screenPolyline([rotSPt(northX, northY + 12), rotSPt(northX, northY - 10)], false, "NORTH_ARROW");
       screenPolyline(
@@ -2102,16 +2118,17 @@ export function GeneralPlanView() {
           const northX = FX1 + 15, northY = FY0 + 16;
           const northBox = { x: northX - 10, y: northY - 18, w: 20, h: 48 };
           return panelResizable("northArrow", northBox, (
-            // Rotates WITH the same auto-computed presentation rotation
-            // (client req 2026-09-09) so it keeps correctly pointing to
-            // true north's actual direction on the now-rotated page,
-            // matching how a surveyor tilts the T-N symbol by hand on a
-            // hand-rotated reference sheet. SVG's own rotate() is
-            // clockwise-positive around the given pivot, same sense
-            // `rotation` already rotates sx/sy in — nested inside
-            // panelResizable's own transform, not replacing it, so drag/
-            // resize still work the same as before.
-            <g transform={`rotate(${rotation} ${northX} ${northY})`}>
+            // Rotates by northArrowRotationDeg — the genuine small residual
+            // tilt only, NOT the full `rotation` (client req 2026-09-15:
+            // "North arrow should face up" — using the full value, 180
+            // degrees base included, flipped an already-correct arrow
+            // upside down, since that base is a display sign-fix, not an
+            // actual physical rotation of true north on the page). SVG's
+            // own rotate() is clockwise-positive around the given pivot,
+            // same sense `rotation` already rotates sx/sy in — nested
+            // inside panelResizable's own transform, not replacing it, so
+            // drag/resize still work the same as before.
+            <g transform={`rotate(${northArrowRotationDeg} ${northX} ${northY})`}>
               <line x1={northX} y1={northY + 12} x2={northX} y2={northY - 10} stroke="#0f172a" strokeWidth={1.5} />
               <polygon points={`${northX},${northY - 14} ${northX - 5},${northY - 5} ${northX + 5},${northY - 5}`} fill="#0f172a" />
               <text x={northX} y={northY + 26} textAnchor="middle" fontSize={10} fill="#0f172a">N</text>
