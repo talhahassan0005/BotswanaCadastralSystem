@@ -187,7 +187,7 @@ export function CogoWorkspace({
   }
   // Client req 2026-09-02: "the system must refuse when i try to re join
   // the already connected / joined line" — same brief on-screen flash
-  // pattern as flashSnapMiss above, own message (see lineExistsBetween).
+  // pattern as flashSnapMiss above, own message (see lineExistsInDraft).
   const [dupLineWarn, setDupLineWarn] = useState(false);
   const dupLineWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flashDupLineWarn() {
@@ -1727,18 +1727,29 @@ export function CogoWorkspace({
     }
     return best;
   }
-  /** True if a line already connects these two exact points, in either
-   *  direction (client req 2026-09-02: "the system must refuse when i try
-   *  to re join the already connected / joined line") — used while placing
-   *  a Polyline/Polygon vertex to catch clicking back onto a segment
-   *  that's already drawn, same tolerance as sameWorldPoint-style checks
-   *  elsewhere in the app. */
-  function lineExistsBetween(pE: number, pN: number, qE: number, qN: number): boolean {
-    const TOL = 0.01;
-    const same = (e1: number, n1: number, e2: number, n2: number) => Math.abs(e1 - e2) < TOL && Math.abs(n1 - n2) < TOL;
-    return lines.some(
-      (l) => (same(l.aE, l.aN, pE, pN) && same(l.bE, l.bN, qE, qN)) || (same(l.aE, l.aN, qE, qN) && same(l.bE, l.bN, pE, pN))
-    );
+  /** True if the CURRENT in-progress Polyline/Polygon draft already has a
+   *  segment between these two exact points, in either direction — catches
+   *  a genuinely degenerate self-retrace within the shape being drawn right
+   *  now (e.g. clicking straight back onto the previous vertex). Uses the
+   *  same sameWorldPoint/ADJACENCY_TOL concept already shared with the
+   *  app's other shared-edge matching (e.g. the auto-detect shared-boundary
+   *  logic), rather than a separately invented tolerance check.
+   *
+   *  Deliberately does NOT check other lines/polygons already finished
+   *  elsewhere in the project (client req 2026-09-14) — this used to check
+   *  the whole project's `lines`, which blocked the normal, expected
+   *  cadastral workflow of a new adjoining lot/portion tracing along a
+   *  boundary edge it shares with an already-drawn polygon. Only a
+   *  self-retrace within THIS draft is actually a degenerate shape;
+   *  re-tracing a different, already-existing polygon's edge is exactly
+   *  how adjoining parcels are meant to share a common boundary. */
+  function lineExistsInDraft(pE: number, pN: number, qE: number, qN: number): boolean {
+    const p = { east: pE, north: pN }, q = { east: qE, north: qN };
+    for (let i = 0; i < draft.length - 1; i++) {
+      const a = draft[i], b = draft[i + 1];
+      if ((sameWorldPoint(a, p) && sameWorldPoint(b, q)) || (sameWorldPoint(a, q) && sameWorldPoint(b, p))) return true;
+    }
+    return false;
   }
   /** Removes a deleted line's own bearing/distance seg-label, if it had one
    *  (client req 2026-09-02: "when i delete lines, the distance and Bearing
@@ -2018,7 +2029,7 @@ export function CogoWorkspace({
         const v = resolveVertex(vbx, vby);
         const last = draft[draft.length - 1];
         if (!v.existingId) flashSnapMiss();
-        else if (last && lineExistsBetween(last.east, last.north, v.east, v.north)) flashDupLineWarn();
+        else if (last && lineExistsInDraft(last.east, last.north, v.east, v.north)) flashDupLineWarn();
         else setDraft((d) => [...d, addVertexPoint(v)]);
       } else if (draftTool === "offset") {
         if (!offsetLineId) {
