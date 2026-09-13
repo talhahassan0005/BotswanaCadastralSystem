@@ -2775,10 +2775,26 @@ export function CogoWorkspace({
                 req: "each time a row is added, show a live preview... before
                 it's actually committed"), and a dashed preview for whatever
                 Name/Distance is currently typed but not yet added. */}
-            {polOpen && polFrom && polTo && (() => {
+            {/* From->To preview line + its own bearing/distance label
+                (client req 2026-09-14: "the moment both From and To are
+                set, a light preview line with its bearing + distance label
+                draws immediately... exactly matching the already-specified
+                live-preview behaviour for queued points") — same rotated
+                two-line label style as a queued row's, drawn before any
+                point has actually been added to the list. */}
+            {polOpen && polFrom && polTo && polDirDist && (() => {
               const [x1, y1] = toScreen(polFrom.east, polFrom.north);
               const [x2, y2] = toScreen(polTo.east, polTo.north);
-              return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c2410c" strokeWidth={1} strokeDasharray="3 5" opacity={0.5} />;
+              const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+              const angle = segLabelAngle(polFrom, polTo);
+              const [brg, dist] = polDirDist;
+              return (
+                <>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c2410c" strokeWidth={1} strokeDasharray="3 5" opacity={0.5} />
+                  <text x={midX} y={midY - 10} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY - 10})`}>{formatDms(brg)}</text>
+                  <text x={midX} y={midY + 3} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY + 3})`}>{dist.toFixed(2)}</text>
+                </>
+              );
             })()}
             {polOpen && polFrom && polLivePreview.map((p, i) => {
               const [x, y] = toScreen(p.east, p.north);

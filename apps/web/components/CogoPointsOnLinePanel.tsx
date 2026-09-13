@@ -89,14 +89,17 @@ export function CogoPointsOnLinePanel({
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700" title="Close (Esc)" aria-label="Close">✕</button>
       </div>
 
-      {/* From / To + auto Direction/Distance */}
+      {/* From / To + auto Direction/Distance. The dot next to each label
+          (client req 2026-09-14) shows which field is currently "listening"
+          for the next canvas click — green while armed, matching the
+          reference tool's own radio-style indicator. */}
       <div className="grid grid-cols-2 gap-2 px-2.5 pt-2">
-        <Field label="From">
+        <Field label="From" dotActive={pickingFrom}>
           <button type="button" onClick={onPickFrom} className={`w-full truncate rounded border px-1.5 py-1 text-left ${pickingFrom ? "border-brand bg-brand-light/40 text-brand-dark" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
             {fromName ?? "Click on canvas…"}
           </button>
         </Field>
-        <Field label="To">
+        <Field label="To" dotActive={pickingTo}>
           <button type="button" onClick={onPickTo} className={`w-full truncate rounded border px-1.5 py-1 text-left ${pickingTo ? "border-brand bg-brand-light/40 text-brand-dark" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
             {toName ?? "Click on canvas…"}
           </button>
@@ -132,7 +135,10 @@ export function CogoPointsOnLinePanel({
 
       {/* New Name / Distance + Add */}
       <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 px-2.5 pt-2">
-        <Field label="New Name">
+        {/* Shown with the same dot style as From/To for visual consistency
+            with the reference tool, but always off — naming the new point
+            being queued isn't a canvas-click target in this tool. */}
+        <Field label="New Name" dotActive={false}>
           <input value={newName} onChange={(e) => onNewName(e.target.value)} placeholder="auto" className="w-full rounded border border-slate-200 px-1.5 py-1 focus:border-brand focus:outline-none" />
         </Field>
         <Field label="Distance">
@@ -201,10 +207,15 @@ export function CogoPointsOnLinePanel({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, dotActive, children }: { label: string; dotActive?: boolean; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-0.5 block text-slate-500">{label}</span>
+      <span className="mb-0.5 flex items-center gap-1 text-slate-500">
+        {dotActive !== undefined && (
+          <span className={`inline-block h-2 w-2 flex-none rounded-full ${dotActive ? "bg-green-500" : "bg-slate-300"}`} />
+        )}
+        {label}
+      </span>
       {children}
     </label>
   );
