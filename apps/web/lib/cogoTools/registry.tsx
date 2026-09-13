@@ -638,10 +638,18 @@ function iconAngleDistance(c: string) {
   );
 }
 function iconIntersectBB(c: string) {
+  // Client req 2026-09-14 ("add a tool for adding a point by using bearing
+  // and bearing" — the tool already existed, but the old icon (a plain
+  // X-cross) read as ambiguous next to the other intersection icons).
+  // Redrawn to match how the client sketched it: two known points at the
+  // base, a ray from each converging on the new point above — the same
+  // "two points, two rays, one crossing" shape as the reference drawing.
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M3 3l18 10M21 3L3 13" />
-      <circle cx="12" cy="8" r="2" fill={c} stroke="none" />
+      <circle cx="4" cy="20" r="1.8" fill={c} stroke="none" />
+      <circle cx="20" cy="20" r="1.8" fill={c} stroke="none" />
+      <path d="M4 20L12 6M20 20L12 6" />
+      <circle cx="12" cy="6" r="2.2" fill={c} stroke="none" />
     </svg>
   );
 }
