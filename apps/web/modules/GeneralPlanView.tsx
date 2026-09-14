@@ -7,7 +7,7 @@ import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, dropClosingDuplicate, estimateDominantAngle, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
 import { fmtCoord, fmtSystem, toDotted } from "@/lib/diagramLayout";
-import { inverse } from "@/lib/server/geometry";
+import { inverse, polygonArea } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -1189,6 +1189,16 @@ export function GeneralPlanView() {
       }),
     [outerBoundary]
   );
+  // True area of the outer-boundary ring itself (client req 2026-09-17,
+  // reference screenshot: the client's own "SIDES/DIRECTIONS/CO-ORDINATES"
+  // table ends with "TOTAL AREA = 35.9794 Ha" — a standalone version of
+  // this line was removed 2026-09-04 as clutter, but that was a DIFFERENT,
+  // badly-placed line; this is the real table's own footer the reference
+  // explicitly shows). Computed directly from outerBoundary via
+  // polygonArea rather than summing gpPlots' own areas, so it stays
+  // correct whether outerBoundary came from the auto-detected union or an
+  // explicit Parent (Main Figure) plot.
+  const outerBoundaryAreaHa = useMemo(() => Math.abs(polygonArea(outerBoundary)) / 10000, [outerBoundary]);
   // Client req 2026-09-16 (screenshot: "LOTS A, B, Parent, C, D, E, F" with
   // "Parent" crossed out) — once a Parent (Main Figure) plot # is set, it's
   // the parent of every sub-divided lot, not itself one of them, so it must
@@ -2761,9 +2771,23 @@ export function GeneralPlanView() {
                       </g>
                     );
                   })}
-                  {outerSides.length > 8 && (
+                  {outerSides.length > 8 ? (
                     <text x={mapX(30)} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
-                  )}
+                  ) : null}
+                  {/* TOTAL AREA footer (client req 2026-09-17, reference
+                      screenshot: the real table ends with "TOTAL AREA =
+                      35.9794 Ha") — the 2026-09-04 removal was a different,
+                      standalone line elsewhere, not this table's own
+                      footer. */}
+                  <text
+                    x={mapX(30)}
+                    y={FY1 + 72 + Math.min(outerSides.length, 8) * 12 + (outerSides.length > 8 ? 18 : 4)}
+                    fontSize={9}
+                    fontWeight={700}
+                    fill="#0f172a"
+                  >
+                    TOTAL AREA = {outerBoundaryAreaHa.toFixed(4)} Ha
+                  </text>
                 </>
               ) : null /* Standalone "TOTAL AREA" line (client req 2026-09-04,
                    screenshot with a red cross through it: "delete this
@@ -2893,6 +2917,16 @@ export function GeneralPlanView() {
     // instead of a number that never adjusts for it.
     const coordHeaderY = FY0 + 8;
     const coordFirstRowY = coordHeaderY + 16;
+    // Full (untruncated) outer-boundary Sides/Directions/Co-ordinates table
+    // on the LAST coordinate-schedule page, right after the beacon list
+    // (client req 2026-09-17, reference screenshot: the client's own real
+    // sheet shows this table positioned exactly there, below the beacon
+    // coordinate columns — not just on the layout sheet, where it's capped
+    // to 8 rows for space). Positioned below whichever column's list runs
+    // longest.
+    const isLastCoordSheet = idx === coordChunks.length - 1;
+    const maxRows = Math.max(0, ...Array.from({ length: cols }, (_, c) => chunk.slice(c * perCol, (c + 1) * perCol).length));
+    const obTop = coordFirstRowY + maxRows * 13.5 + 24;
     return (
       <svg key={idx} ref={(el) => { refs.current[layoutSheetCount + idx] = el; }} viewBox={`0 0 ${W} ${H}`} className="w-full bg-white" style={{ border: "1px solid #cbd5e1" }}>
         {titleBlock(layoutSheetCount + idx + 1, "Beacon coordinate schedule")}
@@ -2917,6 +2951,32 @@ export function GeneralPlanView() {
             </g>
           );
         })}
+        {isLastCoordSheet && outerSides.length > 0 && (
+          <>
+            <line x1={30} y1={obTop} x2={30 + 480} y2={obTop} stroke="#0f172a" strokeWidth={0.6} />
+            <text x={30} y={obTop + 20} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+            <text x={30} y={obTop + 34} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
+            <text x={110} y={obTop + 34} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
+            <text x={230} y={obTop + 34} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
+            <text x={340} y={obTop + 34} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
+            <text x={430} y={obTop + 34} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
+            {outerSides.map((s, k) => {
+              const y = obTop + 48 + k * 12;
+              return (
+                <g key={k}>
+                  <text x={30} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
+                  <text x={110} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
+                  <text x={230} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                  <text x={340} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
+                  <text x={430} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
+                </g>
+              );
+            })}
+            <text x={30} y={obTop + 48 + outerSides.length * 12 + 12} fontSize={9} fontWeight={700} fill="#0f172a">
+              TOTAL AREA = {outerBoundaryAreaHa.toFixed(4)} Ha
+            </text>
+          </>
+        )}
         <text x={30} y={H - 16} fontSize={9} fill="#64748b">System {displayCrs(config.coordinateSystem)}</text>
       </svg>
     );
