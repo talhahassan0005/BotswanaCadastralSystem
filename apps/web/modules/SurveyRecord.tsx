@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
@@ -60,8 +60,23 @@ function fmt(n: number | null | undefined, dp = 3): string {
 }
 
 export function SurveyRecord() {
-  const { config, cogoResult, diagramFigure, diagramInput, importResult, setImportResult, recordInput, setRecordInput } = useStore();
-  const fig = diagramFigure ?? cogoResult;
+  const { config, cogoResult, diagramFigure, diagramInput, importResult, setImportResult, recordInput, setRecordInput, cogoPlots } = useStore();
+  // Client req 2026-09-17: "as i run cogo calculations, the system should
+  // also run consistency... when i want a consistency for a particular
+  // plot i may either query the plot number" — every plot drawn/joined in
+  // the Cadastral workstation already has its own fully-computed figure
+  // (CogoPlot.fig, built by buildFigureFromPoints the moment it's drawn —
+  // same CogoResult shape as cogoResult/diagramFigure below), so there's
+  // no separate "run" step needed at all: querying a plot number here just
+  // looks its already-computed figure up directly, instead of requiring a
+  // detour through the Diagrams tab's own plot picker first.
+  const [figPlotQuery, setFigPlotQuery] = useState("");
+  const queriedPlot = useMemo(() => {
+    const q = figPlotQuery.trim().toLowerCase();
+    if (!q) return null;
+    return cogoPlots.find((p) => p.number.trim().toLowerCase() === q) ?? null;
+  }, [cogoPlots, figPlotQuery]);
+  const fig = queriedPlot?.fig ?? diagramFigure ?? cogoResult;
 
   // Diagrams module's own fields (client req 2026-08-26, Part 32c/32d: "pull
   // directly from the Diagram module's existing fields" for lot name, tribal
@@ -286,6 +301,24 @@ export function SurveyRecord() {
         </Card>
       )}
 
+      {(doc === "consistency" || doc === "comparison") && (
+        <Card title="Plot to check">
+          <div className="max-w-xs">
+            <Field label="Query plot number">
+              <Input
+                value={figPlotQuery}
+                onChange={setFigPlotQuery}
+                placeholder="e.g. 14182 — a plot # already drawn in Cadastral"
+              />
+            </Field>
+            <p className="mt-1 text-xs text-slate-400">
+              {queriedPlot
+                ? `Showing plot ${queriedPlot.number}.`
+                : "Leave blank to use whatever figure is already loaded (Diagrams tab's plot pick, or the legacy COGO Computation)."}
+            </p>
+          </div>
+        </Card>
+      )}
       {doc === "consistency" && (
         <Card title="Data consistency details">
           <div className="max-w-xs">
@@ -318,12 +351,12 @@ export function SurveyRecord() {
               <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
               {!consistencyLines || !fig ? (
                 <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-                  No figure loaded yet — either run a closed traverse (at least 3 beacons) in the{" "}
-                  {cogoTabLabel(config.discipline)}'s legacy COGO Computation, or (if your plots were drawn/joined
-                  in the Cadastral workstation instead) open the Diagrams tab and pick that plot's number there
-                  first, which loads it here too. The consistency check then walks each leg's bearing and distance
-                  forward from its own recorded coordinate and compares the result to the next beacon's recorded
-                  coordinate.
+                  No figure loaded yet — type a plot number already drawn/joined in the Cadastral workstation into
+                  "Query plot number" above, or (for a project that doesn't use Cadastral) run a closed traverse
+                  (at least 3 beacons) in the {cogoTabLabel(config.discipline)}'s legacy COGO Computation, or open
+                  the Diagrams tab and pick a plot's number there. The consistency check then walks each leg's
+                  bearing and distance forward from its own recorded coordinate and compares the result to the
+                  next beacon's recorded coordinate.
                 </p>
               ) : (
                 <>
@@ -558,9 +591,9 @@ function DataComparison({
       <div className="space-y-3">
         <h1 className="text-base font-bold text-slate-800">Data Comparison</h1>
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-          No figure loaded yet — either run the {cogoTabLabel(discipline)}'s legacy COGO Computation, or (if your
-          plots were drawn/joined in the Cadastral workstation instead) open the Diagrams tab and pick that plot's
-          number there first, which loads it here too.
+          No figure loaded yet — type a plot number already drawn/joined in the Cadastral workstation into "Query
+          plot number" above, or (for a project that doesn't use Cadastral) run the {cogoTabLabel(discipline)}'s
+          legacy COGO Computation, or open the Diagrams tab and pick a plot's number there.
         </p>
       </div>
     );
