@@ -272,10 +272,17 @@ export function GeneralPlanView() {
   // about this data (the documented sub-degree block-to-block tilt) that
   // the arrow should actually reflect — so it deliberately does NOT
   // include BASE_ORIENTATION_DEG. */
-  const northArrowRotationDeg = useMemo(() => {
-    const angle = estimateDominantAngle(gpPlots.flatMap((p) => p.points));
-    return angle == null ? 0 : angle;
-  }, [gpPlots]);
+  // Pinned to 0 (client req 2026-09-18, screenshot: "How did it end up
+  // facing to the side?") — this used to tilt by estimateDominantAngle's
+  // own residual, on the theory that it's always a small, genuine physical
+  // tilt worth showing. That estimator only folds into (-45,45] though, it
+  // is NOT guaranteed small — for a more complex multi-lot layout than the
+  // original 2-block example it can land on a large value, swinging the
+  // arrow visibly sideways. The boundary/beacon geometry still needs its
+  // own full rotation (autoRotationDeg, unchanged); the arrow itself just
+  // always points straight up now, matching every reference sheet's own
+  // T-N symbol and removing this failure mode entirely.
+  const northArrowRotationDeg = 0;
   // "LOTS 14183-14608" (client req 2026-08-30, matching the GC-122/WP_CH
   // reference sheets' title exactly) — the WHOLE layout's range, not just
   // whichever sheet is currently showing, same source `cogoPlots` the rest

@@ -222,10 +222,11 @@ export function Diagrams() {
   // degrees is a display sign-fix for the Lo-grid import bug, not a real
   // physical rotation of true north, so applying it to the arrow flipped
   // an already-correct, straight-up arrow upside down.
-  const northArrowRotationDeg = useMemo(() => {
-    const angle = estimateDominantAngle(points);
-    return angle == null ? 0 : angle;
-  }, [points]);
+  // Pinned to 0 (client req 2026-09-18 — see GeneralPlanView.tsx's own
+  // copy of this for the full explanation: estimateDominantAngle's
+  // residual is only bounded to (-45,45], not guaranteed small, so tying
+  // the arrow to it could swing it visibly sideways for some layouts).
+  const northArrowRotationDeg = 0;
   const sides = useMemo(
     () =>
       (fig?.legs ?? []).map((l) => ({
