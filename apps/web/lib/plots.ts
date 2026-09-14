@@ -4,6 +4,7 @@
  * the exact same logic instead of two independently-drifting copies.
  */
 import RBush from "rbush";
+import { inverse } from "./server/geometry";
 
 export interface PlotPoint {
   name: string | null;
@@ -115,6 +116,69 @@ export function sameWorldPoint(
   tol = ADJACENCY_TOL
 ): boolean {
   return Math.abs(a.east - b.east) < tol && Math.abs(a.north - b.north) < tol;
+}
+
+/** One shared beacon, recorded independently by two different plots, with
+ *  however far apart those two records actually are. */
+export interface ConsistencyEntry {
+  /** Stable across recomputation (sorted plot numbers + point name), NOT
+   *  random/time-based — lets a dismissed entry stay dismissed as more
+   *  plots get added and the full list gets recomputed from scratch. */
+  id: string;
+  pointName: string;
+  plotA: string; eastA: number; northA: number;
+  plotB: string; eastB: number; northB: number;
+  /** Bearing/distance FROM plot A's recorded version of the point TO plot
+   *  B's — i.e. the misclosure vector between the two records, not a real
+   *  survey leg. Zero when they agree exactly. */
+  bearingDeg: number;
+  distance: number;
+  misclosed: boolean;
+}
+
+/** Cross-plot shared-beacon consistency check (client req 2026-09-17,
+ *  reference legacy tool "Capture Consistencies" — flags where two
+ *  adjoining plots' shared corner data doesn't actually match). Matched by
+ *  point NAME, not coordinate proximity like ADJACENCY_TOL/sameWorldPoint
+ *  above: the whole point of this check is to surface beacons that were
+ *  MEANT to be the same physical corner but have drifted apart in the
+ *  stored data, and a proximity search would simply fail to find exactly
+ *  the significant mismatches this needs to catch. Pure function of
+ *  whatever plots are passed in — there is no separate "run" step; calling
+ *  it again after a plot is added, edited, or removed always reflects the
+ *  current data, so a caller can treat it as always up to date. */
+export function computeCrossPlotConsistency(
+  plots: { number: string; points: { name: string | null; east: number; north: number }[] }[],
+  toleranceM: number
+): ConsistencyEntry[] {
+  const byName = new Map<string, { plot: string; east: number; north: number }[]>();
+  for (const p of plots) {
+    for (const pt of p.points) {
+      const name = pt.name?.trim();
+      if (!name) continue;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name)!.push({ plot: p.number, east: pt.east, north: pt.north });
+    }
+  }
+  const entries: ConsistencyEntry[] = [];
+  for (const [name, recs] of byName) {
+    for (let i = 0; i < recs.length; i++) {
+      for (let j = i + 1; j < recs.length; j++) {
+        const a = recs[i], b = recs[j];
+        if (a.plot === b.plot) continue; // only cross-plot comparisons
+        const [bearingDeg, distance] = inverse({ east: a.east, north: a.north }, { east: b.east, north: b.north });
+        entries.push({
+          id: `${[a.plot, b.plot].sort().join("|")}::${name}`,
+          pointName: name,
+          plotA: a.plot, eastA: a.east, northA: a.north,
+          plotB: b.plot, eastB: b.east, northB: b.north,
+          bearingDeg, distance,
+          misclosed: distance > toleranceM,
+        });
+      }
+    }
+  }
+  return entries.sort((x, y) => (y.misclosed ? 1 : 0) - (x.misclosed ? 1 : 0) || x.pointName.localeCompare(y.pointName));
 }
 
 /** Drops a redundant closing vertex equal to the first point (client req

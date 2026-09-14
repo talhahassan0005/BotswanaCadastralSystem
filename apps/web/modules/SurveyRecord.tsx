@@ -5,6 +5,8 @@ import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
+import { computeCrossPlotConsistency, type ConsistencyEntry } from "@/lib/plots";
+import { formatDms } from "@/lib/server/angles";
 import type { ParsedRow, PointType } from "@/lib/types";
 
 type DocId = "submission" | "report" | "consistency" | "coordinates" | "comparison";
@@ -77,6 +79,64 @@ export function SurveyRecord() {
     return cogoPlots.find((p) => p.number.trim().toLowerCase() === q) ?? null;
   }, [cogoPlots, figPlotQuery]);
   const fig = queriedPlot?.fig ?? diagramFigure ?? cogoResult;
+
+  // --- Cross-plot Data Consistency (client req 2026-09-17, full spec) ---
+  // "As I run COGO calculations, the system should also run consistency
+  // [checks] automatically. Then when I want a consistency for a
+  // particular plot, I can query [it] by the plot number. As I join the
+  // plots it sorts out inconsistencies. Then I can clear, edit, print, or
+  // save [the results]." computeCrossPlotConsistency is a pure function of
+  // cogoPlots, so this list is ALWAYS current — no manual "run" trigger
+  // anywhere, it just reflects whatever's currently drawn/joined.
+  const [consistencyTolerance, setConsistencyTolerance] = useState("0.200");
+  // "Delete an entry" / "Clear" can't mean deleting the underlying beacon
+  // data (there's nothing to delete — a mismatch is a computed fact about
+  // two plots' own points), so this dismisses entries from view instead,
+  // by their stable id. Session-only (not persisted with the project) —
+  // a genuine data fix changes the plots' own points and the entry simply
+  // stops recomputing; this is only for hiding ones already reviewed.
+  const [consistencyDismissed, setConsistencyDismissed] = useState<Set<string>>(new Set());
+  const [consistencyPlotFilter, setConsistencyPlotFilter] = useState("");
+  const allConsistencyEntries = useMemo(
+    () => computeCrossPlotConsistency(cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })), Number(consistencyTolerance) || 0.2),
+    [cogoPlots, consistencyTolerance]
+  );
+  const visibleConsistencyEntries = useMemo(() => {
+    const q = consistencyPlotFilter.trim().toLowerCase();
+    return allConsistencyEntries.filter((e) => {
+      if (consistencyDismissed.has(e.id)) return false;
+      if (!q) return true;
+      return e.plotA.toLowerCase() === q || e.plotB.toLowerCase() === q;
+    });
+  }, [allConsistencyEntries, consistencyDismissed, consistencyPlotFilter]);
+  const misclosedCount = visibleConsistencyEntries.filter((e) => e.misclosed).length;
+  function dismissConsistencyEntry(id: string) {
+    setConsistencyDismissed((d) => new Set(d).add(id));
+  }
+  /** Dismisses whatever's currently visible (respecting the plot-number
+   *  filter, if any) rather than the full unfiltered list, so clearing a
+   *  filtered view doesn't also hide entries for other plots. */
+  function clearConsistencyEntries() {
+    setConsistencyDismissed((d) => {
+      const next = new Set(d);
+      for (const e of visibleConsistencyEntries) next.add(e.id);
+      return next;
+    });
+  }
+  function downloadConsistencyLog() {
+    const lines = [
+      "Data Consistency — cross-plot shared-beacon check",
+      "",
+      `Misclosure tolerance: ${Number(consistencyTolerance) || 0.2} m`,
+      "",
+      ...visibleConsistencyEntries.map(
+        (e) =>
+          `${e.pointName}: Plot ${e.plotA} (${e.eastA.toFixed(3)}, ${e.northA.toFixed(3)}) vs Plot ${e.plotB} (${e.eastB.toFixed(3)}, ${e.northB.toFixed(3)}) — ` +
+          `${formatDms(e.bearingDeg)}  ${e.distance.toFixed(3)}m — ${e.misclosed ? "LEG MISCLOSURE: YES" : "Leg misclosure: No"}`
+      ),
+    ];
+    downloadText(`${lotName.replace(/\s+/g, "_")}_data_consistency.txt`, lines.join("\n"), "text/plain");
+  }
 
   // Diagrams module's own fields (client req 2026-08-26, Part 32c/32d: "pull
   // directly from the Diagram module's existing fields" for lot name, tribal
@@ -320,6 +380,18 @@ export function SurveyRecord() {
         </Card>
       )}
       {doc === "consistency" && (
+        <Card title="Cross-plot consistency check">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Query by plot number (filters the table below)">
+              <Input value={consistencyPlotFilter} onChange={setConsistencyPlotFilter} placeholder="e.g. 14182 — leave blank to show every plot" />
+            </Field>
+            <Field label="Misclosure tolerance (m)">
+              <Input type="number" value={consistencyTolerance} onChange={setConsistencyTolerance} placeholder="0.200" />
+            </Field>
+          </div>
+        </Card>
+      )}
+      {doc === "consistency" && (
         <Card title="Data consistency details">
           <div className="max-w-xs">
             <Field label="Declared area from title deed (optional)">
@@ -347,19 +419,72 @@ export function SurveyRecord() {
             />
           )}
           {doc === "consistency" && (
-            <div className="space-y-3">
-              <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
-              {!consistencyLines || !fig ? (
-                <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-                  No figure loaded yet — type a plot number already drawn/joined in the Cadastral workstation into
-                  "Query plot number" above, or (for a project that doesn't use Cadastral) run a closed traverse
-                  (at least 3 beacons) in the {cogoTabLabel(config.discipline)}'s legacy COGO Computation, or open
-                  the Diagrams tab and pick a plot's number there. The consistency check then walks each leg's
-                  bearing and distance forward from its own recorded coordinate and compares the result to the
-                  next beacon's recorded coordinate.
-                </p>
-              ) : (
-                <>
+            <div className="space-y-5">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h1 className="text-base font-bold text-slate-800">
+                    Data Consistency{misclosedCount > 0 ? ` — ${misclosedCount} misclosure(s)` : ""}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" onClick={downloadConsistencyLog} disabled={!visibleConsistencyEntries.length}>⬇ Save as .txt</Button>
+                    <Button variant="ghost" onClick={clearConsistencyEntries} disabled={!visibleConsistencyEntries.length}>Clear</Button>
+                  </div>
+                </div>
+                {allConsistencyEntries.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                    No shared beacons yet — this checks every point NAME that appears in more than one plot drawn/
+                    joined in the Cadastral workstation (e.g. a corner two adjoining lots both recorded), comparing
+                    what each plot says its coordinate is. It updates automatically as you draw/join more plots —
+                    nothing to run manually.
+                  </p>
+                ) : visibleConsistencyEntries.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                    {consistencyPlotFilter.trim()
+                      ? `No shared-beacon entries for plot "${consistencyPlotFilter.trim()}".`
+                      : "Every entry here has been cleared/dismissed."}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
+                        <tr>
+                          {["Point", "Plot A", "Plot B", "Direction", "Distance (m)", "Leg Misclosure", ""].map((h) => (
+                            <th key={h} className="whitespace-nowrap border-b border-slate-200 px-2 py-1.5">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleConsistencyEntries.map((e) => (
+                          <tr key={e.id} className={e.misclosed ? "bg-red-50" : undefined}>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5 font-medium">{e.pointName}</td>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5">{e.plotA}</td>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5">{e.plotB}</td>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5 font-mono">{formatDms(e.bearingDeg)}</td>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5 font-mono">{e.distance.toFixed(3)}</td>
+                            <td className={`whitespace-nowrap border-b border-slate-100 px-2 py-1.5 font-semibold ${e.misclosed ? "text-red-600" : "text-slate-500"}`}>
+                              {e.misclosed ? "YES" : "No"}
+                            </td>
+                            <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1.5">
+                              <button type="button" onClick={() => dismissConsistencyEntry(e.id)} className="text-slate-400 hover:text-red-600" title="Delete this entry">✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Single-plot own internal-leg consistency (pre-existing —
+                  distinct from the cross-plot table above: this checks
+                  whether ONE plot's own traverse legs are internally
+                  consistent with its own recorded points, not whether two
+                  DIFFERENT plots agree on a shared corner). Only shown once
+                  a figure is actually loaded via "Plot to check" above,
+                  Diagrams, or the legacy COGO Computation. */}
+              {consistencyLines && fig && (
+                <div className="space-y-3 border-t border-slate-200 pt-4">
+                  <h2 className="text-sm font-bold text-slate-800">This plot's own leg consistency</h2>
                   <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
                     {["Consistency Report", "", lotName, "", ...consistencyLines].join("\n")}
                     {"\n"}
@@ -368,7 +493,7 @@ export function SurveyRecord() {
                       : `The area is ${fig.area_m2.toFixed(2)} square metres.`}
                   </pre>
                   <Button variant="ghost" onClick={downloadConsistency}>⬇ Download as .txt</Button>
-                </>
+                </div>
               )}
             </div>
           )}
