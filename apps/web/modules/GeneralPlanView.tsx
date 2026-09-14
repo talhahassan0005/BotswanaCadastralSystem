@@ -1526,7 +1526,11 @@ export function GeneralPlanView() {
       textM(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, dxfBcValueM);
       for (let g = 0; g < dxfBcCols; g++) {
         const left = tblL + g * dxfBcGroupW;
-        const col0 = left, col1 = left + dxfBcGroupW * 0.22, col2 = left + dxfBcGroupW * 0.61;
+        // Column gaps tightened (client req 2026-09-17: "block table corner
+        // ke columns ki space kam karo thori") — 0.22/0.61 -> 0.19/0.52,
+        // still wide enough for "CONSTANTS" (the widest col0 label) to
+        // clear col1, just less empty space either side of it.
+        const col0 = left, col1 = left + dxfBcGroupW * 0.19, col2 = left + dxfBcGroupW * 0.52;
         textM(col1 + 6, dxfBcSystemY + 6, "Y", dxfBcValueM);
         textM(col2 + 6, dxfBcSystemY + 6, "X", dxfBcValueM);
         textM(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", dxfBcValueM);
@@ -2693,7 +2697,10 @@ export function GeneralPlanView() {
               const bcTblR = tblL + bcGroupW * Math.max(usedBcCols, 1);
               const bcGroups = Array.from({ length: usedBcCols }, (_, g) => {
                 const left = tblL + g * bcGroupW;
-                return { left, col0: left, col1: left + bcGroupW * 0.22, col2: left + bcGroupW * 0.61, right: left + bcGroupW };
+                // Same tightened gaps as the DXF export's own copy of this
+                // (client req 2026-09-17: "block table corner ke columns ki
+                // space kam karo thori").
+                return { left, col0: left, col1: left + bcGroupW * 0.19, col2: left + bcGroupW * 0.52, right: left + bcGroupW };
               });
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
