@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
@@ -31,6 +31,48 @@ export function WorkingPlanView() {
   // for its DXF export. A ref, not state: it's set during WorkingPlan's own
   // render, so setState here would be a React anti-pattern.
   const transformRef = useRef<DiagramTransform | null>(null);
+
+  // Zoom + Pan (client req 2026-09-15: "Add zoom and pad in working plan")
+  // — ported from GeneralPlanView.tsx's own copy of this (same reasoning:
+  // a plain CSS scale on the preview, independent of the browser's own
+  // page zoom, plus a scrollable box so panning is just scrolling it).
+  const [wpZoom, setWpZoom] = useState(1);
+  const WP_ZOOM_MIN = 0.4, WP_ZOOM_MAX = 6;
+  const panBoxRef = useRef<HTMLDivElement | null>(null);
+  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  // Toggleable Pan tool (discoverable, same as General Plan's own) — an
+  // ordinary left-button drag pans too while active; middle/right-button
+  // drag always pans, tool or no tool.
+  const [panToolActive, setPanToolActive] = useState(false);
+  function handleWpPanMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.button !== 1 && e.button !== 2 && !(e.button === 0 && panToolActive)) return;
+    e.preventDefault();
+    const box = panBoxRef.current;
+    if (!box) return;
+    panStartRef.current = { x: e.clientX, y: e.clientY, scrollLeft: box.scrollLeft, scrollTop: box.scrollTop };
+    setIsPanning(true);
+  }
+  useEffect(() => {
+    if (!isPanning) return;
+    function onMove(e: MouseEvent) {
+      const start = panStartRef.current;
+      const box = panBoxRef.current;
+      if (!start || !box) return;
+      box.scrollLeft = start.scrollLeft - (e.clientX - start.x);
+      box.scrollTop = start.scrollTop - (e.clientY - start.y);
+    }
+    function onUp() {
+      panStartRef.current = null;
+      setIsPanning(false);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isPanning]);
 
   const points = useMemo(
     () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
@@ -669,7 +711,34 @@ export function WorkingPlanView() {
           resize it — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
           Click a beacon's own circle to mark/unmark it as a block corner (drawn as a double circle).
         </p>
-        <div className="mx-auto max-w-3xl" onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => setWpZoom((z) => Math.max(WP_ZOOM_MIN, +(z - 0.15).toFixed(2)))}>−</Button>
+          <span className="w-12 text-center text-xs text-slate-600">{Math.round(wpZoom * 100)}%</span>
+          <Button variant="ghost" onClick={() => setWpZoom((z) => Math.min(WP_ZOOM_MAX, +(z + 0.15).toFixed(2)))}>+</Button>
+          {wpZoom !== 1 && <Button variant="ghost" onClick={() => setWpZoom(1)}>Reset zoom</Button>}
+          <Button
+            variant={panToolActive ? "primary" : "ghost"}
+            onClick={() => setPanToolActive((v) => !v)}
+            title="Pan — drag the sheet to move it (or just hold the middle/right mouse button, any time)"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+              <path d="M5.5 6V2.75a1 1 0 0 1 2 0V6m0-.5V1.75a1 1 0 0 1 2 0V6m0-.25V2.75a1 1 0 0 1 2 0V8m0 0V6.75a1 1 0 0 1 2 0v4.75a4 4 0 0 1-4 4h-2a4.5 4.5 0 0 1-3.5-1.9L2 9.8a1.1 1.1 0 0 1 1.7-1.4L5.5 10" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Button>
+          <span className="text-xs text-slate-400">Scroll over the sheet to zoom. Press and hold the scroll-wheel button (or the right mouse button), then drag, to pan.{panToolActive ? " Drag the sheet to pan it." : ""}</span>
+        </div>
+        <div
+          ref={panBoxRef}
+          className="mx-auto max-w-5xl overflow-auto rounded border border-slate-100"
+          style={{ maxHeight: "85vh", cursor: isPanning ? "grabbing" : panToolActive ? "grab" : undefined }}
+          onWheel={(e) => {
+            e.preventDefault();
+            setWpZoom((z) => Math.max(WP_ZOOM_MIN, Math.min(WP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
+          }}
+          onMouseDown={handleWpPanMouseDown}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+        <div className="mx-auto max-w-3xl" style={{ transform: `scale(${wpZoom})`, transformOrigin: "top center" }} onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
           <WorkingPlan
             ref={svgRef}
             meta={effectiveMeta}
@@ -714,6 +783,7 @@ export function WorkingPlanView() {
             arrowRotation={northArrowRotationDeg}
             flip={false}
           />
+        </div>
         </div>
       </Card>
     </div>
