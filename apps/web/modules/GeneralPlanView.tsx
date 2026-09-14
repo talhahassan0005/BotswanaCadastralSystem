@@ -113,7 +113,10 @@ export function GeneralPlanView() {
   const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   function handlePanMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
-    if (e.button !== 1 && e.button !== 2) return; // middle or right button — left click still selects/places labels normally
+    // Middle/right button always pans; left button too, but only while the
+    // Pan tool (above) is explicitly active — otherwise left click still
+    // selects/places labels normally.
+    if (e.button !== 1 && e.button !== 2 && !(e.button === 0 && panToolActive)) return;
     e.preventDefault();
     const box = panBoxRef.current;
     if (!box) return;
@@ -207,6 +210,46 @@ export function GeneralPlanView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marqueeDragging]);
+  // Pan tool (client req 2026-09-18: "Add the pan feature under General
+  // plan") — panning itself already existed (middle/right-button drag,
+  // above), but wasn't discoverable without knowing to hold a specific
+  // mouse button. This adds a toggleable button, matching the marquee-zoom
+  // tool's own pattern: once active, an ordinary LEFT-button drag pans too
+  // (handlePanMouseDown below), on top of (not replacing) the existing
+  // middle/right-button shortcut.
+  const [panToolActive, setPanToolActive] = useState(false);
+  function togglePanTool() {
+    setMarqueeZoomActive(false);
+    setRulerActive(false);
+    setRulerAnchor(null);
+    setRulerHover(null);
+    setAddingRoadLabel(false);
+    setAddingBoundaryLabel(false);
+    setPanToolActive((v) => !v);
+  }
+  // Ruler / measure tool (client req 2026-09-18: "also add a ruller") —
+  // click a start point, move the mouse for a live dashed preview with a
+  // running bearing/distance readout (reusing the same inverse()/
+  // formatDms() this module already uses for the outer-boundary traverse
+  // table), click again to lock the measurement in place. A third click
+  // starts a fresh measurement (clearing the locked one), same two-click
+  // convention as Google Maps/Earth's own measure tool. rulerAnchor/
+  // rulerHover track an in-progress measurement; rulerResult holds the
+  // last LOCKED one so it stays visible after the second click.
+  const [rulerActive, setRulerActive] = useState(false);
+  const [rulerAnchor, setRulerAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [rulerHover, setRulerHover] = useState<{ x: number; y: number } | null>(null);
+  const [rulerResult, setRulerResult] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
+  function toggleRulerTool() {
+    setMarqueeZoomActive(false);
+    setPanToolActive(false);
+    setAddingRoadLabel(false);
+    setAddingBoundaryLabel(false);
+    setRulerAnchor(null);
+    setRulerHover(null);
+    setRulerResult(null);
+    setRulerActive((v) => !v);
+  }
   // GP's own Working Plan variant (client req 2026-08-27/28, spec Part 3):
   // same drawing + descriptive block, but the Lot Numbers/Block Corner/
   // traverse tables are dropped in favour of an inset reference-mark sketch
@@ -913,6 +956,19 @@ export function GeneralPlanView() {
     return { x: p.x, y: p.y };
   }
   function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
+    if (rulerActive) {
+      const p = toSvgPoint(e);
+      if (!rulerAnchor) {
+        setRulerAnchor(p);
+        setRulerHover(p);
+        setRulerResult(null);
+      } else {
+        setRulerResult({ a: rulerAnchor, b: p });
+        setRulerAnchor(null);
+        setRulerHover(null);
+      }
+      return;
+    }
     if (addingRoadLabel) {
       const p = toSvgPoint(e);
       setTextPrompt({ id: null, kind: "road", x: p.x, y: p.y, value: "", angle: 0 });
@@ -932,6 +988,11 @@ export function GeneralPlanView() {
     setSelectedLabel(null);
     setTitleSelected(false);
     setSelectedPanelId(null);
+  }
+  /** Live dashed preview + running readout while the Ruler tool has a start
+   *  point placed but hasn't been clicked a second time yet. */
+  function handleCanvasMouseMove(e: ReactMouseEvent<SVGSVGElement>) {
+    if (rulerActive && rulerAnchor) setRulerHover(toSvgPoint(e));
   }
   function labelArray(kind: "road" | "boundary") {
     return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
@@ -2152,8 +2213,9 @@ export function GeneralPlanView() {
         // nominal 0..W/0..H box; without this it would be silently clipped
         // at that boundary instead of staying reachable via the zoom/pan
         // controls above.
-        style={{ border: "1px solid #cbd5e1", overflow: "visible", cursor: addingRoadLabel || addingBoundaryLabel ? "crosshair" : "default" }}
+        style={{ border: "1px solid #cbd5e1", overflow: "visible", cursor: addingRoadLabel || addingBoundaryLabel || rulerActive ? "crosshair" : "default" }}
         onClick={handleCanvasClick}
+        onMouseMove={handleCanvasMouseMove}
       >
         {titleBlock(groupIdx + 1, `Layout of ${groupPlots.length} parcel(s)`, t.screenToWorld, t.s)}
         {/* North arrow — shifted right (client req 2026-09-02: "iss arrow ko
@@ -2736,6 +2798,48 @@ export function GeneralPlanView() {
             </>
           );
         })()}
+        {/* Ruler tool (client req 2026-09-18: "also add a ruller") — only
+            the active sheet is interactive, so only it draws a ruler
+            overlay; other sheets render (for print-all/DXF-source
+            purposes) with none. Ground distance/bearing computed the same
+            way as every other measurement in this module: convert the
+            two SVG-space points to real east/north via t.screenToWorld,
+            then inverse()/formatDms() — a dashed line + live readout while
+            only the start point is placed, a solid line + fixed readout
+            once both are (rulerResult). */}
+        {groupIdx === activeGroupIdx && rulerAnchor && rulerHover && (() => {
+          const wa = t.screenToWorld(rulerAnchor.x, rulerAnchor.y);
+          const wb = t.screenToWorld(rulerHover.x, rulerHover.y);
+          const [brg, dist] = inverse(wa, wb);
+          const midX = (rulerAnchor.x + rulerHover.x) / 2, midY = (rulerAnchor.y + rulerHover.y) / 2;
+          return (
+            <g>
+              <line x1={rulerAnchor.x} y1={rulerAnchor.y} x2={rulerHover.x} y2={rulerHover.y} stroke="#7c3aed" strokeWidth={1.4} strokeDasharray="5 4" />
+              <circle cx={rulerAnchor.x} cy={rulerAnchor.y} r={3} fill="#7c3aed" />
+              <circle cx={rulerHover.x} cy={rulerHover.y} r={3} fill="none" stroke="#7c3aed" strokeWidth={1.4} />
+              <rect x={midX - 38} y={midY - 20} width={76} height={26} fill="white" stroke="#7c3aed" strokeWidth={0.8} rx={3} />
+              <text x={midX} y={midY - 9} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
+              <text x={midX} y={midY + 3} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
+            </g>
+          );
+        })()}
+        {groupIdx === activeGroupIdx && rulerResult && (() => {
+          const { a, b } = rulerResult;
+          const wa = t.screenToWorld(a.x, a.y);
+          const wb = t.screenToWorld(b.x, b.y);
+          const [brg, dist] = inverse(wa, wb);
+          const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+          return (
+            <g>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#7c3aed" strokeWidth={1.6} />
+              <circle cx={a.x} cy={a.y} r={3} fill="#7c3aed" />
+              <circle cx={b.x} cy={b.y} r={3} fill="#7c3aed" />
+              <rect x={midX - 38} y={midY - 20} width={76} height={26} fill="white" stroke="#7c3aed" strokeWidth={1} rx={3} />
+              <text x={midX} y={midY - 9} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
+              <text x={midX} y={midY + 3} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
+            </g>
+          );
+        })()}
       </svg>
     );
   }
@@ -3014,6 +3118,8 @@ export function GeneralPlanView() {
               onClick={() => {
                 setAddingRoadLabel((v) => !v);
                 setAddingBoundaryLabel(false);
+                setPanToolActive(false);
+                setRulerActive(false); setRulerAnchor(null); setRulerHover(null);
                 setSelectedLabel(null);
               }}
             >
@@ -3024,6 +3130,8 @@ export function GeneralPlanView() {
               onClick={() => {
                 setAddingBoundaryLabel((v) => !v);
                 setAddingRoadLabel(false);
+                setPanToolActive(false);
+                setRulerActive(false); setRulerAnchor(null); setRulerHover(null);
                 setSelectedLabel(null);
               }}
               title='For labels like "REMAINDER OF CADASTRE 243" along a boundary — pre-fills the parent lot number from "Portions of Lot" above if set'
@@ -3072,7 +3180,11 @@ export function GeneralPlanView() {
             </Button>
             <Button
               variant={marqueeZoomActive ? "primary" : "ghost"}
-              onClick={() => setMarqueeZoomActive((v) => !v)}
+              onClick={() => {
+                setPanToolActive(false);
+                setRulerActive(false); setRulerAnchor(null); setRulerHover(null);
+                setMarqueeZoomActive((v) => !v);
+              }}
               title="Zoom to selection — drag a box on the sheet to zoom into it"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
@@ -3081,7 +3193,34 @@ export function GeneralPlanView() {
                 <path d="M12.6 12.6 15 15" strokeLinecap="round" />
               </svg>
             </Button>
-            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button (or the right mouse button), then drag, to pan.{marqueeZoomActive ? " Drag a box on the sheet to zoom into it." : ""}</span>
+            {/* Pan (client req 2026-09-18: "Add the pan feature under
+                General plan") — panning already worked via middle/right-
+                button drag; this just makes it discoverable as a normal
+                toggleable tool button, matching the marquee-zoom tool next
+                to it. */}
+            <Button
+              variant={panToolActive ? "primary" : "ghost"}
+              onClick={togglePanTool}
+              title="Pan — drag the sheet to move it (or just hold the middle/right mouse button, any time)"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+                <path d="M5.5 6V2.75a1 1 0 0 1 2 0V6m0-.5V1.75a1 1 0 0 1 2 0V6m0-.25V2.75a1 1 0 0 1 2 0V8m0 0V6.75a1 1 0 0 1 2 0v4.75a4 4 0 0 1-4 4h-2a4.5 4.5 0 0 1-3.5-1.9L2 9.8a1.1 1.1 0 0 1 1.7-1.4L5.5 10" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </Button>
+            {/* Ruler (client req 2026-09-18: "also add a ruller") — click,
+                move, click to measure a real ground distance/bearing
+                between two points on the sheet. */}
+            <Button
+              variant={rulerActive ? "primary" : "ghost"}
+              onClick={toggleRulerTool}
+              title="Ruler — click two points to measure the real distance/bearing between them"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3">
+                <path d="M1.5 10.5 10.5 1.5 14.5 5.5 5.5 14.5Z" strokeLinejoin="round" />
+                <path d="M4 8l1.5 1.5M6.5 5.5 8 7M9 4.5l1.5 1.5" strokeLinecap="round" />
+              </svg>
+            </Button>
+            <span className="text-xs text-slate-400">Drag a label to move it; double-click to edit its text. Scroll over the sheet to zoom. Press and hold the scroll-wheel button (or the right mouse button), then drag, to pan.{marqueeZoomActive ? " Drag a box on the sheet to zoom into it." : ""}{panToolActive ? " Drag the sheet to pan it." : ""}{rulerActive ? " Click two points to measure between them." : ""}</span>
           </div>
         )}
         {/* Render all sheets (so refs exist for print-all); show only the active one.
@@ -3108,7 +3247,7 @@ export function GeneralPlanView() {
           style={{
             maxHeight: "90vh",
             position: "relative",
-            cursor: isPanning ? "grabbing" : marqueeZoomActive ? "crosshair" : undefined,
+            cursor: isPanning ? "grabbing" : marqueeZoomActive || rulerActive ? "crosshair" : panToolActive ? "grab" : undefined,
           }}
           onWheel={(e) => {
             e.preventDefault();
