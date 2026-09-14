@@ -3121,15 +3121,12 @@ export function GeneralPlanView() {
       </Card>
       </div>
 
-      {/* "Sheet reference panel" moved into this right column (client req
-          2026-09-15, screenshot circling it at the bottom of the left
-          sidebar: "I think move that to the other side" / "ye niche wala
-          part right per shift karo") — it used to stack at the bottom of
-          the narrow left sidebar (client req 2026-09-05's own "sits in a
-          left column" placement), which left it buried below the fold on
-          a tall project. Now it's its own card below the drawing preview
-          in this wider column instead; the left sidebar keeps "General
-          Plan details" only. */}
+      {/* Middle column: the drawing preview itself. "Sheet reference panel"
+          used to sit in the left sidebar (client req 2026-09-05), then
+          moved into THIS column (client req 2026-09-15) — but that just
+          made it stack full-width below the drawing, which the client
+          then pointed out was still "bottom", not "right side" (client req
+          2026-09-17). It's now its own third column, after this one. */}
       <div className="min-w-0 flex-1">
       <Card title={`${sheetMode === "working" ? "Working" : "General"} Plan — Sheet ${sheet + 1}`}>
         {sheet < layoutSheetCount && (
@@ -3327,9 +3324,18 @@ export function GeneralPlanView() {
         </div>
         </div>
       </Card>
+      </div>
 
+      {/* Genuine third column now (client req 2026-09-17, screenshot: "ye
+          section jo bottom mein hai isko right side per shift karna tha na
+          ke bottom" — the previous move (commit a20cf13) put this Card
+          INSIDE the drawing's own min-w-0 flex-1 column, so it still
+          rendered full-width, stacked below the drawing, not actually
+          beside it. This is a real sibling of the drawing column instead,
+          narrow and flex-shrink-0 same as the left sidebar. */}
+      <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="Sheet reference panel">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} placeholder="e.g. ALL: 12MM IRON PEG" /></Field>
           <Field label="Ped way"><Input value={meta.pedWay} onChange={set("pedWay")} placeholder="e.g. All: 3m" /></Field>
         </div>
@@ -3365,37 +3371,35 @@ export function GeneralPlanView() {
             + Add corner
           </button>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="mt-3">
-            <div className="mb-1 text-xs font-medium text-slate-500">Lot Areas table columns</div>
-            <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-              {[1, 2, 3, 4].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setMeta((m) => ({ ...m, lotTableCols: n }))}
-                  className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-                >
-                  {n}
-                </button>
-              ))}
-            </span>
-          </div>
-          <div className="mt-3">
-            <div className="mb-1 text-xs font-medium text-slate-500">Block Corner table columns</div>
-            <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-              {[1, 2, 3, 4].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setMeta((m) => ({ ...m, blockCornerCols: n }))}
-                  className={`w-10 py-1.5 text-sm font-medium ${meta.blockCornerCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-                >
-                  {n}
-                </button>
-              ))}
-            </span>
-          </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Lot Areas table columns</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, lotTableCols: n }))}
+                className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Block Corner table columns</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, blockCornerCols: n }))}
+                className={`w-10 py-1.5 text-sm font-medium ${meta.blockCornerCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </span>
         </div>
         <div className="mt-3">
           <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
