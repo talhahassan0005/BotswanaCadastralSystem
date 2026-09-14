@@ -292,7 +292,7 @@ export function GeneralPlanView() {
   const savedGp = (generalPlanInput ?? null) as Partial<{
     name: string; surveyor: string; gpNo: string; scale: number;
     gcNo: string; dsmNo: string; srNo: string; surveyedIn: string;
-    parentLotNumber: string; tribalArea: string; parentDsmNo: string;
+    parentLotNumber: string; tribalArea: string; parentDsmNo: string; parentPlotNumber: string;
     beaconDescription: string; pedWay: string; splayEntries: { corner: string; distance: string }[];
     roadLabels: ManualText[]; boundaryLabels: ManualText[];
     titleOffset: { dx: number; dy: number; scale?: number };
@@ -319,6 +319,18 @@ export function GeneralPlanView() {
     parentLotNumber: "", // e.g. "14182"
     tribalArea: "",      // e.g. "GHANZI"
     parentDsmNo: "",     // e.g. "1243/2026"
+    // Parent (Main Figure) plot number (client req 2026-09-15: "this table
+    // carries the information for the parent plot... lets add an option
+    // for adding parent (Main figure)") — an actual COGO plot number
+    // (cogoPlots) the user has drawn/joined for the ORIGINAL, un-subdivided
+    // parent figure. When it matches a real plot, the bottom Sides/
+    // Directions/Co-ordinates traverse table below uses THAT plot's own
+    // points instead of the auto-detected outer boundary of whatever
+    // sub-lots happen to be drawn so far — the real parent diagram is
+    // often surveyed separately and isn't always fully reconstructable
+    // from a partial subdivision. Blank keeps today's auto-detected
+    // behaviour unchanged.
+    parentPlotNumber: "",
     beaconDescription: "ALL: 12MM IRON PEG",
     pedWay: "All: 3m",
     // Per-corner splay distances, e.g. "A,B,B2,B3" -> "5m", with a default
@@ -1057,7 +1069,20 @@ export function GeneralPlanView() {
   // new (computeDiagramLayout's table is a full portrait A4 sheet in a
   // different coordinate space, not something this landscape sheet's bottom
   // strip can just embed).
-  const outerBoundary = useMemo(() => findOuterBoundary(gpPlots), [gpPlots]);
+  // Prefers an explicitly-selected "Parent (Main Figure)" plot (client req
+  // 2026-09-15) over the auto-detected outer boundary, when its plot
+  // number matches one already drawn/joined in COGO — see meta.parentPlotNumber's
+  // own doc comment above for why (the real parent diagram is often
+  // surveyed separately and isn't always fully reconstructable from
+  // whatever sub-lots happen to be drawn so far).
+  const outerBoundary = useMemo(() => {
+    const trimmed = meta.parentPlotNumber.trim();
+    if (trimmed) {
+      const parent = cogoPlots.find((p) => p.number.trim() === trimmed);
+      if (parent) return dropClosingDuplicate(parent.fig.points).map((pt) => ({ name: pt.name, east: pt.east, north: pt.north }));
+    }
+    return findOuterBoundary(gpPlots);
+  }, [gpPlots, cogoPlots, meta.parentPlotNumber]);
   const outerSides = useMemo(
     () =>
       outerBoundary.map((p, i) => {
@@ -2791,12 +2816,24 @@ export function GeneralPlanView() {
           {sheetMode === "general" && (
             <Field label="Vide diagram DSM No. (parent diagram)"><Input value={meta.parentDsmNo} onChange={set("parentDsmNo")} placeholder="e.g. 1243/2026" /></Field>
           )}
+          <Field label="Parent (Main Figure) plot #">
+            <Input
+              value={meta.parentPlotNumber}
+              onChange={set("parentPlotNumber")}
+              placeholder="e.g. 14182 — a plot # already drawn in COGO"
+            />
+          </Field>
         </div>
         <p className="mt-1 text-xs text-slate-400">
           Fill in "Portions of Lot" / "Tribal area" / "Vide diagram DSM No." to add the matching title lines
           ("LOTS {lotRangeText || "…"} {meta.name}" / "PORTIONS OF LOT {meta.parentLotNumber || "…"} {meta.name}" /
           "SITUATE AT {meta.name} IN THE {meta.tribalArea || "…"} TRIBAL AREA") — leave any of them
           blank to keep today's shorter title.
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          "Parent (Main Figure) plot #": when it matches a plot number already drawn/joined in COGO, the
+          bottom Sides/Directions/Co-ordinates table uses that plot's own boundary instead of auto-detecting
+          the outer edge of whatever sub-lots are drawn so far — leave blank to keep today's auto-detected behaviour.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
