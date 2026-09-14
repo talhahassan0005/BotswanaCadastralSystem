@@ -955,9 +955,31 @@ export function GeneralPlanView() {
     const p = pt.matrixTransform(ctm.inverse());
     return { x: p.x, y: p.y };
   }
+  /** Same as toSvgPoint, but snaps to the nearest actual beacon on the
+   *  active sheet when the click/hover lands within a small radius of one
+   *  (client req 2026-09-15: "when i want to measure, it should snap to
+   *  nearest" — an un-snapped click could land a pixel or two off a real
+   *  corner, silently measuring a slightly wrong distance). Falls back to
+   *  the raw point when nothing is close enough, so an arbitrary
+   *  mid-line/free measurement still works. Only used by the Ruler tool —
+   *  road/boundary label placement (toSvgPoint's other caller) is meant to
+   *  go anywhere, not snap. */
+  function toSnappedSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+    const raw = toSvgPoint(e);
+    const at = computeTransform(activeUsedBeacons);
+    const SNAP = 14;
+    let best: { x: number; y: number } | null = null;
+    let bestD = SNAP * SNAP;
+    for (const b of activeUsedBeacons) {
+      const x = at.sx(b.east, b.north), y = at.sy(b.east, b.north);
+      const d = (x - raw.x) ** 2 + (y - raw.y) ** 2;
+      if (d < bestD) { bestD = d; best = { x, y }; }
+    }
+    return best ?? raw;
+  }
   function handleCanvasClick(e: ReactMouseEvent<SVGSVGElement>) {
     if (rulerActive) {
-      const p = toSvgPoint(e);
+      const p = toSnappedSvgPoint(e);
       if (!rulerAnchor) {
         setRulerAnchor(p);
         setRulerHover(p);
@@ -992,7 +1014,7 @@ export function GeneralPlanView() {
   /** Live dashed preview + running readout while the Ruler tool has a start
    *  point placed but hasn't been clicked a second time yet. */
   function handleCanvasMouseMove(e: ReactMouseEvent<SVGSVGElement>) {
-    if (rulerActive && rulerAnchor) setRulerHover(toSvgPoint(e));
+    if (rulerActive && rulerAnchor) setRulerHover(toSnappedSvgPoint(e));
   }
   function labelArray(kind: "road" | "boundary") {
     return kind === "road" ? meta.roadLabels : meta.boundaryLabels;
@@ -2817,9 +2839,14 @@ export function GeneralPlanView() {
               <line x1={rulerAnchor.x} y1={rulerAnchor.y} x2={rulerHover.x} y2={rulerHover.y} stroke="#7c3aed" strokeWidth={1.4} strokeDasharray="5 4" />
               <circle cx={rulerAnchor.x} cy={rulerAnchor.y} r={3} fill="#7c3aed" />
               <circle cx={rulerHover.x} cy={rulerHover.y} r={3} fill="none" stroke="#7c3aed" strokeWidth={1.4} />
-              <rect x={midX - 38} y={midY - 20} width={76} height={26} fill="white" stroke="#7c3aed" strokeWidth={0.8} rx={3} />
-              <text x={midX} y={midY - 9} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
-              <text x={midX} y={midY + 3} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
+              {/* Readout moved further above the measured line + made
+                  translucent (client req 2026-09-15: "that thing is hiding
+                  where i want to measure... make it see through or move it
+                  a bit up") — it used to sit right on the midpoint,
+                  covering the very corner/edge being measured. */}
+              <rect x={midX - 38} y={midY - 42} width={76} height={26} fill="white" fillOpacity={0.85} stroke="#7c3aed" strokeWidth={0.8} rx={3} />
+              <text x={midX} y={midY - 31} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
+              <text x={midX} y={midY - 19} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
             </g>
           );
         })()}
@@ -2834,9 +2861,9 @@ export function GeneralPlanView() {
               <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#7c3aed" strokeWidth={1.6} />
               <circle cx={a.x} cy={a.y} r={3} fill="#7c3aed" />
               <circle cx={b.x} cy={b.y} r={3} fill="#7c3aed" />
-              <rect x={midX - 38} y={midY - 20} width={76} height={26} fill="white" stroke="#7c3aed" strokeWidth={1} rx={3} />
-              <text x={midX} y={midY - 9} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
-              <text x={midX} y={midY + 3} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
+              <rect x={midX - 38} y={midY - 42} width={76} height={26} fill="white" fillOpacity={0.85} stroke="#7c3aed" strokeWidth={1} rx={3} />
+              <text x={midX} y={midY - 31} textAnchor="middle" fontSize={9} fontWeight={700} fill="#7c3aed">{dist.toFixed(3)}m</text>
+              <text x={midX} y={midY - 19} textAnchor="middle" fontSize={7.5} fill="#7c3aed">{formatDms(brg)}</text>
             </g>
           );
         })()}
