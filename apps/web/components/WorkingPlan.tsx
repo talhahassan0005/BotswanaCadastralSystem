@@ -732,9 +732,12 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 style={{ pointerEvents: "none" }}
               />
             )}
-            {pl?.leader && (
-              <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />
-            )}
+            {/* Leader line (beacon -> its offset label position) removed
+                (client req 2026-09-15, screenshot circling several of
+                these: "remove these lines with are conntected to the
+                lables") — the label can still be dragged away from its
+                point (pl.labelX/labelY, beaconPlacementById) for overlap
+                avoidance, just without a visible connector drawn to it. */}
             {(!pl?.hidden || isSel) && (
               <text
                 x={lx} y={ly + 3}
