@@ -3023,92 +3023,17 @@ export function GeneralPlanView() {
           </span>
         </div>
       </Card>
-
-      <Card title="Sheet reference panel">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} placeholder="e.g. ALL: 12MM IRON PEG" /></Field>
-          <Field label="Ped way"><Input value={meta.pedWay} onChange={set("pedWay")} placeholder="e.g. All: 3m" /></Field>
-        </div>
-        <div className="mt-3">
-          <div className="mb-1 text-xs font-medium text-slate-500">Splay information (corner → distance; untick isn't needed, just leave blank rows out)</div>
-          <div className="space-y-1.5">
-            {meta.splayEntries.map((e, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={e.corner}
-                  onChange={(ev) => setSplayEntry(i, { corner: ev.target.value })}
-                  placeholder="e.g. A,B,B2,B3 or All Others"
-                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
-                />
-                <input
-                  value={e.distance}
-                  onChange={(ev) => setSplayEntry(i, { distance: ev.target.value })}
-                  placeholder="e.g. 5m"
-                  className="w-24 rounded border border-slate-200 px-2 py-1 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeSplayEntry(i)}
-                  className="text-slate-400 hover:text-red-600"
-                  aria-label="Remove splay entry"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={addSplayEntry} className="mt-2 text-xs font-medium text-brand underline">
-            + Add corner
-          </button>
-        </div>
-        <div className="mt-3">
-          <div className="mb-1 text-xs font-medium text-slate-500">Lot Areas table columns</div>
-          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-            {[1, 2, 3, 4].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setMeta((m) => ({ ...m, lotTableCols: n }))}
-                className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-              >
-                {n}
-              </button>
-            ))}
-          </span>
-        </div>
-        <div className="mt-3">
-          <div className="mb-1 text-xs font-medium text-slate-500">Block Corner table columns</div>
-          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-            {[1, 2, 3, 4].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setMeta((m) => ({ ...m, blockCornerCols: n }))}
-                className={`w-10 py-1.5 text-sm font-medium ${meta.blockCornerCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-              >
-                {n}
-              </button>
-            ))}
-          </span>
-        </div>
-        <div className="mt-3">
-          <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
-          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-            {[50, 100, 200].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
-                className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-              >
-                {n}m
-              </button>
-            ))}
-          </span>
-        </div>
-      </Card>
       </div>
 
+      {/* "Sheet reference panel" moved into this right column (client req
+          2026-09-15, screenshot circling it at the bottom of the left
+          sidebar: "I think move that to the other side" / "ye niche wala
+          part right per shift karo") — it used to stack at the bottom of
+          the narrow left sidebar (client req 2026-09-05's own "sits in a
+          left column" placement), which left it buried below the fold on
+          a tall project. Now it's its own card below the drawing preview
+          in this wider column instead; the left sidebar keeps "General
+          Plan details" only. */}
       <div className="min-w-0 flex-1">
       <Card title={`${sheetMode === "working" ? "Working" : "General"} Plan — Sheet ${sheet + 1}`}>
         {sheet < layoutSheetCount && (
@@ -3304,6 +3229,92 @@ export function GeneralPlanView() {
             </div>
           )}
         </div>
+        </div>
+      </Card>
+
+      <Card title="Sheet reference panel">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} placeholder="e.g. ALL: 12MM IRON PEG" /></Field>
+          <Field label="Ped way"><Input value={meta.pedWay} onChange={set("pedWay")} placeholder="e.g. All: 3m" /></Field>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Splay information (corner → distance; untick isn't needed, just leave blank rows out)</div>
+          <div className="space-y-1.5">
+            {meta.splayEntries.map((e, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  value={e.corner}
+                  onChange={(ev) => setSplayEntry(i, { corner: ev.target.value })}
+                  placeholder="e.g. A,B,B2,B3 or All Others"
+                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
+                />
+                <input
+                  value={e.distance}
+                  onChange={(ev) => setSplayEntry(i, { distance: ev.target.value })}
+                  placeholder="e.g. 5m"
+                  className="w-24 rounded border border-slate-200 px-2 py-1 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSplayEntry(i)}
+                  className="text-slate-400 hover:text-red-600"
+                  aria-label="Remove splay entry"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addSplayEntry} className="mt-2 text-xs font-medium text-brand underline">
+            + Add corner
+          </button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-medium text-slate-500">Lot Areas table columns</div>
+            <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+              {[1, 2, 3, 4].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMeta((m) => ({ ...m, lotTableCols: n }))}
+                  className={`w-10 py-1.5 text-sm font-medium ${meta.lotTableCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </span>
+          </div>
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-medium text-slate-500">Block Corner table columns</div>
+            <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+              {[1, 2, 3, 4].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMeta((m) => ({ ...m, blockCornerCols: n }))}
+                  className={`w-10 py-1.5 text-sm font-medium ${meta.blockCornerCols === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </span>
+          </div>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[50, 100, 200].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
+                className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                {n}m
+              </button>
+            ))}
+          </span>
         </div>
       </Card>
       </div>
