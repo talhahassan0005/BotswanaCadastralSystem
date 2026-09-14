@@ -2477,13 +2477,20 @@ export function CogoWorkspace({
               activeId={draftTool === "curve" ? "arc-3points" : null}
             />
           )}
-          {/* Draw Polygon is click-to-draw; Split/Merge/Offset/Area open the command bar. */}
+          {/* Draw Polygon is click-to-draw; Draw Polygon by Bearing &
+              Distance opens the side Traverse panel instead (client req
+              2026-09-16 — same "Capture Consistencies"-style leg-entry
+              workflow as Line Tools' own Line by Bearing & Distance /
+              Polyline-Traverse; closing the chain back on its start point
+              already completes it as a real polygon with a Lot/Plot Number
+              + area, via the panel's own Calculate -> Traverse Complete
+              flow). Split/Merge/Offset/Area open the command bar. */}
           {activeGroup === "polygon" && (
             <CogoDrawingToolbar
               category="polygon"
               onOpenTool={openFormTool}
-              interceptIds={{ "draw-polygon": () => activateDrawTool("polygon") }}
-              activeId={draftTool === "polygon" ? "draw-polygon" : null}
+              interceptIds={{ "draw-polygon": () => activateDrawTool("polygon"), "polygon-traverse": () => openTraversePanel() }}
+              activeId={draftTool === "polygon" ? "draw-polygon" : travOpen ? "polygon-traverse" : null}
             />
           )}
           {/* Same computeTraverse() engine as the COGO Engine tab. Traverse

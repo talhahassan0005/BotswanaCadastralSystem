@@ -368,6 +368,30 @@ const POLYGON_TOOLS: ToolDef[] = [
     run: pg.drawPolygon,
   },
   {
+    // Opens the side Traverse panel instead of the command bar (client req
+    // 2026-09-16: reference screenshot of the legacy tool's "Capture
+    // Consistencies" dialog being used to walk a polygon's own boundary leg
+    // by leg — intercepted in CogoWorkspace.tsx's "polygon" category
+    // toolbar, same pattern as "line-bearing-distance"/"polyline-traverse"
+    // opening it from the Line Tools tab). The panel already closes a
+    // traverse into a real, committed polygon with a Lot/Plot Number and
+    // area (Calculate -> Traverse Complete dialog) whenever the last leg's
+    // point lands back on the start point — this entry's `fields`/`run`
+    // are unused (bypassed by the intercept) but kept so the toolbar still
+    // has an icon/label/tooltip to render.
+    id: "polygon-traverse",
+    category: "polygon",
+    label: "Draw Polygon by Bearing & Distance",
+    description: "Walk a polygon's boundary leg by leg (bearing + distance), live preview as you type, closing back on the start point completes it as a real polygon.",
+    icon: iconPolygonTraverse,
+    fields: [
+      { key: "start", label: "Start point", type: "point" },
+      { key: "legs", label: "Legs — one per line: bearing, distance", type: "textarea", default: "0.00.00, 50" },
+      { key: "prefix", label: "New point name prefix", type: "text", default: "T" },
+    ],
+    run: ln.polylineTraverse,
+  },
+  {
     id: "auto-close-boundary",
     category: "polygon",
     label: "Auto-close Boundary",
@@ -821,6 +845,14 @@ function iconDrawPolygon(c: string) {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 9l7-6 9 4-3 11-13 2z" fill={c} fillOpacity="0.12" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function iconPolygonTraverse(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M4 9l7-6 9 4-3 11-13 2z" strokeLinejoin="round" strokeDasharray="3 2" />
+      <circle cx="4" cy="9" r="1.7" fill={c} stroke="none" />
     </svg>
   );
 }
