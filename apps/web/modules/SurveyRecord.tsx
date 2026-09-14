@@ -318,9 +318,12 @@ export function SurveyRecord() {
               <h1 className="text-base font-bold text-slate-800">Data Consistency</h1>
               {!consistencyLines || !fig ? (
                 <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-                  Run a closed traverse (at least 3 beacons) in the {cogoTabLabel(config.discipline)} first — the
-                  consistency check walks each leg's bearing and distance forward from its own recorded coordinate
-                  and compares the result to the next beacon's recorded coordinate.
+                  No figure loaded yet — either run a closed traverse (at least 3 beacons) in the{" "}
+                  {cogoTabLabel(config.discipline)}'s legacy COGO Computation, or (if your plots were drawn/joined
+                  in the Cadastral workstation instead) open the Diagrams tab and pick that plot's number there
+                  first, which loads it here too. The consistency check then walks each leg's bearing and distance
+                  forward from its own recorded coordinate and compares the result to the next beacon's recorded
+                  coordinate.
                 </p>
               ) : (
                 <>
@@ -554,7 +557,11 @@ function DataComparison({
     return (
       <div className="space-y-3">
         <h1 className="text-base font-bold text-slate-800">Data Comparison</h1>
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">Run the {cogoTabLabel(discipline)} first.</p>
+        <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+          No figure loaded yet — either run the {cogoTabLabel(discipline)}'s legacy COGO Computation, or (if your
+          plots were drawn/joined in the Cadastral workstation instead) open the Diagrams tab and pick that plot's
+          number there first, which loads it here too.
+        </p>
       </div>
     );
   }
