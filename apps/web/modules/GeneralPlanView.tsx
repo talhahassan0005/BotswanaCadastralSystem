@@ -2915,7 +2915,16 @@ export function GeneralPlanView() {
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
       <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="General Plan details">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Single column (client req 2026-09-15, screenshot: "ye ho raha
+            conjested... upar niche na ho ur na ho congjested... professionally
+            hona chahiye") — this card has grown to 12 fields since the
+            sm:2/lg:3-column grid was first set up for a much shorter list;
+            squeezed into the narrow lg:w-80 sidebar, longer labels ("GC No.
+            (compilation code)", "Vide diagram DSM No. (parent diagram)")
+            wrapped onto 2-3 lines unevenly against 1-line neighbours,
+            breaking row alignment. One full-width field per row reads
+            cleanly regardless of label length. */}
+        <div className="grid grid-cols-1 gap-3">
           {/* "Location" used to be a separate field here, but it only ever
               duplicated "Layout / township name" — every place that read it
               (the title's "SITUATE AT ..." line, the fallback subtitle)
