@@ -393,6 +393,13 @@ export function GeneralPlanView() {
     scale: savedGp?.scale && savedGp.scale >= 50 ? savedGp.scale : 2000,
   });
   const set = (k: keyof typeof meta) => (v: string) => setMeta((m) => ({ ...m, [k]: v }));
+  // Client req 2026-09-16: "find a way to specify it so that after drawing
+  // it automatically goes there" — the "PORTIONS OF LOT ..." title line
+  // auto-fills from Parent (Main Figure) plot # when set, so it doesn't
+  // need retyping into the older, free-text "Portions of Lot" field too
+  // (that field still works on its own when a parent was never drawn as
+  // its own COGO plot).
+  const portionsOfLotText = meta.parentPlotNumber.trim() || meta.parentLotNumber.trim();
   // "Scale 1:" is edited as its own local text buffer, committed to
   // meta.scale only on blur/Enter (client req 2026-09-04, ROUND 2 — the
   // first fix only stopped an EMPTY field collapsing to 0; a fully
@@ -482,7 +489,7 @@ export function GeneralPlanView() {
   // line so they never overlap it; a project that leaves these fields blank
   // keeps today's shorter title and FY0 stays exactly 90 as before.
   const extraTitleLines: string[] = [];
-  if (meta.parentLotNumber.trim()) extraTitleLines.push(`PORTIONS OF LOT ${meta.parentLotNumber.trim()} ${meta.name}`);
+  if (portionsOfLotText) extraTitleLines.push(`PORTIONS OF LOT ${portionsOfLotText} ${meta.name}`);
   if (sheetMode === "general" && meta.parentDsmNo.trim()) extraTitleLines.push(`VIDE DIAGRAM DSM NO. ${meta.parentDsmNo.trim()} ANNEXED TO`);
   if (meta.tribalArea.trim()) extraTitleLines.push(`SITUATE AT ${meta.name.trim()} IN THE ${meta.tribalArea.trim()} TRIBAL AREA`);
   // Scale moved up into the heading itself (client req 2026-08-31, matching
@@ -1092,6 +1099,18 @@ export function GeneralPlanView() {
       }),
     [outerBoundary]
   );
+  // Client req 2026-09-16 (screenshot: "LOTS A, B, Parent, C, D, E, F" with
+  // "Parent" crossed out) — once a Parent (Main Figure) plot # is set, it's
+  // the parent of every sub-divided lot, not itself one of them, so it must
+  // never show up in the ordinary "LOTS ..." title list.
+  const parentPlotNumberTrimmed = meta.parentPlotNumber.trim();
+  const lotRangeTextForTitle = useMemo(
+    () =>
+      parentPlotNumberTrimmed
+        ? formatLotRange(cogoPlots.filter((p) => p.number.trim() !== parentPlotNumberTrimmed).map((p) => p.number))
+        : lotRangeText,
+    [cogoPlots, parentPlotNumberTrimmed, lotRangeText]
+  );
 
   function serialize(svg: SVGSVGElement | null): string | null {
     if (!svg) return null;
@@ -1194,8 +1213,8 @@ export function GeneralPlanView() {
     dxfTitleY += MIN_SUBTITLE_FS * 1.4;
     text(
       W / 2, dxfTitleY,
-      lotRangeText
-        ? `LOTS ${lotRangeText} ${meta.name}`
+      lotRangeTextForTitle
+        ? `LOTS ${lotRangeTextForTitle} ${meta.name}`
         : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}`,
       MIN_SUBTITLE_FS, "middle"
     );
@@ -1896,8 +1915,8 @@ export function GeneralPlanView() {
         // numbers"), matching the GC-122 reference exactly. Falls back to
         // the original "Layout of N parcel(s)" wording (still with the name
         // appended) when there's nothing numbered yet to range over.
-        const line2 = lotRangeText
-          ? `LOTS ${lotRangeText} ${meta.name}`
+        const line2 = lotRangeTextForTitle
+          ? `LOTS ${lotRangeTextForTitle} ${meta.name}`
           : `${label}${meta.name ? ` ${meta.name}` : ""}`;
         return (
           <g
@@ -2826,14 +2845,16 @@ export function GeneralPlanView() {
         </div>
         <p className="mt-1 text-xs text-slate-400">
           Fill in "Portions of Lot" / "Tribal area" / "Vide diagram DSM No." to add the matching title lines
-          ("LOTS {lotRangeText || "…"} {meta.name}" / "PORTIONS OF LOT {meta.parentLotNumber || "…"} {meta.name}" /
+          ("LOTS {lotRangeTextForTitle || "…"} {meta.name}" / "PORTIONS OF LOT {portionsOfLotText || "…"} {meta.name}" /
           "SITUATE AT {meta.name} IN THE {meta.tribalArea || "…"} TRIBAL AREA") — leave any of them
           blank to keep today's shorter title.
         </p>
         <p className="mt-1 text-xs text-slate-400">
           "Parent (Main Figure) plot #": when it matches a plot number already drawn/joined in COGO, the
           bottom Sides/Directions/Co-ordinates table uses that plot's own boundary instead of auto-detecting
-          the outer edge of whatever sub-lots are drawn so far — leave blank to keep today's auto-detected behaviour.
+          the outer edge of whatever sub-lots are drawn so far, it's excluded from the "LOTS ..." title
+          list above (it's their parent, not one of them), and it fills in "PORTIONS OF LOT" automatically —
+          leave blank to keep today's auto-detected behaviour.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
