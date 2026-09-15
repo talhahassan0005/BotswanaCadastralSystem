@@ -52,6 +52,38 @@ export function polygonArea(points: Point[]): number {
   return total / 2;
 }
 
+/**
+ * True area-weighted centroid (centre of mass) of a simple polygon, via the
+ * standard shoelace-based centroid formula (client req 2026-09-18: label
+ * position must stay "consistent even for irregular (non-rectangular)
+ * portion shapes") — unlike a plain average of the vertices, this is
+ * guaranteed to land inside the polygon for any simple (non-self-
+ * intersecting) shape, convex or concave; a vertex average can drift
+ * noticeably off-centre, even outside the shape, once a polygon has more
+ * vertices bunched up on one side than the other. Falls back to the plain
+ * vertex average only for a degenerate (near-zero-area, e.g. collinear)
+ * input, where the area-weighted formula is undefined.
+ */
+export function polygonCentroid(points: Point[]): { east: number; north: number } {
+  const n = points.length;
+  if (n === 0) return { east: 0, north: 0 };
+  let area6 = 0, cxSum = 0, cySum = 0;
+  for (let i = 0; i < n; i++) {
+    const p0 = points[i], p1 = points[(i + 1) % n];
+    const cross = p0.east * p1.north - p1.east * p0.north;
+    area6 += cross;
+    cxSum += (p0.east + p1.east) * cross;
+    cySum += (p0.north + p1.north) * cross;
+  }
+  const area = area6 / 2;
+  if (Math.abs(area) < 1e-9) {
+    const east = points.reduce((s, p) => s + p.east, 0) / n;
+    const north = points.reduce((s, p) => s + p.north, 0) / n;
+    return { east, north };
+  }
+  return { east: cxSum / (3 * area6), north: cySum / (3 * area6) };
+}
+
 /** Area read-out matching SG diagram convention (client req 2026-08-24):
  *  under 1 ha, show square metres (a fraction-of-a-hectare reads as
  *  "0.0875 ha" — meaningless at a glance — vs "875 sq m"); 1 ha and up,

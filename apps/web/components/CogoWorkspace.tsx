@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
-import { forward, inverse, polygonArea, formatArea } from "@/lib/server/geometry";
+import { forward, inverse, polygonArea, polygonCentroid, formatArea } from "@/lib/server/geometry";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoPointsOnLinePanel } from "@/components/CogoPointsOnLinePanel";
@@ -2574,8 +2574,16 @@ export function CogoWorkspace({
             {polygons.map((p) => {
               const isTableSel = (tablesOpen && tableTab === "polygons" && tableSelected.has(p.id)) || canvasSelection.has(p.id);
               const label = polygonMeta[p.id]?.position || p.name;
-              const cE = p.points.reduce((s, v) => s + v.east, 0) / (p.points.length || 1);
-              const cN = p.points.reduce((s, v) => s + v.north, 0) / (p.points.length || 1);
+              // True area-weighted centroid, not a plain vertex average
+              // (client req 2026-09-18: "consistent even for irregular
+              // (non-rectangular) portion shapes" — a vertex average can
+              // drift off-centre, even outside the shape, once a polygon
+              // has more vertices bunched on one side than the other;
+              // polygonCentroid is guaranteed to land inside any simple
+              // polygon). Recomputed fresh from p.points every render, so
+              // editing a portion's boundary repositions its label
+              // automatically — no separate cache to go stale.
+              const { east: cE, north: cN } = polygonCentroid(p.points);
               const [ctx, cty] = toScreen(cE, cN);
               return (
                 <g key={p.id}>
