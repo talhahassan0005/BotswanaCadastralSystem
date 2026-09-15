@@ -96,27 +96,59 @@ export function SurveyRecord() {
   // a genuine data fix changes the plots' own points and the entry simply
   // stops recomputing; this is only for hiding ones already reviewed.
   const [consistencyDismissed, setConsistencyDismissed] = useState<Set<string>>(new Set());
-  const [consistencyPlotFilter, setConsistencyPlotFilter] = useState("");
   // Client req 2026-09-18: "i dont think we want to see this table" (the
   // full cross-plot table showing unprompted, every plot pair at once) +
   // "should we have an option to get all consistency" — the table itself
   // wasn't the problem, showing it by default with nothing asked for was.
-  // Now it only shows once the user asks for it: either a specific plot
-  // via the query filter below, or this explicit toggle for every plot.
-  const [showAllConsistency, setShowAllConsistency] = useState(false);
+  // Follow-up screenshot of Working Plan's own "Add plot / Load all N
+  // lots / Delete all" multi-plot picker, "something similar to these" —
+  // replaced the single text filter + a checkbox with this exact same
+  // chip-list pattern instead: add one or more plot numbers to a list
+  // (Add plot), or populate it with every plot at once (Load all N
+  // plots, directly answering "an option to get all consistency"), or
+  // empty it (Delete all) — nothing shows below until this list has at
+  // least one plot in it.
+  const [consistencyPlotInput, setConsistencyPlotInput] = useState("");
+  const [consistencyPlotList, setConsistencyPlotList] = useState<string[]>([]);
+  const [consistencyPlotError, setConsistencyPlotError] = useState<string | null>(null);
+  function addConsistencyPlot() {
+    const n = consistencyPlotInput.trim();
+    if (!n) return;
+    if (consistencyPlotList.some((p) => p.toLowerCase() === n.toLowerCase())) {
+      setConsistencyPlotError(`Plot "${n}" is already in the list.`);
+      return;
+    }
+    if (!cogoPlots.some((p) => p.number.toLowerCase() === n.toLowerCase())) {
+      setConsistencyPlotError(`No plot "${n}" found in Cadastral.`);
+      return;
+    }
+    setConsistencyPlotError(null);
+    setConsistencyPlotList((list) => [...list, n]);
+    setConsistencyPlotInput("");
+  }
+  function removeConsistencyPlot(n: string) {
+    setConsistencyPlotList((list) => list.filter((x) => x !== n));
+  }
+  function loadAllConsistencyPlots() {
+    setConsistencyPlotError(null);
+    setConsistencyPlotList(cogoPlots.map((p) => p.number));
+  }
+  function clearConsistencyPlotList() {
+    setConsistencyPlotError(null);
+    setConsistencyPlotList([]);
+  }
   const allConsistencyEntries = useMemo(
     () => computeCrossPlotConsistency(cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })), Number(consistencyTolerance) || 0.2),
     [cogoPlots, consistencyTolerance]
   );
   const visibleConsistencyEntries = useMemo(() => {
-    const q = consistencyPlotFilter.trim().toLowerCase();
-    if (!q && !showAllConsistency) return [];
+    if (consistencyPlotList.length === 0) return [];
+    const set = new Set(consistencyPlotList.map((p) => p.toLowerCase()));
     return allConsistencyEntries.filter((e) => {
       if (consistencyDismissed.has(e.id)) return false;
-      if (!q) return true;
-      return e.plotA.toLowerCase() === q || e.plotB.toLowerCase() === q;
+      return set.has(e.plotA.toLowerCase()) || set.has(e.plotB.toLowerCase());
     });
-  }, [allConsistencyEntries, consistencyDismissed, consistencyPlotFilter, showAllConsistency]);
+  }, [allConsistencyEntries, consistencyDismissed, consistencyPlotList]);
   const misclosedCount = visibleConsistencyEntries.filter((e) => e.misclosed).length;
   function dismissConsistencyEntry(id: string) {
     setConsistencyDismissed((d) => new Set(d).add(id));
@@ -389,21 +421,42 @@ export function SurveyRecord() {
       )}
       {doc === "consistency" && (
         <Card title="Cross-plot consistency check">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Get consistency for one plot (by number)">
-              <Input value={consistencyPlotFilter} onChange={setConsistencyPlotFilter} placeholder="e.g. 14182" />
-            </Field>
+          <div className="max-w-[10rem]">
             <Field label="Misclosure tolerance (m)">
               <Input type="number" value={consistencyTolerance} onChange={setConsistencyTolerance} placeholder="0.200" />
             </Field>
           </div>
-          {/* Client req 2026-09-18: "should we have an option to get all
-              consistency" — nothing shows below until either a plot number
-              is typed above, or this is checked. */}
-          <label className="mt-3 flex items-center gap-1.5 text-sm text-slate-600">
-            <input type="checkbox" checked={showAllConsistency} onChange={(e) => setShowAllConsistency(e.target.checked)} />
-            Get consistency for all plots
-          </label>
+          {/* Client req 2026-09-18: "something similar to these" — the
+              same Add plot / Load all N lots / Delete all chip-list
+              pattern Working Plan's own multi-plot sheet uses
+              (WorkingPlanView.tsx), instead of a single text filter + a
+              checkbox. "Load all" directly answers "should we have an
+              option to get all consistency"; nothing shows below until
+              this list has at least one plot in it. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Input
+              value={consistencyPlotInput}
+              onChange={setConsistencyPlotInput}
+              placeholder="e.g. 14182"
+              onKeyDown={(e) => { if (e.key === "Enter") addConsistencyPlot(); }}
+            />
+            <Button onClick={addConsistencyPlot}>Add plot</Button>
+            <Button variant="ghost" onClick={loadAllConsistencyPlots}>Get consistency for all {cogoPlots.length} plots</Button>
+            {consistencyPlotList.length > 0 && (
+              <Button variant="ghost" onClick={clearConsistencyPlotList}>Delete all</Button>
+            )}
+          </div>
+          {consistencyPlotError && <p className="mt-1 text-xs text-red-600">{consistencyPlotError}</p>}
+          {consistencyPlotList.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {consistencyPlotList.map((n) => (
+                <span key={n} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+                  {n}
+                  <button type="button" onClick={() => removeConsistencyPlot(n)} className="text-slate-400 hover:text-red-600" aria-label={`Remove plot ${n}`}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </Card>
       )}
       {doc === "consistency" && (
@@ -452,16 +505,14 @@ export function SurveyRecord() {
                     what each plot says its coordinate is. It updates automatically as you draw/join more plots —
                     nothing to run manually.
                   </p>
-                ) : !consistencyPlotFilter.trim() && !showAllConsistency ? (
+                ) : consistencyPlotList.length === 0 ? (
                   <p className="rounded-lg bg-slate-50 px-4 py-3 text-slate-500">
-                    Type a plot number above to check just that plot, or tick "Get consistency for all plots" to see
-                    every shared-beacon check at once.
+                    Add a plot number above (or "Get consistency for all {cogoPlots.length} plots") to see its
+                    shared-beacon checks.
                   </p>
                 ) : visibleConsistencyEntries.length === 0 ? (
                   <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
-                    {consistencyPlotFilter.trim()
-                      ? `No shared-beacon entries for plot "${consistencyPlotFilter.trim()}".`
-                      : "Every entry here has been cleared/dismissed."}
+                    No shared-beacon entries for {consistencyPlotList.length === 1 ? `plot "${consistencyPlotList[0]}"` : "these plots"}.
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-slate-200">
