@@ -626,9 +626,19 @@ export function WorkingPlanView() {
   }
 
   return (
-    <div className="space-y-4">
+    // Sidebar layout (client req 2026-09-18, screenshot circling "Working
+    // Plan Details": "put these features in the sides just like in
+    // General plan") — same lg:w-80-sidebar-next-to-the-drawing pattern
+    // GeneralPlanView.tsx already uses (client req 2026-09-05 there).
+    // Stacks back to a single column on narrow screens.
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="Working Plan details">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Single column, not sm:2/lg:3 (client req 2026-09-15's own fix
+            for General Plan's identical "congested" complaint applies
+            here too, pre-emptively — this card has just as many fields,
+            now squeezed into the same narrow sidebar). */}
+        <div className="grid grid-cols-1 gap-3">
           <Field label="Lot / parcel name (auto from Diagram if set)"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
           <Field label="Tribal territory / area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
@@ -656,7 +666,11 @@ export function WorkingPlanView() {
               Add numbered plots from {cogoTabLabel(config.discipline)} to draw them together on one sheet
               — shared boundary points between adjoining plots are drawn once.
             </p>
-            <div className="mt-2 flex max-w-sm gap-2">
+            {/* flex-wrap, not a fixed max-w-sm row (client req 2026-09-18's
+                own sidebar move) — this row of an input + 2-3 buttons no
+                longer has a wide card to itself, it needs to wrap in the
+                narrow sidebar instead of overflowing it. */}
+            <div className="mt-2 flex flex-wrap gap-2">
               <Input
                 value={plotNumberInput}
                 onChange={setPlotNumberInput}
@@ -688,7 +702,7 @@ export function WorkingPlanView() {
               </div>
             )}
             {plotNumbers.length > 0 && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-3">
                 <Field label='Parent lot number (for "PORTIONS OF LOT")'>
                   <Input value={meta.parentLotNumber ?? ""} onChange={set("parentLotNumber")} placeholder="e.g. 37454" />
                 </Field>
@@ -704,7 +718,9 @@ export function WorkingPlanView() {
           <Button variant="ghost" onClick={print}>Print / Save PDF</Button>
         </div>
       </Card>
+      </div>
 
+      <div className="min-w-0 flex-1">
       <Card title="Working Plan">
         <p className="mb-2 text-xs text-slate-400">
           Click a beacon letter, a text note, or the title block to select it, then drag to reposition, or use the +/− buttons to
@@ -786,6 +802,7 @@ export function WorkingPlanView() {
         </div>
         </div>
       </Card>
+      </div>
     </div>
   );
 }
