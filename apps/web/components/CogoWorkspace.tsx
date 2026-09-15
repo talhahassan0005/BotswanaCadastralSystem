@@ -2283,6 +2283,18 @@ export function CogoWorkspace({
 
       {active && (
         <>
+          {/* Sticky (client req 2026-09-18: "when i zoom up, editing tools
+              get hidden") — Edit Tools/Query & Visibility/the category tabs
+              below used to just sit in normal page flow above the canvas,
+              so scrolling the page down (e.g. while panning/zooming a large
+              canvas) scrolled them out of view above the top of the
+              viewport with no way back to them short of scrolling back up.
+              Pinning this whole cluster to the top of its scroll container
+              keeps every tool reachable regardless of how far the canvas
+              below has been scrolled. z-20 + opaque background so it
+              actually occludes the canvas content scrolling underneath it,
+              not just visually layer on top of it transparently. */}
+          <div className="sticky top-0 z-20 bg-white">
           {/* Always-visible — used constantly regardless of which drawing
               category tab (below) is open. */}
           <ToolGroup label="Edit Tools">
@@ -2539,6 +2551,7 @@ export function CogoWorkspace({
               </button>
             </div>
           )}
+          </div>
 
           <div className="flex items-stretch">
           <div className="relative min-w-0 flex-1">
