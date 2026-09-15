@@ -97,18 +97,26 @@ export function SurveyRecord() {
   // stops recomputing; this is only for hiding ones already reviewed.
   const [consistencyDismissed, setConsistencyDismissed] = useState<Set<string>>(new Set());
   const [consistencyPlotFilter, setConsistencyPlotFilter] = useState("");
+  // Client req 2026-09-18: "i dont think we want to see this table" (the
+  // full cross-plot table showing unprompted, every plot pair at once) +
+  // "should we have an option to get all consistency" — the table itself
+  // wasn't the problem, showing it by default with nothing asked for was.
+  // Now it only shows once the user asks for it: either a specific plot
+  // via the query filter below, or this explicit toggle for every plot.
+  const [showAllConsistency, setShowAllConsistency] = useState(false);
   const allConsistencyEntries = useMemo(
     () => computeCrossPlotConsistency(cogoPlots.map((p) => ({ number: p.number, points: p.fig.points })), Number(consistencyTolerance) || 0.2),
     [cogoPlots, consistencyTolerance]
   );
   const visibleConsistencyEntries = useMemo(() => {
     const q = consistencyPlotFilter.trim().toLowerCase();
+    if (!q && !showAllConsistency) return [];
     return allConsistencyEntries.filter((e) => {
       if (consistencyDismissed.has(e.id)) return false;
       if (!q) return true;
       return e.plotA.toLowerCase() === q || e.plotB.toLowerCase() === q;
     });
-  }, [allConsistencyEntries, consistencyDismissed, consistencyPlotFilter]);
+  }, [allConsistencyEntries, consistencyDismissed, consistencyPlotFilter, showAllConsistency]);
   const misclosedCount = visibleConsistencyEntries.filter((e) => e.misclosed).length;
   function dismissConsistencyEntry(id: string) {
     setConsistencyDismissed((d) => new Set(d).add(id));
@@ -382,13 +390,20 @@ export function SurveyRecord() {
       {doc === "consistency" && (
         <Card title="Cross-plot consistency check">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Query by plot number (filters the table below)">
-              <Input value={consistencyPlotFilter} onChange={setConsistencyPlotFilter} placeholder="e.g. 14182 — leave blank to show every plot" />
+            <Field label="Get consistency for one plot (by number)">
+              <Input value={consistencyPlotFilter} onChange={setConsistencyPlotFilter} placeholder="e.g. 14182" />
             </Field>
             <Field label="Misclosure tolerance (m)">
               <Input type="number" value={consistencyTolerance} onChange={setConsistencyTolerance} placeholder="0.200" />
             </Field>
           </div>
+          {/* Client req 2026-09-18: "should we have an option to get all
+              consistency" — nothing shows below until either a plot number
+              is typed above, or this is checked. */}
+          <label className="mt-3 flex items-center gap-1.5 text-sm text-slate-600">
+            <input type="checkbox" checked={showAllConsistency} onChange={(e) => setShowAllConsistency(e.target.checked)} />
+            Get consistency for all plots
+          </label>
         </Card>
       )}
       {doc === "consistency" && (
@@ -436,6 +451,11 @@ export function SurveyRecord() {
                     joined in the Cadastral workstation (e.g. a corner two adjoining lots both recorded), comparing
                     what each plot says its coordinate is. It updates automatically as you draw/join more plots —
                     nothing to run manually.
+                  </p>
+                ) : !consistencyPlotFilter.trim() && !showAllConsistency ? (
+                  <p className="rounded-lg bg-slate-50 px-4 py-3 text-slate-500">
+                    Type a plot number above to check just that plot, or tick "Get consistency for all plots" to see
+                    every shared-beacon check at once.
                   </p>
                 ) : visibleConsistencyEntries.length === 0 ? (
                   <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
