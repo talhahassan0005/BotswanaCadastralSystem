@@ -1833,7 +1833,14 @@ export function CogoWorkspace({
     if (middlePan.current) {
       const dx = (vbx - middlePan.current.vbx) / view.zoom;
       const dy = (vby - middlePan.current.vby) / view.zoom;
-      setView((v) => ({ ...v, cx: middlePan.current!.cx - dx, cy: middlePan.current!.cy + dy }));
+      // Signs flipped (client req 2026-09-18: "when i pan, the objects move
+      // in an opposit direction") — toScreen/toWorld now negate both axes
+      // (BASE_ORIENTATION_DEG = 180, the Lo-grid sign-fix), but this
+      // hand-rolled screen-delta-to-view-centre math was never updated to
+      // match, so it kept panning in the pre-180-degree direction. Verified
+      // by solving "the world point under the cursor at drag-start must
+      // stay under the cursor now" through the CURRENT toScreen/toWorld.
+      setView((v) => ({ ...v, cx: middlePan.current!.cx + dx, cy: middlePan.current!.cy - dy }));
       return;
     }
     if (gripDrag) {
@@ -1870,7 +1877,9 @@ export function CogoWorkspace({
       } else {
         const dx = (vbx - pan.current.vbx) / view.zoom;
         const dy = (vby - pan.current.vby) / view.zoom;
-        setView((v) => ({ ...v, cx: pan.current!.cx - dx, cy: pan.current!.cy + dy }));
+        // Signs flipped — same fix, same reason as middlePan's own copy of
+        // this a few lines up (client req 2026-09-18).
+        setView((v) => ({ ...v, cx: pan.current!.cx + dx, cy: pan.current!.cy - dy }));
       }
     }
   }
