@@ -1,7 +1,10 @@
 "use client";
 
-// Bottom-docked command bar for numeric-input COGO tools (client req
-// 2026-08-14, Part 5) — replaces the old centered <Modal> so the canvas stays
+// Side-docked command panel for numeric-input COGO tools (client req
+// 2026-08-14, Part 5; moved from a bottom-docked bar to a right-side panel
+// per client req 2026-09-19 — "for all drafting tool, make them appear on
+// the right side when activated", matching how Traverse/Points on
+// Line/Splay Calculation already dock beside the canvas) — the canvas stays
 // fully visible (and pannable/zoomable) while the user types values, the way
 // a CAD command line works. Only tools NOT in a CogoDrawingToolbar's
 // `interceptIds` land here — those are the click-to-draw tools, which never
@@ -196,15 +199,15 @@ function CogoCommandBarImpl(
     <form
       onSubmit={(e) => { e.preventDefault(); submit(); }}
       onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
-      className="border-t border-brand bg-white px-3 py-2 shadow-[0_-4px_10px_rgba(0,0,0,0.04)]"
+      className="flex w-80 flex-none flex-col gap-2 border-l border-slate-200 bg-white px-3 py-2 text-xs"
     >
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">{tool.label}</span>
-        <button type="button" onClick={onClose} className="text-xs text-slate-400 hover:text-slate-700" aria-label="Close">Esc to close</button>
+      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+        <span className="font-semibold uppercase tracking-wide text-brand-dark">{tool.label}</span>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Close" title="Close (Esc)">✕</button>
       </div>
 
       {isPBD && (
-        <div className="mb-2 flex flex-wrap items-center gap-3 rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+        <div className="flex flex-col gap-1.5 rounded bg-slate-50 px-2 py-1.5 text-slate-600">
           <span className="font-semibold text-slate-500">Mode</span>
           {([
             ["single", "Single"],
@@ -216,7 +219,7 @@ function CogoCommandBarImpl(
               {label}
             </label>
           ))}
-          <span className="mx-1 h-4 w-px bg-slate-200" />
+          <span className="my-0.5 h-px w-full bg-slate-200" />
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={pbdAuto} onChange={(e) => setPbdAuto(e.target.checked)} />
             Automatic Calc&apos;n (plots as soon as you finish typing — no Compute click needed)
@@ -228,29 +231,28 @@ function CogoCommandBarImpl(
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-2">
         {tool.fields.map((f) => (
-          <div key={f.key} className={f.type === "textarea" ? "w-full" : "min-w-[9rem] flex-1"}>
-            <CommandField
-              field={f}
-              value={values[f.key] ?? ""}
-              onChange={set(f.key)}
-              onFocus={() => setFocusedField(f.key)}
-              points={points}
-              lines={lines}
-              polygons={polygons}
-            />
-          </div>
+          <CommandField
+            key={f.key}
+            field={f}
+            value={values[f.key] ?? ""}
+            onChange={set(f.key)}
+            onFocus={() => setFocusedField(f.key)}
+            points={points}
+            lines={lines}
+            polygons={polygons}
+          />
         ))}
         <Button type="submit">Compute</Button>
       </div>
       {livePreview?.points?.[0] && (
-        <p className="mt-1.5 text-xs text-slate-500">
+        <p className="text-slate-500">
           Preview — {livePreview.points[0].name}: E {livePreview.points[0].east.toFixed(3)}, N {livePreview.points[0].north.toFixed(3)}
         </p>
       )}
-      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
-      {info && <p className="mt-1.5 rounded bg-brand-light/40 px-2 py-1 text-xs text-brand-dark">{info}</p>}
+      {error && <p className="text-red-600">{error}</p>}
+      {info && <p className="rounded bg-brand-light/40 px-2 py-1 text-brand-dark">{info}</p>}
     </form>
   );
 }

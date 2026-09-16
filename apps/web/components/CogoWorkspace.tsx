@@ -3495,12 +3495,14 @@ export function CogoWorkspace({
               onClose={splayClose}
             />
           )}
-          </div>
 
-          {/* Bottom-docked command bar (Part 5) — numeric-input tools land here
-              instead of a centered modal, so the canvas stays visible/pannable
-              while typing. Point/line fields can also be filled by clicking
-              the canvas (see the formTool branch in onPointerUp). */}
+          {/* Side-docked command panel (client req 2026-09-19: "for all
+              drafting tool, make them appear on the right side when
+              activated" — was a bottom-docked bar spanning the full width;
+              now sits beside the canvas like Traverse/Points on Line/Splay
+              so it never covers the drawing). Numeric-input tools land
+              here; point/line fields can also be filled by clicking the
+              canvas (see the formTool branch in onPointerUp). */}
           <CogoCommandBar
             ref={commandBarRef}
             tool={formTool}
@@ -3515,6 +3517,7 @@ export function CogoWorkspace({
             onClose={() => setFormTool(null)}
             onPreview={setCmdPreview}
           />
+          </div>
 
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
