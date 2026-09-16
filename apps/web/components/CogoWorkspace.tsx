@@ -15,6 +15,7 @@ import { forward, inverse, polygonArea, polygonCentroid, formatArea } from "@/li
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoPointsOnLinePanel } from "@/components/CogoPointsOnLinePanel";
+import { CogoSplayPanel } from "@/components/CogoSplayPanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore, type CogoPlot } from "@/lib/store";
 import { detectRectangularLots, sameWorldPoint } from "@/lib/plots";
@@ -279,6 +280,34 @@ export function CogoWorkspace({
   const [polAddLines, setPolAddLines] = useState(true);
   const [polFrozenPreview, setPolFrozenPreview] = useState<{ name: string; east: number; north: number; segDist: number } | null>(null);
   const polIdRef = useRef(1);
+
+  // ---- Splay Calculation panel (client req 2026-09-19) — reference
+  // legacy tool's "Splay Calculation" dialog: cut a sharp corner (the
+  // Terminal point) with a chamfer between two new points placed along
+  // its two boundary edges (toward the Left and Right points), each at
+  // its own distance from the corner. Points-on-Line/Draw-Polygon-by-
+  // Bearing&Distance's own architecture reused throughout — a side panel
+  // that stays open across commits, live preview before Draw, real named
+  // points afterward. */
+  const [splayOpen, setSplayOpen] = useState(false);
+  const [splayTerminal, setSplayTerminal] = useState<WPoint | null>(null);
+  const [splayLeft, setSplayLeft] = useState<WPoint | null>(null);
+  const [splayRight, setSplayRight] = useState<WPoint | null>(null);
+  const [splayPicking, setSplayPicking] = useState<"terminal" | "left" | "right" | null>(null);
+  const [splayLeftDist, setSplayLeftDist] = useState("");
+  const [splayRightDist, setSplayRightDist] = useState("");
+  const [splayNewLeftName, setSplayNewLeftName] = useState("");
+  const [splayNewRightName, setSplayNewRightName] = useState("");
+  // "Splay Type" (client req: "Diagonal" — infer the most sensible
+  // distinct behaviour) — inferred as a single SYMMETRIC cut: Right
+  // Distance is locked to always equal Left Distance instead of being
+  // independently editable, matching how a "diagonal" (one measurement)
+  // splay is normally specified versus a general "splay" (two
+  // independent edge distances) in real cadastral practice.
+  const [splayType, setSplayType] = useState<"splay" | "diagonal">("splay");
+  const [splayAddDiagonalLine, setSplayAddDiagonalLine] = useState(true);
+  const [splayAdjustLines, setSplayAdjustLines] = useState(true);
+  const splayIdRef = useRef(1);
   // ---- Polygon completion dialog (client req 2026-08-21, Part 16c) — shown
   // when Calculate finishes a traverse: computed Area + an editable Erf/Plot
   // Number pre-filled with the next number after whichever was last
@@ -754,6 +783,7 @@ export function CogoWorkspace({
     setFormTool(tool);
     setTravOpen(false);
     setPolOpen(false);
+    setSplayOpen(false);
   }
 
   // ---- traverse leg-entry panel (Part 6b) ----
@@ -762,6 +792,7 @@ export function CogoWorkspace({
     setFormTool(null);
     setTravOpen(true);
     setPolOpen(false);
+    setSplayOpen(false);
   }
   /** Live preview endpoint — recomputed on every render as travDir/travDist
    *  change, so the dashed preview line updates on every keystroke with no
@@ -966,6 +997,7 @@ export function CogoWorkspace({
     setFormTool(null);
     setTravOpen(false);
     setPolOpen(true);
+    setSplayOpen(false);
   }
   const polDirDist = polFrom && polTo ? inverse({ east: polFrom.east, north: polFrom.north }, { east: polTo.east, north: polTo.north }) : null;
   const polDirection = polDirDist ? formatDms(polDirDist[0]) : "";
@@ -1145,6 +1177,135 @@ export function CogoWorkspace({
     setPolPickingTo(false);
     setPolSelected(null);
     setPolFrozenPreview(null);
+  }
+
+  // ---- Splay Calculation panel ----
+  function openSplayPanel() {
+    activateDrawTool("select");
+    setFormTool(null);
+    setTravOpen(false);
+    setPolOpen(false);
+    setSplayOpen(true);
+  }
+  function splaySetPoint(role: "terminal" | "left" | "right", v: { east: number; north: number; existingId?: string }) {
+    if (!v.existingId) return;
+    const p = visible.find((pp) => pp.id === v.existingId)!;
+    if (role === "terminal") setSplayTerminal(p);
+    else if (role === "left") setSplayLeft(p);
+    else setSplayRight(p);
+    setSplayPicking(null);
+  }
+  /** Same role, but resolving a typed point NAME instead of a canvas click
+   *  (client req: "Pick a Terminal point... by clicking on canvas OR
+   *  typing its name"). */
+  function splaySetPointByName(role: "terminal" | "left" | "right", name: string) {
+    const n = name.trim();
+    if (!n) return;
+    const p = visible.find((pp) => pp.name.toLowerCase() === n.toLowerCase());
+    if (!p) { window.alert(`No point named "${n}" found.`); return; }
+    if (role === "terminal") setSplayTerminal(p);
+    else if (role === "left") setSplayLeft(p);
+    else setSplayRight(p);
+  }
+  /** Resolved new-point positions for the current inputs — null until
+   *  Terminal/Left/Right are all picked and both distances are valid.
+   *  "Diagonal" locks the right distance to the left one (see splayType's
+   *  own doc comment for why); "Splay" keeps them independent. */
+  function splayComputePreview(): { newLeft: { name: string; east: number; north: number }; newRight: { name: string; east: number; north: number } } | null {
+    if (!splayTerminal || !splayLeft || !splayRight) return null;
+    const dL = Number(splayLeftDist);
+    const dR = Number(splayType === "diagonal" ? splayLeftDist : splayRightDist);
+    if (!Number.isFinite(dL) || dL <= 0 || !Number.isFinite(dR) || dR <= 0) return null;
+    const [brgL] = inverse({ east: splayTerminal.east, north: splayTerminal.north }, { east: splayLeft.east, north: splayLeft.north });
+    const [brgR] = inverse({ east: splayTerminal.east, north: splayTerminal.north }, { east: splayRight.east, north: splayRight.north });
+    const pL = forward({ east: splayTerminal.east, north: splayTerminal.north }, brgL, dL);
+    const pR = forward({ east: splayTerminal.east, north: splayTerminal.north }, brgR, dR);
+    return {
+      newLeft: { name: splayNewLeftName.trim() || `SL${splayIdRef.current}`, east: pL.east, north: pL.north },
+      newRight: { name: splayNewRightName.trim() || `SR${splayIdRef.current}`, east: pR.east, north: pR.north },
+    };
+  }
+  const splayPreview = splayComputePreview();
+  /** "Calc" (client req) — the preview above is already always live from
+   *  the current inputs, same as every other InfoMate-style tool in this
+   *  app; there's nothing separate to (re)compute, so this is a no-op
+   *  kept only so the button matches the reference dialog's own layout. */
+  function splayCalc() {}
+  function splayClear() {
+    setSplayNewLeftName("");
+    setSplayNewRightName("");
+    setSplayLeftDist("");
+    setSplayRightDist("");
+  }
+  function splayDraw() {
+    const preview = splayComputePreview();
+    if (!preview || !splayTerminal || !splayLeft || !splayRight) {
+      window.alert("Pick Terminal, Left and Right points, and enter valid distances first.");
+      return;
+    }
+    snapshot();
+    const leftId = `splay-${Date.now()}-${splayIdRef.current++}`;
+    const rightId = `splay-${Date.now()}-${splayIdRef.current++}`;
+    const newLeftWP: WPoint = { id: leftId, name: preview.newLeft.name, east: preview.newLeft.east, north: preview.newLeft.north };
+    const newRightWP: WPoint = { id: rightId, name: preview.newRight.name, east: preview.newRight.east, north: preview.newRight.north };
+    setExtra((e) => [...e, newLeftWP, newRightWP]);
+    if (splayAddDiagonalLine) {
+      setLines((ls) => [...ls, { id: `splayline-${Date.now()}-${splayIdRef.current++}`, aE: newLeftWP.east, aN: newLeftWP.north, bE: newRightWP.east, bN: newRightWP.north }]);
+    }
+    if (splayAdjustLines) {
+      const terminal = splayTerminal, left = splayLeft, right = splayRight;
+      // Any existing LINE from Terminal to Left/Right now ends at the new
+      // splay point instead — the segment from the new point back to
+      // Terminal is gone, replaced by the chamfer.
+      setLines((ls) =>
+        ls.map((l) => {
+          const aIsTerm = sameWorldPoint({ east: l.aE, north: l.aN }, terminal);
+          const bIsTerm = sameWorldPoint({ east: l.bE, north: l.bN }, terminal);
+          if (aIsTerm && sameWorldPoint({ east: l.bE, north: l.bN }, left)) return { ...l, aE: newLeftWP.east, aN: newLeftWP.north };
+          if (bIsTerm && sameWorldPoint({ east: l.aE, north: l.aN }, left)) return { ...l, bE: newLeftWP.east, bN: newLeftWP.north };
+          if (aIsTerm && sameWorldPoint({ east: l.bE, north: l.bN }, right)) return { ...l, aE: newRightWP.east, aN: newRightWP.north };
+          if (bIsTerm && sameWorldPoint({ east: l.aE, north: l.aN }, right)) return { ...l, bE: newRightWP.east, bN: newRightWP.north };
+          return l;
+        })
+      );
+      // Any POLYGON with Terminal as a vertex between Left and Right in
+      // its ring gets Terminal replaced by BOTH new points (a chamfer adds
+      // a vertex, it doesn't just relocate one) — ordered to match
+      // whichever neighbour is Left vs Right, so the ring's own winding
+      // order is preserved.
+      setPolygons((ps) =>
+        ps.map((p) => {
+          const idx = p.points.findIndex((pt) => sameWorldPoint(pt, terminal));
+          if (idx === -1) return p;
+          const n = p.points.length;
+          const prev = p.points[(idx - 1 + n) % n];
+          const next = p.points[(idx + 1) % n];
+          const leftPt = { name: newLeftWP.name, east: newLeftWP.east, north: newLeftWP.north };
+          const rightPt = { name: newRightWP.name, east: newRightWP.east, north: newRightWP.north };
+          let insertion: typeof p.points | null = null;
+          if (sameWorldPoint(prev, left) && sameWorldPoint(next, right)) insertion = [leftPt, rightPt];
+          else if (sameWorldPoint(prev, right) && sameWorldPoint(next, left)) insertion = [rightPt, leftPt];
+          if (!insertion) return p;
+          return { ...p, points: [...p.points.slice(0, idx), ...insertion, ...p.points.slice(idx + 1)] };
+        })
+      );
+      // The old corner is now replaced by the chamfer — same imported-vs-
+      // drafted removal split as renamePointById/deleteSelected elsewhere.
+      if (terminal.id.startsWith("imp-")) setHidden((h) => new Set(h).add(terminal.id));
+      else setExtra((e) => e.filter((pp) => pp.id !== terminal.id));
+    }
+    // Reset for the next corner (client req: "the dialog stays open/resets").
+    setSplayTerminal(null);
+    setSplayLeft(null);
+    setSplayRight(null);
+    setSplayLeftDist("");
+    setSplayRightDist("");
+    setSplayNewLeftName("");
+    setSplayNewRightName("");
+  }
+  function splayClose() {
+    setSplayOpen(false);
+    setSplayPicking(null);
   }
 
   // ---- per-plot diagram generation (Part 7d) ----
@@ -1956,6 +2117,10 @@ export function CogoWorkspace({
         // Points on Line panel's "To" — click an existing point to set the
         // line's other end (Direction/Distance auto-compute from these two).
         polSetTo(resolveVertex(vbx, vby));
+      } else if (splayPicking) {
+        // Splay Calculation panel's Terminal/Left/Right — click an
+        // existing point to fill whichever role is currently armed.
+        splaySetPoint(splayPicking, resolveVertex(vbx, vby));
       } else if (formTool) {
         // Command bar open (Part 5): clicking a point/line on canvas fills
         // whichever field is focused (or the first empty matching field)
@@ -2201,7 +2366,7 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !splayOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -2210,6 +2375,7 @@ export function CogoWorkspace({
         else if (diagramPicking) setDiagramPicking(false);
         else if (travOpen) travClose();
         else if (polOpen) polClose();
+        else if (splayOpen) splayClose();
         else if (formTool) setFormTool(null);
         else if (coordEntry) setCoordEntry(null);
         else if (moveCoordInput) { setMoving(null); setSelected(null); setMoveCoordInput(null); }
@@ -2228,7 +2394,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, polOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
+  }, [draftTool, draft, formTool, travOpen, polOpen, splayOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
 
   // Ctrl+Z (or Cmd+Z) as a real, always-available Undo — Ctrl+Shift+Z /
   // Ctrl+Y as Redo (client req 2026-09-06: "Ctrl+Z should be undo"). Before
@@ -2510,8 +2676,8 @@ export function CogoWorkspace({
             <CogoDrawingToolbar
               category="polygon"
               onOpenTool={openFormTool}
-              interceptIds={{ "draw-polygon": () => activateDrawTool("polygon"), "polygon-traverse": () => openTraversePanel() }}
-              activeId={draftTool === "polygon" ? "draw-polygon" : travOpen ? "polygon-traverse" : null}
+              interceptIds={{ "draw-polygon": () => activateDrawTool("polygon"), "polygon-traverse": () => openTraversePanel(), "polygon-splay": () => openSplayPanel() }}
+              activeId={draftTool === "polygon" ? "draw-polygon" : travOpen ? "polygon-traverse" : splayOpen ? "polygon-splay" : null}
             />
           )}
           {/* Same computeTraverse() engine as the COGO Engine tab. Traverse
@@ -2898,6 +3064,44 @@ export function CogoWorkspace({
               const [x, y] = toScreen(polTo.east, polTo.north);
               return <circle cx={x} cy={y} r={7} fill="none" stroke="#c2410c" strokeWidth={2} />;
             })()}
+            {/* Splay Calculation panel: highlight rings on Terminal/Left/
+                Right once picked, and — the live preview requirement —
+                small markers at the computed new-point positions with
+                their own distance labels, before Draw commits them. */}
+            {splayOpen && splayTerminal && (() => {
+              const [x, y] = toScreen(splayTerminal.east, splayTerminal.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#0891b2" strokeWidth={2} />;
+            })()}
+            {splayOpen && splayLeft && (() => {
+              const [x, y] = toScreen(splayLeft.east, splayLeft.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#059669" strokeWidth={2} />;
+            })()}
+            {splayOpen && splayRight && (() => {
+              const [x, y] = toScreen(splayRight.east, splayRight.north);
+              return <circle cx={x} cy={y} r={7} fill="none" stroke="#7c3aed" strokeWidth={2} />;
+            })()}
+            {splayOpen && splayPreview && splayTerminal && (() => {
+              const [tx, ty] = toScreen(splayTerminal.east, splayTerminal.north);
+              const [lx, ly] = toScreen(splayPreview.newLeft.east, splayPreview.newLeft.north);
+              const [rx, ry] = toScreen(splayPreview.newRight.east, splayPreview.newRight.north);
+              const leftLabelAngle = segLabelAngle(splayTerminal, splayPreview.newLeft);
+              const rightLabelAngle = segLabelAngle(splayTerminal, splayPreview.newRight);
+              return (
+                <g>
+                  <line x1={tx} y1={ty} x2={lx} y2={ly} stroke="#059669" strokeWidth={1.4} strokeDasharray="4 3" />
+                  <line x1={tx} y1={ty} x2={rx} y2={ry} stroke="#7c3aed" strokeWidth={1.4} strokeDasharray="4 3" />
+                  <line x1={lx} y1={ly} x2={rx} y2={ry} stroke="#0f172a" strokeWidth={1.2} strokeDasharray="2 2" opacity={0.6} />
+                  <circle cx={lx} cy={ly} r={4} fill="#059669" />
+                  <circle cx={rx} cy={ry} r={4} fill="#7c3aed" />
+                  <text x={lx} y={ly - 8} textAnchor="middle" fontSize={10} fill="#059669" transform={`rotate(${leftLabelAngle} ${lx} ${ly - 8})`}>
+                    {splayPreview.newLeft.name} {Number(splayLeftDist).toFixed(2)}m
+                  </text>
+                  <text x={rx} y={ry - 8} textAnchor="middle" fontSize={10} fill="#7c3aed" transform={`rotate(${rightLabelAngle} ${rx} ${ry - 8})`}>
+                    {splayPreview.newRight.name} {Number(splayType === "diagonal" ? splayLeftDist : splayRightDist).toFixed(2)}m
+                  </text>
+                </g>
+              );
+            })()}
             {/* Grip-based edit (client req 2026-08-24, Part 28 — matches the
                 client's AutoCAD demo): a single selected line gets draggable
                 grips at each endpoint (stretch that end freely; hold Shift
@@ -3251,6 +3455,44 @@ export function CogoWorkspace({
               onSelectRow={polSelectRow}
               onDraw={polDraw}
               onClose={polClose}
+            />
+          )}
+
+          {splayOpen && (
+            <CogoSplayPanel
+              terminalName={splayTerminal?.name ?? null}
+              leftName={splayLeft?.name ?? null}
+              rightName={splayRight?.name ?? null}
+              pickingTerminal={splayPicking === "terminal"}
+              pickingLeft={splayPicking === "left"}
+              pickingRight={splayPicking === "right"}
+              leftDist={splayLeftDist}
+              rightDist={splayRightDist}
+              newLeftName={splayNewLeftName}
+              newRightName={splayNewRightName}
+              splayType={splayType}
+              addDiagonalLine={splayAddDiagonalLine}
+              adjustLines={splayAdjustLines}
+              canDraw={!!splayPreview}
+              onPickTerminal={() => setSplayPicking("terminal")}
+              onPickLeft={() => setSplayPicking("left")}
+              onPickRight={() => setSplayPicking("right")}
+              onTerminalName={(v) => splaySetPointByName("terminal", v)}
+              onLeftName={(v) => splaySetPointByName("left", v)}
+              onRightName={(v) => splaySetPointByName("right", v)}
+              onLeftDist={setSplayLeftDist}
+              onRightDist={setSplayRightDist}
+              onNewLeftName={setSplayNewLeftName}
+              onNewRightName={setSplayNewRightName}
+              onSplayType={setSplayType}
+              onAddDiagonalLine={setSplayAddDiagonalLine}
+              onAdjustLines={setSplayAdjustLines}
+              onCalc={splayCalc}
+              onClear={splayClear}
+              onUndo={undo}
+              onDraw={splayDraw}
+              onZoom={zoomExtents}
+              onClose={splayClose}
             />
           )}
           </div>

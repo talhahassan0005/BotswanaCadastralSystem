@@ -392,6 +392,30 @@ const POLYGON_TOOLS: ToolDef[] = [
     run: ln.polylineTraverse,
   },
   {
+    // Opens the side Splay Calculation panel instead of the command bar
+    // (client req 2026-09-19: reference legacy tool's own "Splay
+    // Calculation" dialog — cut a sharp corner (Terminal) into a chamfer
+    // between two new points placed along its two boundary edges toward
+    // Left/Right, each at its own distance). Intercepted in
+    // CogoWorkspace.tsx's "polygon" category toolbar, same pattern as
+    // "polygon-traverse" opening the Traverse panel — this entry's
+    // `fields`/`run` are unused (bypassed by the intercept) but kept so
+    // the toolbar still has an icon/label/tooltip to render.
+    id: "polygon-splay",
+    category: "polygon",
+    label: "Splay Calculation",
+    description: "Cut a sharp polygon corner into a chamfer between two new points placed along its two boundary edges, at chosen distances from the corner.",
+    icon: iconSplay,
+    fields: [
+      { key: "terminal", label: "Terminal point (the corner to cut)", type: "point" },
+      { key: "left", label: "Left point (along one boundary edge)", type: "point" },
+      { key: "right", label: "Right point (along the other boundary edge)", type: "point" },
+      { key: "leftDist", label: "Left distance (m)", type: "number" },
+      { key: "rightDist", label: "Right distance (m)", type: "number" },
+    ],
+    run: pg.calculatePolygonArea,
+  },
+  {
     id: "auto-close-boundary",
     category: "polygon",
     label: "Auto-close Boundary",
@@ -853,6 +877,17 @@ function iconPolygonTraverse(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 9l7-6 9 4-3 11-13 2z" strokeLinejoin="round" strokeDasharray="3 2" />
       <circle cx="4" cy="9" r="1.7" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconSplay(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M5 19L12 5l7 14" strokeLinejoin="round" />
+      <path d="M8.6 12.2h6.8" strokeDasharray="2 2" />
+      <circle cx="12" cy="5" r="1.6" fill={c} stroke="none" />
+      <circle cx="8.6" cy="12.2" r="1.4" fill={c} stroke="none" />
+      <circle cx="15.4" cy="12.2" r="1.4" fill={c} stroke="none" />
     </svg>
   );
 }
