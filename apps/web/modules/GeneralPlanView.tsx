@@ -2788,21 +2788,27 @@ export function GeneralPlanView() {
                 const obMoreY = obFirstRowY + 8 * obRowH + 4;
                 const obTotalY = obFirstRowY + obShown * obRowH + (obMoreLine ? 18 : 4);
                 const obBoxBottom = obTotalY + 10;
-                const cPoint = mapX(30), cDir = mapX(65), cDist = mapX(115), cY = mapX(170), cX = mapX(225);
-                const obBoxLeft = mapX(30) - 8, obTblR = mapX(290);
+                const cPoint = mapX(30), cDir = mapX(60), cDist = mapX(105), cY = mapX(155), cX = mapX(205);
+                const obBoxLeft = mapX(30) - 8, obTblR = mapX(255);
                 const obHitX = obBoxLeft - 4, obHitY = obTop - 20, obHitW = obTblR - obBoxLeft + 20, obHitH = obBoxBottom - obTop + 24;
-                // Rough sans-serif average-glyph-width heuristic (~0.55em),
-                // same order of magnitude as the density estimates this
-                // file already derives from fontSize elsewhere — good
+                // Rough sans-serif average-glyph-width heuristic — good
                 // enough to keep text inside its box without ever reading
-                // the browser's own measured metrics.
-                const fitFS = (text: string, avail: number, cap: number, min = 5) =>
-                  Math.max(min, Math.min(cap, (avail - 2) / (text.length * 0.55)));
+                // the browser's own measured metrics. Bold/uppercase text
+                // (the heading, "TOTAL AREA") runs noticeably wider per
+                // character than the plain-weight data cells (client req
+                // 2026-09-18, screenshot: "ye main heading table se bahar
+                // ku ah rahi hai" — the previous single 0.55em factor,
+                // tuned against the plain data cells, badly underestimated
+                // the bold heading's real width and let it overflow), so
+                // each caller passes its own factor instead of one shared
+                // guess.
+                const fitFS = (text: string, avail: number, cap: number, charW: number, min = 5) =>
+                  Math.max(min, Math.min(cap, (avail - 2) / (text.length * charW)));
                 const obTitleText = "OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES";
                 const obTableW = obTblR - cPoint;
-                const obHeadingFS = fitFS(obTitleText, obTableW, 9);
+                const obHeadingFS = fitFS(obTitleText, obTableW, 9, 0.78);
                 const obTotalText = `TOTAL AREA = ${outerBoundaryAreaHa.toFixed(4)} Ha`;
-                const obTotalFS = fitFS(obTotalText, obTableW, 8.5);
+                const obTotalFS = fitFS(obTotalText, obTableW, 8.5, 0.72);
                 const obCols = [
                   { x: cPoint, w: cDir - cPoint, header: "Point", values: outerSides.slice(0, 8).map((s) => String(s.point)) },
                   { x: cDir, w: cDist - cDir, header: "Direction", values: outerSides.slice(0, 8).map((s) => s.bearing) },
@@ -2812,7 +2818,7 @@ export function GeneralPlanView() {
                 ];
                 const obDataFS = Math.min(
                   7.5,
-                  ...obCols.map((c) => fitFS(c.values.reduce((m, v) => (v.length > m.length ? v : m), c.header), c.w, 7.5))
+                  ...obCols.map((c) => fitFS(c.values.reduce((m, v) => (v.length > m.length ? v : m), c.header), c.w, 7.5, 0.6))
                 );
                 return panelResizable("outerBoundary", { x: obHitX, y: obHitY, w: obHitW, h: obHitH }, (
                   <>
