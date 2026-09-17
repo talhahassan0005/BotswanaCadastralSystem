@@ -2765,9 +2765,17 @@ export function GeneralPlanView() {
                 // ke charo sides per border bi hona chhhaiye ur dragable
                 // ho ye table jese dosray tables hai like block corder
                 // table wagaiara" — was plain unboxed text rows before).
-                // Column x-anchors tightened a bit too (client req: "iss
-                // table ke coulmns ki width bi reduce karni hai thori")
-                // from the old 80-120-unit gaps down to ~50-65.
+                // Column dividers REMOVED and the gaps between columns
+                // tightened further (client req 2026-09-18: "columns
+                // devider ko remove karo ur columns ke darmaya space
+                // reduce karo") — only the outer border + header rule
+                // remain; column boundaries are implied by alignment,
+                // same as a plain ruled table. Heading and data font
+                // sizes are now shrink-to-fit (client req: "main heading
+                // ur data ko responsive rakho") — this table got narrow
+                // enough that a fixed font could overflow its own box, so
+                // both now scale down against the table's real width /
+                // each column's real width instead of a hardcoded size.
                 const obTop = FY1 + 44; // title baseline — unchanged position
                 const obTitleRuleY = obTop + 5;
                 const obBoxTop = obTop - 9;
@@ -2780,47 +2788,62 @@ export function GeneralPlanView() {
                 const obMoreY = obFirstRowY + 8 * obRowH + 4;
                 const obTotalY = obFirstRowY + obShown * obRowH + (obMoreLine ? 18 : 4);
                 const obBoxBottom = obTotalY + 10;
-                const cPoint = mapX(30), cDir = mapX(80), cDist = mapX(140), cY = mapX(205), cX = mapX(270);
-                const obBoxLeft = mapX(30) - 8, obTblR = mapX(340);
-                const dividers = [mapX(55), mapX(110), mapX(172.5), mapX(237.5)];
+                const cPoint = mapX(30), cDir = mapX(65), cDist = mapX(115), cY = mapX(170), cX = mapX(225);
+                const obBoxLeft = mapX(30) - 8, obTblR = mapX(290);
                 const obHitX = obBoxLeft - 4, obHitY = obTop - 20, obHitW = obTblR - obBoxLeft + 20, obHitH = obBoxBottom - obTop + 24;
+                // Rough sans-serif average-glyph-width heuristic (~0.55em),
+                // same order of magnitude as the density estimates this
+                // file already derives from fontSize elsewhere — good
+                // enough to keep text inside its box without ever reading
+                // the browser's own measured metrics.
+                const fitFS = (text: string, avail: number, cap: number, min = 5) =>
+                  Math.max(min, Math.min(cap, (avail - 2) / (text.length * 0.55)));
+                const obTitleText = "OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES";
+                const obTableW = obTblR - cPoint;
+                const obHeadingFS = fitFS(obTitleText, obTableW, 9);
+                const obTotalText = `TOTAL AREA = ${outerBoundaryAreaHa.toFixed(4)} Ha`;
+                const obTotalFS = fitFS(obTotalText, obTableW, 8.5);
+                const obCols = [
+                  { x: cPoint, w: cDir - cPoint, header: "Point", values: outerSides.slice(0, 8).map((s) => String(s.point)) },
+                  { x: cDir, w: cDist - cDir, header: "Direction", values: outerSides.slice(0, 8).map((s) => s.bearing) },
+                  { x: cDist, w: cY - cDist, header: "Dist (m)", values: outerSides.slice(0, 8).map((s) => s.distance.toFixed(2)) },
+                  { x: cY, w: cX - cY, header: "Y", values: outerSides.slice(0, 8).map((s) => s.east.toFixed(2)) },
+                  { x: cX, w: obTblR - cX, header: "X", values: outerSides.slice(0, 8).map((s) => s.north.toFixed(2)) },
+                ];
+                const obDataFS = Math.min(
+                  7.5,
+                  ...obCols.map((c) => fitFS(c.values.reduce((m, v) => (v.length > m.length ? v : m), c.header), c.w, 7.5))
+                );
                 return panelResizable("outerBoundary", { x: obHitX, y: obHitY, w: obHitW, h: obHitH }, (
                   <>
-                    <text x={cPoint} y={obTop} fontSize={9} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+                    <text x={cPoint} y={obTop} fontSize={obHeadingFS} fontWeight={700} fill="#0f172a">{obTitleText}</text>
                     <rect x={obBoxLeft} y={obBoxTop} width={obTblR - obBoxLeft} height={obBoxBottom - obBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
                     <line x1={obBoxLeft} y1={obTitleRuleY} x2={obTblR} y2={obTitleRuleY} stroke="#0f172a" strokeWidth={0.7} />
                     <line x1={obBoxLeft} y1={obHeaderRuleY} x2={obTblR} y2={obHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                    {dividers.map((d, i) => (
-                      <line key={i} x1={d} y1={obTitleRuleY} x2={d} y2={obBoxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                    {obCols.map((c, i) => (
+                      <text key={i} x={c.x} y={obHeaderY} fontSize={obDataFS} fontWeight={600} fill="#475569">{c.header}</text>
                     ))}
-                    <text x={cPoint} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Point</text>
-                    <text x={cDir} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Direction</text>
-                    <text x={cDist} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Dist (m)</text>
-                    <text x={cY} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Y</text>
-                    <text x={cX} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">X</text>
                     {outerSides.slice(0, 8).map((s, k) => {
                       const y = obFirstRowY + k * obRowH;
                       return (
                         <g key={k}>
-                          <text x={cPoint} y={y} fontSize={7.5} fill="#0f172a">{s.point}</text>
-                          <text x={cDir} y={y} fontSize={7.5} fill="#0f172a">{s.bearing}</text>
-                          <text x={cDist} y={y} fontSize={7.5} fill="#0f172a">{s.distance.toFixed(2)}</text>
-                          <text x={cY} y={y} fontSize={7.5} fill="#0f172a">{s.east.toFixed(2)}</text>
-                          <text x={cX} y={y} fontSize={7.5} fill="#0f172a">{s.north.toFixed(2)}</text>
+                          <text x={cPoint} y={y} fontSize={obDataFS} fill="#0f172a">{s.point}</text>
+                          <text x={cDir} y={y} fontSize={obDataFS} fill="#0f172a">{s.bearing}</text>
+                          <text x={cDist} y={y} fontSize={obDataFS} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                          <text x={cY} y={y} fontSize={obDataFS} fill="#0f172a">{s.east.toFixed(2)}</text>
+                          <text x={cX} y={y} fontSize={obDataFS} fill="#0f172a">{s.north.toFixed(2)}</text>
                         </g>
                       );
                     })}
                     {obMoreLine ? (
-                      <text x={cPoint} y={obMoreY} fontSize={7} fill="#94a3b8">+{outerSides.length - 8} more — see digital record</text>
+                      <text x={cPoint} y={obMoreY} fontSize={Math.min(7, obDataFS)} fill="#94a3b8">+{outerSides.length - 8} more — see digital record</text>
                     ) : null}
                     {/* TOTAL AREA footer (client req 2026-09-17, reference
                         screenshot: the real table ends with "TOTAL AREA =
                         35.9794 Ha") — the 2026-09-04 removal was a different,
                         standalone line elsewhere, not this table's own
                         footer. */}
-                    <text x={cPoint} y={obTotalY} fontSize={8.5} fontWeight={700} fill="#0f172a">
-                      TOTAL AREA = {outerBoundaryAreaHa.toFixed(4)} Ha
-                    </text>
+                    <text x={cPoint} y={obTotalY} fontSize={obTotalFS} fontWeight={700} fill="#0f172a">{obTotalText}</text>
                   </>
                 ));
               })() : null /* Standalone "TOTAL AREA" line (client req 2026-09-04,
