@@ -211,11 +211,28 @@ export function Diagrams() {
   // Botswana's Lo-grid (south/west-positive) convention with no conversion
   // applied at import, and empirically needs a 180 degrees correction that
   // the small-angle residual estimate below is structurally blind to.
+  //
+  // The residual itself is estimated from EVERY point across the whole
+  // COGO layout when one is loaded (`cogoPlots.flatMap`), not just this
+  // one lot's own handful of boundary points (client req 2026-09-18,
+  // Lot 102 diagram screenshot: "bad orientation" — that lot's own ring
+  // is a small, slightly irregular hexagon; estimateDominantAngle's
+  // nearest-neighbour-angle median needs a reasonably large, mostly-
+  // rectangular sample to land near the true small-angle correction, and
+  // a single small/irregular lot's own 6 points is exactly the kind of
+  // thin, noisy sample that can throw the median off by tens of degrees.
+  // GeneralPlanView.tsx already estimates from `gpPlots.flatMap(...)` and
+  // WorkingPlanView.tsx from `resolvedPlots.flatMap(...)` for the same
+  // reason — every lot in one layout shares one physical grid tilt, so
+  // it should share one estimate, not each compute its own. Falls back
+  // to this lot's own points only when there's no COGO layout loaded at
+  // all (e.g. a Parcels-tab/manual-import figure).
   const autoRotationDeg = useMemo(() => {
     const BASE_ORIENTATION_DEG = 180;
-    const angle = estimateDominantAngle(points);
+    const samplePoints = cogoPlots.length > 0 ? cogoPlots.flatMap((p) => p.fig.points) : points;
+    const angle = estimateDominantAngle(samplePoints);
     return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
-  }, [points]);
+  }, [points, cogoPlots]);
   // North arrow rotation (client req 2026-09-15: "North arrow should face
   // up" — see GeneralPlanView.tsx's own copy of this for the full
   // explanation). Deliberately excludes BASE_ORIENTATION_DEG: that 180
