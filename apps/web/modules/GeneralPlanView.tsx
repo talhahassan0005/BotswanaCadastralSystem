@@ -2751,52 +2751,79 @@ export function GeneralPlanView() {
         )}
         {/* Bottom traverse table (client req 2026-08-27, §2h) — the WHOLE
             layout's outer boundary + grand total, sheet 1 only (it's not a
-            per-sheet concept); other sheets point back to it. NOT part of
-            the draggable panel group above — this is a full-width bottom
-            band, not the right-side column. */}
+            per-sheet concept); other sheets point back to it. Boxed +
+            independently draggable/resizable via panelResizable, same as
+            Lot Areas/Block Corner Table (client req 2026-09-17: "dragable
+            ho ye table jese dosray tables hai like block corder table
+            wagaiara"), starting from its default bottom-band position. */}
         {sheetMode === "general" ? (
           <>
             {isFirstSheet ? (
-              outerSides.length > 0 ? (
-                <>
-                  <line x1={mapX(30)} y1={FY1 + 22} x2={mapX(970)} y2={FY1 + 22} stroke="#0f172a" strokeWidth={0.6} />
-                  <text x={mapX(30)} y={FY1 + 44} fontSize={10} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
-                  <text x={mapX(30)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Point</text>
-                  <text x={mapX(110)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Direction</text>
-                  <text x={mapX(230)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Distance (m)</text>
-                  <text x={mapX(340)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">Y</text>
-                  <text x={mapX(430)} y={FY1 + 58} fontSize={8.5} fontWeight={600} fill="#475569">X</text>
-                  {outerSides.slice(0, 8).map((s, k) => {
-                    const y = FY1 + 72 + k * 12;
-                    return (
-                      <g key={k}>
-                        <text x={mapX(30)} y={y} fontSize={8} fill="#0f172a">{s.point}</text>
-                        <text x={mapX(110)} y={y} fontSize={8} fill="#0f172a">{s.bearing}</text>
-                        <text x={mapX(230)} y={y} fontSize={8} fill="#0f172a">{s.distance.toFixed(2)}</text>
-                        <text x={mapX(340)} y={y} fontSize={8} fill="#0f172a">{s.east.toFixed(2)}</text>
-                        <text x={mapX(430)} y={y} fontSize={8} fill="#0f172a">{s.north.toFixed(2)}</text>
-                      </g>
-                    );
-                  })}
-                  {outerSides.length > 8 ? (
-                    <text x={mapX(30)} y={FY1 + 72 + 8 * 12 + 4} fontSize={8} fill="#94a3b8">+{outerSides.length - 8} more side(s) — see digital record</text>
-                  ) : null}
-                  {/* TOTAL AREA footer (client req 2026-09-17, reference
-                      screenshot: the real table ends with "TOTAL AREA =
-                      35.9794 Ha") — the 2026-09-04 removal was a different,
-                      standalone line elsewhere, not this table's own
-                      footer. */}
-                  <text
-                    x={mapX(30)}
-                    y={FY1 + 72 + Math.min(outerSides.length, 8) * 12 + (outerSides.length > 8 ? 18 : 4)}
-                    fontSize={9}
-                    fontWeight={700}
-                    fill="#0f172a"
-                  >
-                    TOTAL AREA = {outerBoundaryAreaHa.toFixed(4)} Ha
-                  </text>
-                </>
-              ) : null /* Standalone "TOTAL AREA" line (client req 2026-09-04,
+              outerSides.length > 0 ? (() => {
+                // Boxed + draggable, matching the Block Corner/Lot Areas
+                // tables' own convention (client req 2026-09-17: "table
+                // ke charo sides per border bi hona chhhaiye ur dragable
+                // ho ye table jese dosray tables hai like block corder
+                // table wagaiara" — was plain unboxed text rows before).
+                // Column x-anchors tightened a bit too (client req: "iss
+                // table ke coulmns ki width bi reduce karni hai thori")
+                // from the old 80-120-unit gaps down to ~50-65.
+                const obTop = FY1 + 44; // title baseline — unchanged position
+                const obTitleRuleY = obTop + 5;
+                const obBoxTop = obTop - 9;
+                const obHeaderY = obTop + 14;
+                const obHeaderRuleY = obHeaderY + 5;
+                const obFirstRowY = obTop + 28;
+                const obRowH = 12;
+                const obShown = Math.min(outerSides.length, 8);
+                const obMoreLine = outerSides.length > 8;
+                const obMoreY = obFirstRowY + 8 * obRowH + 4;
+                const obTotalY = obFirstRowY + obShown * obRowH + (obMoreLine ? 18 : 4);
+                const obBoxBottom = obTotalY + 10;
+                const cPoint = mapX(30), cDir = mapX(80), cDist = mapX(140), cY = mapX(205), cX = mapX(270);
+                const obBoxLeft = mapX(30) - 8, obTblR = mapX(340);
+                const dividers = [mapX(55), mapX(110), mapX(172.5), mapX(237.5)];
+                const obHitX = obBoxLeft - 4, obHitY = obTop - 20, obHitW = obTblR - obBoxLeft + 20, obHitH = obBoxBottom - obTop + 24;
+                return panelResizable("outerBoundary", { x: obHitX, y: obHitY, w: obHitW, h: obHitH }, (
+                  <>
+                    <text x={cPoint} y={obTop} fontSize={9} fontWeight={700} fill="#0f172a">OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES</text>
+                    <rect x={obBoxLeft} y={obBoxTop} width={obTblR - obBoxLeft} height={obBoxBottom - obBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
+                    <line x1={obBoxLeft} y1={obTitleRuleY} x2={obTblR} y2={obTitleRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                    <line x1={obBoxLeft} y1={obHeaderRuleY} x2={obTblR} y2={obHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
+                    {dividers.map((d, i) => (
+                      <line key={i} x1={d} y1={obTitleRuleY} x2={d} y2={obBoxBottom} stroke="#94a3b8" strokeWidth={0.5} />
+                    ))}
+                    <text x={cPoint} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Point</text>
+                    <text x={cDir} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Direction</text>
+                    <text x={cDist} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Dist (m)</text>
+                    <text x={cY} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">Y</text>
+                    <text x={cX} y={obHeaderY} fontSize={7.5} fontWeight={600} fill="#475569">X</text>
+                    {outerSides.slice(0, 8).map((s, k) => {
+                      const y = obFirstRowY + k * obRowH;
+                      return (
+                        <g key={k}>
+                          <text x={cPoint} y={y} fontSize={7.5} fill="#0f172a">{s.point}</text>
+                          <text x={cDir} y={y} fontSize={7.5} fill="#0f172a">{s.bearing}</text>
+                          <text x={cDist} y={y} fontSize={7.5} fill="#0f172a">{s.distance.toFixed(2)}</text>
+                          <text x={cY} y={y} fontSize={7.5} fill="#0f172a">{s.east.toFixed(2)}</text>
+                          <text x={cX} y={y} fontSize={7.5} fill="#0f172a">{s.north.toFixed(2)}</text>
+                        </g>
+                      );
+                    })}
+                    {obMoreLine ? (
+                      <text x={cPoint} y={obMoreY} fontSize={7} fill="#94a3b8">+{outerSides.length - 8} more — see digital record</text>
+                    ) : null}
+                    {/* TOTAL AREA footer (client req 2026-09-17, reference
+                        screenshot: the real table ends with "TOTAL AREA =
+                        35.9794 Ha") — the 2026-09-04 removal was a different,
+                        standalone line elsewhere, not this table's own
+                        footer. */}
+                    <text x={cPoint} y={obTotalY} fontSize={8.5} fontWeight={700} fill="#0f172a">
+                      TOTAL AREA = {outerBoundaryAreaHa.toFixed(4)} Ha
+                    </text>
+                  </>
+                ));
+              })() : null /* Standalone "TOTAL AREA" line (client req 2026-09-04,
                    screenshot with a red cross through it: "delete this
                    line") removed — no fallback message printed here any
                    more when the outer-boundary traverse table itself has
