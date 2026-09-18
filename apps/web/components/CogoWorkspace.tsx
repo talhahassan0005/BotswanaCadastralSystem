@@ -661,6 +661,12 @@ export function CogoWorkspace({
     setLineQueryId(null);
     setParcelQueryId(null);
     setDraftTool(tool);
+    // Add Point by Coordinates now opens automatically the moment the tool
+    // is activated (client req 2026-09-19, sketch marking where it should
+    // appear: "After clicking add point, the option to adding by
+    // coordinates should also appear") — it used to need a separate, easy-
+    // to-miss "By Coordinates" click buried in the bottom status bar first.
+    if (tool === "addpoint") coordEntryOpen();
   }
 
   // ---- Add Point by Coordinates (Part 8e) — Name/Y/X form as an alternative
@@ -3250,36 +3256,6 @@ export function CogoWorkspace({
             </div>
           )}
 
-          {/* Add Point by Coordinates (Part 8e) — typed alternative to
-              click-to-place, while the Add Point tool is active. */}
-          {coordEntry && (
-            <div className="absolute right-2 top-2 z-10 w-52 rounded border border-brand bg-white p-2 text-xs shadow-md">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-semibold text-brand-dark">Add Point by Coordinates</span>
-                <button type="button" onClick={() => setCoordEntry(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
-              </div>
-              <label className="mb-1 block">
-                <span className="mb-0.5 block text-slate-500">Name</span>
-                <input value={coordEntry.name} onChange={(e) => setCoordEntry({ ...coordEntry, name: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
-              </label>
-              <div className="mb-1.5 grid grid-cols-2 gap-1.5">
-                <label className="block">
-                  <span className="mb-0.5 block text-slate-500">Y (East)</span>
-                  <input type="number" value={coordEntry.east} onChange={(e) => setCoordEntry({ ...coordEntry, east: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
-                </label>
-                <label className="block">
-                  <span className="mb-0.5 block text-slate-500">X (North)</span>
-                  <input type="number" value={coordEntry.north} onChange={(e) => setCoordEntry({ ...coordEntry, north: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
-                </label>
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                <button type="button" onClick={coordEntryUpdate} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Update</button>
-                <button type="button" onClick={coordEntryNew} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">New</button>
-                <button type="button" onClick={() => setCoordEntry(null)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">Cancel</button>
-              </div>
-            </div>
-          )}
-
           {/* Move Point by typed Y/X (Part 8f) — alternative to dragging, once a point is picked up. */}
           {draftTool === "move" && moving && moveCoordInput && (
             <div className="absolute right-2 top-2 z-10 w-48 rounded border border-brand bg-white p-2 text-xs shadow-md">
@@ -3517,6 +3493,41 @@ export function CogoWorkspace({
             onClose={() => setFormTool(null)}
             onPreview={setCmdPreview}
           />
+
+          {/* Add Point by Coordinates (Part 8e) — typed alternative to
+              click-to-place, now side-docked and open automatically the
+              moment Add Point is activated (client req 2026-09-19, sketch
+              marking where it should appear: "After clicking add point,
+              the option to adding by coordinates should also appear") —
+              was a small absolute-positioned overlay on the canvas that
+              needed a separate, easy-to-miss "By Coordinates" click first;
+              now matches every other side panel's dock + auto-open
+              convention (Traverse/Points on Line/Splay/command panel). */}
+          {coordEntry && (
+            <div className="flex w-64 flex-none flex-col gap-1.5 border-l border-brand bg-white px-3 py-2 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                <span className="font-semibold uppercase tracking-wide text-brand-dark">Add Point by Coordinates</span>
+                <button type="button" onClick={() => setCoordEntry(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close" title="Close">✕</button>
+              </div>
+              <label className="block">
+                <span className="mb-0.5 block text-slate-500">Name</span>
+                <input value={coordEntry.name} onChange={(e) => setCoordEntry({ ...coordEntry, name: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-slate-500">Y (East)</span>
+                <input type="number" value={coordEntry.east} onChange={(e) => setCoordEntry({ ...coordEntry, east: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-slate-500">X (North)</span>
+                <input type="number" value={coordEntry.north} onChange={(e) => setCoordEntry({ ...coordEntry, north: e.target.value })} className="w-full rounded border border-slate-200 px-1.5 py-1" />
+              </label>
+              <div className="grid grid-cols-3 gap-1 pt-0.5">
+                <button type="button" onClick={coordEntryUpdate} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Update</button>
+                <button type="button" onClick={coordEntryNew} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">New</button>
+                <button type="button" onClick={() => setCoordEntry(null)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">Cancel</button>
+              </div>
+            </div>
+          )}
           </div>
 
           {!formTool && (
