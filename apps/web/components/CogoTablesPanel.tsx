@@ -40,6 +40,7 @@ export function CogoTablesPanel({
   onSetLineMeta,
   onSetPolygonMeta,
   onRenamePoint,
+  onEditPointCoords,
   onDeleteSelection,
   onClearSelection,
   onOpenPolygonAttrs,
@@ -60,6 +61,9 @@ export function CogoTablesPanel({
   onSetLineMeta: (id: string, patch: Partial<LineMeta>) => void;
   onSetPolygonMeta: (id: string, patch: Partial<PolygonMeta>) => void;
   onRenamePoint: (id: string, name: string) => void;
+  /** Client req 2026-09-19: "I should also be able to edit the coordinates
+   *  in the point table" — Y and X were plain read-only text. */
+  onEditPointCoords: (id: string, east: number, north: number) => void;
   onDeleteSelection: () => void;
   onClearSelection: () => void;
   onOpenPolygonAttrs: (id: string) => void;
@@ -142,8 +146,12 @@ export function CogoTablesPanel({
                     <td className="border-b border-slate-100 px-1 py-0.5 font-medium">
                       <NameCell id={p.id} name={p.name} onRename={onRenamePoint} />
                     </td>
-                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{p.east.toFixed(3)}</td>
-                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{p.north.toFixed(3)}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-1 py-0.5 font-mono">
+                      <CoordCell id={p.id} value={p.east} onCommit={(v) => onEditPointCoords(p.id, v, p.north)} />
+                    </td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-1 py-0.5 font-mono">
+                      <CoordCell id={p.id} value={p.north} onCommit={(v) => onEditPointCoords(p.id, p.east, v)} />
+                    </td>
                     {(["height", "sdNumber", "epoch", "klass", "subclass", "description"] as const).map((k) => (
                       <td key={k} className="border-b border-slate-100 px-1 py-0.5">
                         <input
@@ -280,6 +288,31 @@ function NameCell({ id, name, onRename }: { id: string; name: string; onRename: 
       onBlur={() => { if (draft.trim() && draft !== name) onRename(id, draft); }}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
       className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-brand focus:bg-white focus:outline-none"
+    />
+  );
+}
+
+/** Y/X cell, same staged-draft-until-blur/Enter pattern as NameCell above
+ *  (client req 2026-09-19: "I should also be able to edit the coordinates
+ *  in the point table") — an invalid or unchanged value on blur is just
+ *  discarded back to the real one, no error dialog, since a coordinate can
+ *  legitimately be mid-edit (e.g. only the sign typed so far). */
+function CoordCell({ id, value, onCommit }: { id: string; value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(value.toFixed(3));
+  useEffect(() => setDraft(value.toFixed(3)), [id, value]);
+  const commit = () => {
+    const v = Number(draft);
+    if (Number.isFinite(v) && v !== value) onCommit(v);
+    else setDraft(value.toFixed(3));
+  };
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onMouseDown={(e) => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      className="w-24 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono focus:border-brand focus:bg-white focus:outline-none"
     />
   );
 }

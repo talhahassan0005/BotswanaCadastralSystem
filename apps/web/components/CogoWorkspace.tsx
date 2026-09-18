@@ -479,6 +479,27 @@ export function CogoWorkspace({
     setExtra((e) => e.map((p) => (p.id === id ? { ...p, name } : p)));
     return id;
   }
+  /** Edit a point's Y/X directly from the Points table (client req
+   *  2026-09-19: "I should also be able to edit the coordinates in the
+   *  point table" — Name was already editable there, Y/X were plain,
+   *  read-only text). Same imported-vs-drafted split as renamePointById/
+   *  applyMoveCoords just above: an imported point can't be mutated in
+   *  place, so it's hidden and replaced with a new point at the typed
+   *  coordinates, keeping its name. */
+  function editPointCoordsById(id: string, east: number, north: number): string | null {
+    if (!Number.isFinite(east) || !Number.isFinite(north)) return null;
+    snapshot();
+    if (id.startsWith("imp-")) {
+      const orig = basePoints.find((p) => p.id === id);
+      if (!orig) return null;
+      setHidden((h) => new Set(h).add(id));
+      const newId = `moved-${Date.now()}`;
+      setExtra((e) => [...e, { id: newId, name: orig.name, east, north }]);
+      return newId;
+    }
+    setExtra((e) => e.map((p) => (p.id === id ? { ...p, east, north } : p)));
+    return id;
+  }
   function applyPointRename() {
     if (!pointQueryId) return;
     const newId = renamePointById(pointQueryId, pointQueryName);
@@ -3722,6 +3743,7 @@ export function CogoWorkspace({
               onSetLineMeta={(id, patch) => setLineMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
               onSetPolygonMeta={(id, patch) => setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
               onRenamePoint={renamePointById}
+              onEditPointCoords={editPointCoordsById}
               onDeleteSelection={deleteTableSelection}
               onClearSelection={() => { setTableSelected(new Set()); setTableAnchor(null); }}
               onOpenPolygonAttrs={openPolygonAttrs}
