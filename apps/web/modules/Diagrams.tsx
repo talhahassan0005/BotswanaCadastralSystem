@@ -290,6 +290,7 @@ export function Diagrams() {
     if (!others.length) return empty;
     const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
     const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
+    const anns: ManualAnnotation[] = [];
     const labels: ManualText[] = [];
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
@@ -300,8 +301,10 @@ export function Diagrams() {
         })
       );
       if (!neighbor) continue;
-      // Same outward-offset placement as before — just no line connecting
-      // it back to the boundary any more.
+      // A short dashed stub from the shared side's midpoint out to the
+      // label (client req 2026-09-18: "Add dash lines for abutting
+      // property" — restores what a 2026-09-04 round had removed here;
+      // Part 24's manual tool below never lost its own dash).
       const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
       const dE = b.east - a.east, dN = b.north - a.north;
       const segLen = Math.hypot(dE, dN) || 1;
@@ -310,9 +313,14 @@ export function Diagrams() {
       const stub = Math.min(15, Math.max(2, segLen * 0.25));
       const e2 = mE + pE * stub, n2 = mN + pN * stub;
       const id = `auto-adj-${i}-${neighbor.number}`;
-      labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number });
+      anns.push({ id, e1: mE, n1: mN, e2, n2 });
+      // upright: true (client req 2026-09-18, screenshot circling "102"/
+      // "104" as upside-down) — same fix as the north arrow's own pin:
+      // `rotation` is mostly the 180-degree Lo-grid display sign-fix, not
+      // a real tilt, so a short reference label shouldn't inherit it.
+      labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number, upright: true });
     }
-    return { annotations: [] as ManualAnnotation[], texts: labels };
+    return { annotations: anns, texts: labels };
   }, [loadedPlotNumber, cogoPlots, points]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
@@ -473,7 +481,12 @@ export function Diagrams() {
       const id = `adj-${Date.now()}`;
       const { e1, n1, e2, n2 } = pendingAnnotationLine;
       setAnnotations((arr) => [...arr, { id, e1, n1, e2, n2 }]);
-      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value }]);
+      // upright: true — same fix as Part 37's auto-detected labels just
+      // above (client req 2026-09-18: adjoining-lot numbers rendering
+      // upside-down); a manually-typed neighbour number is the same kind
+      // of short reference label, not a free-text note meant to track
+      // the figure's own presentation rotation.
+      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value, upright: true }]);
       setPendingAnnotationLine(null);
       setTextPrompt(null);
       return;

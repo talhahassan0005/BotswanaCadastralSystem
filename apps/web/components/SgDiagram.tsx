@@ -62,6 +62,15 @@ export interface ManualText {
   north: number;
   text: string;
   angle?: number; // rotation in degrees, clockwise (client req 2026-08-26); 0/undefined = horizontal
+  /** Stay upright regardless of the figure's own presentation `rotation`
+   *  (client req 2026-09-18: adjoining-lot-number labels — both Part 37's
+   *  auto-detected ones and Part 24's manually-typed ones — were rendering
+   *  upside-down, same root cause as the north arrow's own earlier fix:
+   *  `rotation` is mostly a 180-degree Lo-grid display sign-fix, not a
+   *  real physical tilt, so applying it to short reference labels flips
+   *  them illegibly). Free-text notes (which DO want to track `rotation`,
+   *  by design — client req 2026-08-28) leave this unset. */
+  upright?: boolean;
 }
 
 /** Live conversion between this diagram's on-page pixel space and the real
@@ -598,7 +607,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {(manualTexts ?? []).map((t) => {
         const isSel = selectedTextId === t.id;
         const x = fx(t.east, t.north), y = fy(t.east, t.north);
-        const textAngle = (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
+        const textAngle = t.upright ? 0 : (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
         return (
           <g key={t.id} transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}>
             <text
