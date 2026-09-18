@@ -1257,6 +1257,26 @@ export function CogoWorkspace({
     setExtra((e) => [...e, newLeftWP, newRightWP]);
     if (splayAddDiagonalLine) {
       setLines((ls) => [...ls, { id: `splayline-${Date.now()}-${splayIdRef.current++}`, aE: newLeftWP.east, aN: newLeftWP.north, bE: newRightWP.east, bN: newRightWP.north }]);
+      // Persistent bearing/distance label on the new chamfer line, same
+      // seglabel mechanism every other drawn line already uses (client
+      // req: "This is what should ultimately produce the corner-splay
+      // bearing/distance annotations already expected on the General Plan
+      // sheet output... tie into that existing rendering" — every
+      // reference sheet shows the chamfer with its own small bearing +
+      // distance, same as any other side; without this the splay commit
+      // only left two new points with no visible annotation of its own).
+      setTexts((ts) => [
+        ...ts,
+        {
+          id: `splaylabel-${Date.now()}-${splayIdRef.current++}`,
+          text: segLabel(newLeftWP, newRightWP),
+          east: (newLeftWP.east + newRightWP.east) / 2,
+          north: (newLeftWP.north + newRightWP.north) / 2,
+          size: 11,
+          kind: "seglabel",
+          angle: segLabelAngle(newLeftWP, newRightWP),
+        },
+      ]);
     }
     if (splayAdjustLines) {
       const terminal = splayTerminal, left = splayLeft, right = splayRight;
