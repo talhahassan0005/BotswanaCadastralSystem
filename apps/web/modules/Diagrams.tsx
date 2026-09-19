@@ -331,6 +331,19 @@ export function Diagrams() {
   // select it, then Delete to remove it.
   const [annotations, setAnnotations] = useState<ManualAnnotation[]>(di.annotations ?? []);
   const [drawingAnnotation, setDrawingAnnotation] = useState(false);
+  // Boundary Marker (client req 2026-09-19, reference sketch: plain dashed
+  // segments along the top/bottom edges, no leader/number, next to the
+  // already-working numbered "102"/"104" adjoining-parcel marks on the
+  // side edges) — a second, clearly separate placement mode next to Draw
+  // Extension Line rather than relying on users discovering that leaving
+  // that tool's number prompt blank does the same thing: click two points,
+  // done, no prompt at all. Shares the exact same ManualAnnotation array/
+  // rendering/select/drag/delete plumbing as Draw Extension Line — an
+  // annotation with no paired ManualText IS the plain, unlabelled mark,
+  // same as an extension line left blank, so nothing else needed changing
+  // for it to be independently draggable/deletable or to support several
+  // per edge.
+  const [drawingBoundaryMarker, setDrawingBoundaryMarker] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   // In-progress grip drag of a selected extension line (client req
@@ -422,7 +435,7 @@ export function Diagrams() {
       setAddingText(false);
       return;
     }
-    if (!drawingAnnotation) {
+    if (!drawingAnnotation && !drawingBoundaryMarker) {
       // Clicking empty canvas outside draw mode clears whatever's selected.
       setSelectedAnnotationId(null);
       setSelectedTextId(null);
@@ -433,23 +446,31 @@ export function Diagrams() {
       setPendingPoint(p);
       return;
     }
-    // Line first, then prompt for the neighbouring lot's number at the end
-    // point (client req 2026-09-04) — Add with the field left blank still
-    // commits a plain unlabelled boundary mark, the original behaviour this
-    // replaces (client req 2026-08-23: "these lines only mark that a side
-    // borders a neighbouring plot, they don't need to name which one").
     // Stored as real survey coordinates, not the raw pixel click (client
     // req 2026-08-25) — see transformRef's comment above.
     const t = transformRef.current;
     const start = t ? t.toWorld(pendingPoint.x, pendingPoint.y) : { east: 0, north: 0 };
     const end = t ? t.toWorld(p.x, p.y) : { east: 0, north: 0 };
+    if (drawingBoundaryMarker) {
+      // Commits immediately — no prompt at all (client req 2026-09-19: "no
+      // other input required"), unlike Draw Extension Line just below.
+      setAnnotations((arr) => [...arr, { id: `bmk-${Date.now()}`, e1: start.east, n1: start.north, e2: end.east, n2: end.north }]);
+      setPendingPoint(null);
+      setDrawingBoundaryMarker(false);
+      return;
+    }
+    // Line first, then prompt for the neighbouring lot's number at the end
+    // point (client req 2026-09-04) — Add with the field left blank still
+    // commits a plain unlabelled boundary mark, the original behaviour this
+    // replaces (client req 2026-08-23: "these lines only mark that a side
+    // borders a neighbouring plot, they don't need to name which one").
     setPendingAnnotationLine({ e1: start.east, n1: start.north, e2: end.east, n2: end.north });
     setTextPrompt({ id: null, x: p.x, y: p.y, value: "", angle: 0 });
     setPendingPoint(null);
     setDrawingAnnotation(false);
   }
   function handleAnnotationClick(id: string) {
-    if (drawingAnnotation) return;
+    if (drawingAnnotation || drawingBoundaryMarker) return;
     if (dragMovedRef.current) {
       dragMovedRef.current = false; // swallow the click that trails a drag
       return;
@@ -1414,22 +1435,32 @@ export function Diagrams() {
               {!isBorehole && (
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
-                    These dashed extension lines are added by hand, the same way a surveyor marks them up on
-                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
-                    click two points directly on the preview — any side, as many as you need along one edge — and
-                    type the neighbouring lot's number when prompted (leave it blank for an unlabelled mark).
-                    Click an existing line to select it — drag the line itself to move it (its number moves with
-                    it), drag an end-handle to stretch that end (hold Shift to rotate the whole line around the
-                    other end instead), type an exact length/angle while dragging, or press Delete to remove it
-                    (removes its number too). Click a number directly to select and delete just that. Esc cancels
-                    a drag in progress, or a line's number prompt (discarding that line too).
+                    These dashed lines are added by hand, the same way a surveyor marks them up on paper —
+                    there's no survey data to compute them from. "Draw Extension Line" is for a numbered
+                    neighbour — click two points directly on the preview — any side, as many as you need along
+                    one edge — and type the neighbouring lot's number when prompted (leave it blank for an
+                    unlabelled mark). "Boundary Marker" is the plain version with no prompt at all — a short
+                    dashed segment along an edge that borders something without an assigned lot yet (a road,
+                    unsurveyed land) — click two points and it's placed, no number, no leader.
+                    Click an existing line to select it — drag the line itself to move it (its number, if any,
+                    moves with it), drag an end-handle to stretch that end (hold Shift to rotate the whole line
+                    around the other end instead), type an exact length/angle while dragging, or press Delete to
+                    remove it (removes its number too, if it has one). Click a number directly to select and
+                    delete just that. Esc cancels a drag in progress, or a line's number prompt (discarding that
+                    line too).
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant={drawingAnnotation ? "primary" : "ghost"}
-                      onClick={() => { setDrawingAnnotation((v) => !v); setPendingPoint(null); }}
+                      onClick={() => { setDrawingAnnotation((v) => !v); setDrawingBoundaryMarker(false); setPendingPoint(null); }}
                     >
                       {drawingAnnotation ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Draw Extension Line"}
+                    </Button>
+                    <Button
+                      variant={drawingBoundaryMarker ? "primary" : "ghost"}
+                      onClick={() => { setDrawingBoundaryMarker((v) => !v); setDrawingAnnotation(false); setPendingPoint(null); }}
+                    >
+                      {drawingBoundaryMarker ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Boundary Marker"}
                     </Button>
                     {selectedAnnotationId && (
                       <Button variant="ghost" onClick={deleteSelectedAnnotation}>Delete Selected Line</Button>
@@ -1511,7 +1542,7 @@ export function Diagrams() {
                 manualAnnotations={[...annotations, ...autoShared.annotations]}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}
-                drawMode={drawingAnnotation || addingText}
+                drawMode={drawingAnnotation || drawingBoundaryMarker || addingText}
                 onCanvasClick={handleCanvasClick}
                 onAnnotationClick={handleAnnotationClick}
                 onAnnotationHandleDown={handleAnnotationHandleDown}
