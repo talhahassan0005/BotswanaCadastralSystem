@@ -213,9 +213,20 @@ export function CogoEngine() {
       : "Exceeds DSM allowable closure";
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+    // Left settings panel and right workspace scroll independently on large
+    // screens (client req 2026-09-19: "can you make the window in such a way
+    // that i can scroll or zoom only on the work space with out scrolling
+    // every thing.. maybe make separate" — both columns used to be one long
+    // page-level scroll, so reading down the settings list on the left also
+    // scrolled the canvas out of view, and vice versa). Each column gets its
+    // own bounded height + scrollbar instead; the canvas's own wheel-zoom
+    // already calls preventDefault so it doesn't fight either column's
+    // scroll. Below `lg`, the grid already stacks into one column, where a
+    // single page scroll is the expected/normal behaviour, so this is
+    // scoped to `lg:` only.
+    <div className="grid gap-5 lg:h-[calc(100vh-160px)] lg:grid-cols-[300px_1fr] lg:items-stretch">
       {/* Left control panel */}
-      <div className="space-y-4">
+      <div className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
         <Card title="Project Details">
           <div className="space-y-3">
             <Field label="Survey / project name">
@@ -330,7 +341,7 @@ export function CogoEngine() {
       </div>
 
       {/* Right results */}
-      <div className="space-y-5">
+      <div className="space-y-5 lg:min-h-0 lg:overflow-y-auto lg:pl-1">
         <CogoWorkspace points={workspacePoints} resultBoundary={resultBoundary} />
 
         {!cogoResult ? (
