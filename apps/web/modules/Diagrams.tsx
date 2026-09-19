@@ -333,17 +333,30 @@ export function Diagrams() {
         // nhai karna... bydefault hona chahiye jese client ne kaha hai" —
         // every edge should already read as either "matches a known
         // neighbour" or "doesn't", the moment the diagram is generated).
-        // Short dash centred on the edge's own midpoint, parallel to it,
-        // offset a little outward so it reads as its own mark rather than
-        // sitting directly on top of the solid boundary line.
+        //
+        // ONE dash centred on the edge's own midpoint (first attempt) read
+        // wrong (client req 2026-09-19, screenshot comparison: "iss tarah
+        // lines show ho rahi hai jab ke iss tarah nahi honi chahiye" — a
+        // single floating mark in the middle of the edge, offset away from
+        // it, vs. the reference's two short dashes sitting right at EACH
+        // corner, continuing the edge's own line straight past it). Redone
+        // to match: one short collinear extension past each of the edge's
+        // two endpoints, in line with the edge itself (no perpendicular
+        // offset at all) — reading as "the boundary keeps going past this
+        // corner, just not surveyed/assigned yet", same convention as the
+        // reference sketch's D/A/C/B corner dashes.
         const uE = dE / segLen, uN = dN / segLen;
-        const offset = Math.min(6, Math.max(1.5, segLen * 0.03));
-        const half = Math.min(20, Math.max(3, segLen * 0.2));
-        const oE = mE + pE * offset, oN = mN + pN * offset;
+        const gap = Math.min(3, Math.max(0.8, segLen * 0.02));
+        const dashLen = Math.min(15, Math.max(4, segLen * 0.15));
         anns.push({
-          id: `auto-bmk-${i}`,
-          e1: oE - uE * half, n1: oN - uN * half,
-          e2: oE + uE * half, n2: oN + uN * half,
+          id: `auto-bmk-${i}-a`,
+          e1: a.east - uE * gap, n1: a.north - uN * gap,
+          e2: a.east - uE * (gap + dashLen), n2: a.north - uN * (gap + dashLen),
+        });
+        anns.push({
+          id: `auto-bmk-${i}-b`,
+          e1: b.east + uE * gap, n1: b.north + uN * gap,
+          e2: b.east + uE * (gap + dashLen), n2: b.north + uN * (gap + dashLen),
         });
       }
     }
