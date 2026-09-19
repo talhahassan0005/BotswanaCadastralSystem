@@ -286,6 +286,11 @@ export function Diagrams() {
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
       const dE = b.east - a.east, dN = b.north - a.north;
+      // Horizontal (road-frontage-style) edges only — no vertical marks
+      // (client req 2026-09-19: "sirf horizontal lines, vertical lines
+      // nahi chahiye" — the side edges between adjoining plots don't get
+      // this auto dash at all, only the roughly east-west ones).
+      if (Math.abs(dN) >= Math.abs(dE)) continue;
       const segLen = Math.hypot(dE, dN) || 1;
       // One short collinear extension past each of the edge's two
       // endpoints, in line with the edge itself — reads as "the boundary
