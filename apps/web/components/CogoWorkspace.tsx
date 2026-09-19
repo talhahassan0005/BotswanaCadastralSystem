@@ -998,6 +998,16 @@ export function CogoWorkspace({
     const polyId = `travpoly-${Date.now()}`;
     const boundaryPts = boundary.map((p) => ({ name: p.name, east: p.east, north: p.north }));
     setPolygons((ps) => [...ps, { id: polyId, name: plotNumber || undefined, points: boundaryPts }]);
+    // Zoom to fit the newly-completed traverse (client req 2026-09-19: a
+    // just-closed traverse rendered "very small... near one corner" of the
+    // canvas — this commit never adjusted the view at all, so whatever
+    // zoom/pan the user happened to be at (e.g. still zoomed out to see a
+    // large imported dataset the start point came from) was left in place
+    // regardless of where or how big the new shape actually is). Same
+    // frameOn() used for every other "a new figure just appeared" case
+    // (bulk plot import, the COGO Engine tab's own Run Computation) — not a
+    // new display path.
+    frameOn(boundaryPts.map((p, i) => ({ id: `travpoly-frame-${i}`, name: p.name ?? "", east: p.east, north: p.north })));
     // Land Surveyor defaults to the project's configured surveyor (client
     // req 2026-08-24) — same reasoning as addToolResult's polygon branch.
     if (config.surveyor.trim()) {
