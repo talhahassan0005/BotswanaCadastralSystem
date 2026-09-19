@@ -254,36 +254,27 @@ export function Diagrams() {
       })),
     [fig]
   );
-  // ===================== Part 37: auto-detect shared boundary sides =====
+  // ===================== Part 37: auto-mark every boundary side =====
   // When several plots are computed together in one COGO layout (Part 33 —
   // e.g. a subdivision's 100/101/102... sharing boundary points) and the
-  // diagram is generated for just one of them, every side of THIS plot is
-  // classified automatically, no manual marking needed (client req
-  // 2026-09-19: "khud mark nhai karna bhai... bydefault hona chahiye jese
-  // client ne kaha hai"): a side that's also an edge of another plot from
-  // that same layout is labelled with that neighbour's own plot number;
-  // one that isn't (a road frontage, unsurveyed land, the outer edge of
-  // the whole subdivision) gets the same plain, unlabelled Boundary Marker
-  // dash Part 24's manual tool below produces. Part 24 remains for the
-  // cases this can't know about on its own — an entirely separate,
-  // standalone diagram with no sibling plots in this layout at all (no
-  // `loadedPlotNumber`/`others`, see the guards just below), or a mark
-  // somewhere other than an existing boundary side. `loadedPlotNumber`
-  // only resolves when this diagram's lot name matches an actual saved
-  // cogoPlots entry — a Parcels-tab pick or a quick canvas "Generate
-  // Diagram" (neither backed by a numbered, saved plot) correctly finds
-  // nothing here and this whole feature is a no-op for them.
-  //
-  // No dashed leader line for THIS auto-detected case (client req
-  // 2026-09-04, pointing at this exact rendered example: "inn dottedt
-  // lines ko remove kardo" — distinct from Part 24's manual tool below,
-  // which the client separately confirmed (a different, red-marked-up
-  // screenshot) SHOULD keep its dash). The label still sits at the same
-  // small outward offset from the shared side's midpoint it always has —
-  // only the connecting line itself is gone.
-  const ADJACENCY_TOL = 0.01; // metres — matches computeDiagramLayout's own point-identity tolerance
-  const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
-    Math.abs(a.east - b.east) < ADJACENCY_TOL && Math.abs(a.north - b.north) < ADJACENCY_TOL;
+  // diagram is generated for just one of them, EVERY side of THIS plot
+  // gets an automatic plain dash — no manual marking, no number — the
+  // moment the diagram is generated (client req 2026-09-19, several rounds
+  // settling on this final shape: auto-numbering a matched side turned out
+  // to guess wrong for at least one real case — "103" showing when it
+  // shouldn't have — and auto-marking only the UNmatched sides then left
+  // that same wrong "103" number still showing while everything else was
+  // plain, which read as inconsistent. Simplest correct behaviour: this
+  // auto-detection only ever draws the plain, unlabelled mark, on every
+  // side, unconditionally; a real number for a specific side is added the
+  // one place that's actually reliable — by hand, via Part 24's manual
+  // "Draw Extension Line" tool below, where the surveyor types it
+  // themselves instead of the app guessing from shared coordinates).
+  // `loadedPlotNumber` only resolves when this diagram's lot name matches
+  // an actual saved cogoPlots entry — a Parcels-tab pick or a quick canvas
+  // "Generate Diagram" (neither backed by a numbered, saved plot)
+  // correctly finds nothing here and this whole feature is a no-op for
+  // them.
   const loadedPlotNumber = useMemo(
     () => cogoPlots.find((p) => p.number.trim().toUpperCase() === meta.lotName.trim().toUpperCase())?.number ?? null,
     [cogoPlots, meta.lotName]
@@ -291,77 +282,31 @@ export function Diagrams() {
   const autoShared = useMemo(() => {
     const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
     if (!loadedPlotNumber || points.length < 3) return empty;
-    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
-    if (!others.length) return empty;
-    const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
-    const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
     const anns: ManualAnnotation[] = [];
-    const labels: ManualText[] = [];
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
-      const neighbor = others.find((o) =>
-        o.fig.points.some((oa, j) => {
-          const ob = o.fig.points[(j + 1) % o.fig.points.length];
-          return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
-        })
-      );
-      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
       const dE = b.east - a.east, dN = b.north - a.north;
       const segLen = Math.hypot(dE, dN) || 1;
-      let pE = -dN / segLen, pN = dE / segLen;
-      if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
-      if (neighbor) {
-        // A short dashed stub from the shared side's midpoint out to the
-        // label (client req 2026-09-18: "Add dash lines for abutting
-        // property" — restores what a 2026-09-04 round had removed here;
-        // Part 24's manual tool below never lost its own dash).
-        const stub = Math.min(15, Math.max(2, segLen * 0.25));
-        const e2 = mE + pE * stub, n2 = mN + pN * stub;
-        const id = `auto-adj-${i}-${neighbor.number}`;
-        anns.push({ id, e1: mE, n1: mN, e2, n2 });
-        // upright: true (client req 2026-09-18, screenshot circling "102"/
-        // "104" as upside-down) — same fix as the north arrow's own pin:
-        // `rotation` is mostly the 180-degree Lo-grid display sign-fix, not
-        // a real tilt, so a short reference label shouldn't inherit it.
-        labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number, upright: true });
-      } else {
-        // No matching neighbour in this layout (a road frontage, unsurveyed
-        // land, or the outer edge of the whole subdivision) — automatically
-        // mark it with the same plain, unlabelled Boundary Marker style
-        // Part 24's manual tool below produces, instead of requiring the
-        // surveyor to draw it by hand (client req 2026-09-19: "khud mark
-        // nhai karna... bydefault hona chahiye jese client ne kaha hai" —
-        // every edge should already read as either "matches a known
-        // neighbour" or "doesn't", the moment the diagram is generated).
-        //
-        // ONE dash centred on the edge's own midpoint (first attempt) read
-        // wrong (client req 2026-09-19, screenshot comparison: "iss tarah
-        // lines show ho rahi hai jab ke iss tarah nahi honi chahiye" — a
-        // single floating mark in the middle of the edge, offset away from
-        // it, vs. the reference's two short dashes sitting right at EACH
-        // corner, continuing the edge's own line straight past it). Redone
-        // to match: one short collinear extension past each of the edge's
-        // two endpoints, in line with the edge itself (no perpendicular
-        // offset at all) — reading as "the boundary keeps going past this
-        // corner, just not surveyed/assigned yet", same convention as the
-        // reference sketch's D/A/C/B corner dashes.
-        const uE = dE / segLen, uN = dN / segLen;
-        const gap = Math.min(3, Math.max(0.8, segLen * 0.02));
-        const dashLen = Math.min(15, Math.max(4, segLen * 0.15));
-        anns.push({
-          id: `auto-bmk-${i}-a`,
-          e1: a.east - uE * gap, n1: a.north - uN * gap,
-          e2: a.east - uE * (gap + dashLen), n2: a.north - uN * (gap + dashLen),
-        });
-        anns.push({
-          id: `auto-bmk-${i}-b`,
-          e1: b.east + uE * gap, n1: b.north + uN * gap,
-          e2: b.east + uE * (gap + dashLen), n2: b.north + uN * (gap + dashLen),
-        });
-      }
+      // One short collinear extension past each of the edge's two
+      // endpoints, in line with the edge itself — reads as "the boundary
+      // keeps going past this corner", same convention as the reference
+      // sketch's dashes at every corner.
+      const uE = dE / segLen, uN = dN / segLen;
+      const gap = Math.min(3, Math.max(0.8, segLen * 0.02));
+      const dashLen = Math.min(15, Math.max(4, segLen * 0.15));
+      anns.push({
+        id: `auto-bmk-${i}-a`,
+        e1: a.east - uE * gap, n1: a.north - uN * gap,
+        e2: a.east - uE * (gap + dashLen), n2: a.north - uN * (gap + dashLen),
+      });
+      anns.push({
+        id: `auto-bmk-${i}-b`,
+        e1: b.east + uE * gap, n1: b.north + uN * gap,
+        e2: b.east + uE * (gap + dashLen), n2: b.north + uN * (gap + dashLen),
+      });
     }
-    return { annotations: anns, texts: labels };
-  }, [loadedPlotNumber, cogoPlots, points]);
+    return { annotations: anns, texts: empty.texts };
+  }, [loadedPlotNumber, points]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
   // Part 24) — the client clarified these are added by hand by the
@@ -1475,32 +1420,24 @@ export function Diagrams() {
               {!isBorehole && (
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
-                    These dashed lines are added by hand, the same way a surveyor marks them up on paper —
-                    there's no survey data to compute them from. "Draw Extension Line" is for a numbered
-                    neighbour — click two points directly on the preview — any side, as many as you need along
-                    one edge — and type the neighbouring lot's number when prompted (leave it blank for an
-                    unlabelled mark). "Boundary Marker" is the plain version with no prompt at all — a short
-                    dashed segment along an edge that borders something without an assigned lot yet (a road,
-                    unsurveyed land) — click two points and it's placed, no number, no leader.
-                    Click an existing line to select it — drag the line itself to move it (its number, if any,
-                    moves with it), drag an end-handle to stretch that end (hold Shift to rotate the whole line
-                    around the other end instead), type an exact length/angle while dragging, or press Delete to
-                    remove it (removes its number too, if it has one). Click a number directly to select and
-                    delete just that. Esc cancels a drag in progress, or a line's number prompt (discarding that
-                    line too).
+                    These dashed extension lines are added by hand, the same way a surveyor marks them up on
+                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
+                    click two points directly on the preview — any side, as many as you need along one edge — and
+                    type the neighbouring lot's number when prompted (leave it blank for an unlabelled mark; an
+                    edge that already matches another plot in this project, or has no match at all, is marked
+                    automatically — this is only for a neighbour with no survey data of its own to detect).
+                    Click an existing line to select it — drag the line itself to move it (its number moves with
+                    it), drag an end-handle to stretch that end (hold Shift to rotate the whole line around the
+                    other end instead), type an exact length/angle while dragging, or press Delete to remove it
+                    (removes its number too). Click a number directly to select and delete just that. Esc cancels
+                    a drag in progress, or a line's number prompt (discarding that line too).
                   </p>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       variant={drawingAnnotation ? "primary" : "ghost"}
-                      onClick={() => { setDrawingAnnotation((v) => !v); setDrawingBoundaryMarker(false); setPendingPoint(null); }}
+                      onClick={() => { setDrawingAnnotation((v) => !v); setPendingPoint(null); }}
                     >
                       {drawingAnnotation ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Draw Extension Line"}
-                    </Button>
-                    <Button
-                      variant={drawingBoundaryMarker ? "primary" : "ghost"}
-                      onClick={() => { setDrawingBoundaryMarker((v) => !v); setDrawingAnnotation(false); setPendingPoint(null); }}
-                    >
-                      {drawingBoundaryMarker ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Boundary Marker"}
                     </Button>
                     {selectedAnnotationId && (
                       <Button variant="ghost" onClick={deleteSelectedAnnotation}>Delete Selected Line</Button>
