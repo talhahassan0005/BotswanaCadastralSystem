@@ -257,14 +257,19 @@ export function Diagrams() {
   // ===================== Part 37: auto-detect shared boundary sides =====
   // When several plots are computed together in one COGO layout (Part 33 —
   // e.g. a subdivision's 100/101/102... sharing boundary points) and the
-  // diagram is generated for just one of them, any side of THIS plot that's
-  // also an edge of another plot from that same layout is labelled with
-  // that neighbour's own plot number automatically, since that's known
-  // here. Part 24's manual tool (below) is the only option for a side that
-  // borders something with no COGO data at all (an unsurveyed neighbour) —
-  // and, since Part 33's client req 2026-09-04 round, the only one with a
-  // dashed leader at all (see its own comment). `loadedPlotNumber` only
-  // resolves when this diagram's lot name matches an actual saved
+  // diagram is generated for just one of them, every side of THIS plot is
+  // classified automatically, no manual marking needed (client req
+  // 2026-09-19: "khud mark nhai karna bhai... bydefault hona chahiye jese
+  // client ne kaha hai"): a side that's also an edge of another plot from
+  // that same layout is labelled with that neighbour's own plot number;
+  // one that isn't (a road frontage, unsurveyed land, the outer edge of
+  // the whole subdivision) gets the same plain, unlabelled Boundary Marker
+  // dash Part 24's manual tool below produces. Part 24 remains for the
+  // cases this can't know about on its own — an entirely separate,
+  // standalone diagram with no sibling plots in this layout at all (no
+  // `loadedPlotNumber`/`others`, see the guards just below), or a mark
+  // somewhere other than an existing boundary side. `loadedPlotNumber`
+  // only resolves when this diagram's lot name matches an actual saved
   // cogoPlots entry — a Parcels-tab pick or a quick canvas "Generate
   // Diagram" (neither backed by a numbered, saved plot) correctly finds
   // nothing here and this whole feature is a no-op for them.
@@ -300,25 +305,47 @@ export function Diagrams() {
           return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
         })
       );
-      if (!neighbor) continue;
-      // A short dashed stub from the shared side's midpoint out to the
-      // label (client req 2026-09-18: "Add dash lines for abutting
-      // property" — restores what a 2026-09-04 round had removed here;
-      // Part 24's manual tool below never lost its own dash).
       const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
       const dE = b.east - a.east, dN = b.north - a.north;
       const segLen = Math.hypot(dE, dN) || 1;
       let pE = -dN / segLen, pN = dE / segLen;
       if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
-      const stub = Math.min(15, Math.max(2, segLen * 0.25));
-      const e2 = mE + pE * stub, n2 = mN + pN * stub;
-      const id = `auto-adj-${i}-${neighbor.number}`;
-      anns.push({ id, e1: mE, n1: mN, e2, n2 });
-      // upright: true (client req 2026-09-18, screenshot circling "102"/
-      // "104" as upside-down) — same fix as the north arrow's own pin:
-      // `rotation` is mostly the 180-degree Lo-grid display sign-fix, not
-      // a real tilt, so a short reference label shouldn't inherit it.
-      labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number, upright: true });
+      if (neighbor) {
+        // A short dashed stub from the shared side's midpoint out to the
+        // label (client req 2026-09-18: "Add dash lines for abutting
+        // property" — restores what a 2026-09-04 round had removed here;
+        // Part 24's manual tool below never lost its own dash).
+        const stub = Math.min(15, Math.max(2, segLen * 0.25));
+        const e2 = mE + pE * stub, n2 = mN + pN * stub;
+        const id = `auto-adj-${i}-${neighbor.number}`;
+        anns.push({ id, e1: mE, n1: mN, e2, n2 });
+        // upright: true (client req 2026-09-18, screenshot circling "102"/
+        // "104" as upside-down) — same fix as the north arrow's own pin:
+        // `rotation` is mostly the 180-degree Lo-grid display sign-fix, not
+        // a real tilt, so a short reference label shouldn't inherit it.
+        labels.push({ id: `${id}-label`, east: e2, north: n2, text: neighbor.number, upright: true });
+      } else {
+        // No matching neighbour in this layout (a road frontage, unsurveyed
+        // land, or the outer edge of the whole subdivision) — automatically
+        // mark it with the same plain, unlabelled Boundary Marker style
+        // Part 24's manual tool below produces, instead of requiring the
+        // surveyor to draw it by hand (client req 2026-09-19: "khud mark
+        // nhai karna... bydefault hona chahiye jese client ne kaha hai" —
+        // every edge should already read as either "matches a known
+        // neighbour" or "doesn't", the moment the diagram is generated).
+        // Short dash centred on the edge's own midpoint, parallel to it,
+        // offset a little outward so it reads as its own mark rather than
+        // sitting directly on top of the solid boundary line.
+        const uE = dE / segLen, uN = dN / segLen;
+        const offset = Math.min(6, Math.max(1.5, segLen * 0.03));
+        const half = Math.min(20, Math.max(3, segLen * 0.2));
+        const oE = mE + pE * offset, oN = mN + pN * offset;
+        anns.push({
+          id: `auto-bmk-${i}`,
+          e1: oE - uE * half, n1: oN - uN * half,
+          e2: oE + uE * half, n2: oN + uN * half,
+        });
+      }
     }
     return { annotations: anns, texts: labels };
   }, [loadedPlotNumber, cogoPlots, points]);
