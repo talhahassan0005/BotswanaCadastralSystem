@@ -1878,6 +1878,21 @@ export function CogoWorkspace({
   const scrollDrag = useRef<{ axis: "x" | "y"; startPx: number; trackPx: number; span: number; cx: number; cy: number } | null>(null);
   const vTrackRef = useRef<HTMLDivElement>(null);
   const hTrackRef = useRef<HTMLDivElement>(null);
+  // Stop the browser/page from also reacting to the wheel while the pointer
+  // is over the canvas (client req 2026-09-21: "when i place mouse on canvas
+  // and try scrolling then whole window will be zooming in instead of only
+  // canvas"). onWheel below already calls preventDefault, but React attaches
+  // wheel listeners as PASSIVE on the root, where preventDefault is silently
+  // ignored — so Ctrl+wheel / trackpad pinch (browser zoom) and plain wheel
+  // (page scroll) went through as well as the canvas zoom. A native
+  // non-passive listener directly on the <svg> is the only place it works.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const block = (e: WheelEvent) => e.preventDefault();
+    el.addEventListener("wheel", block, { passive: false });
+    return () => el.removeEventListener("wheel", block);
+  }, [active]);
   /** Moves the view so the viewport sits `ds` screen units further along
    *  `axis` than where the drag began. */
   function scrollViewBy(axis: "x" | "y", ds: number, base: { cx: number; cy: number }) {
