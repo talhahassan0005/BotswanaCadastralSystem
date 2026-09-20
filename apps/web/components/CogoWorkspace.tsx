@@ -1161,11 +1161,23 @@ export function CogoWorkspace({
     setPolFrozenPreview(null);
   }
   function polClearRows() {
+    // Clear wipes everything the tool holds — the picked From/To points as
+    // well as the queued rows — and restarts the automatic naming from the
+    // beginning (client req 2026-09-21: "When i click clear, the system must
+    // clear all data within the tool such that auto naming will start from
+    // the begining"). The counter is shared with the ids Draw hands out, so
+    // names used to run ahead (P1, then P6 after a Draw) and never came
+    // back down; resetting it here makes the next auto name P1 again.
     setPolRows([]);
+    setPolFrom(null);
+    setPolTo(null);
+    setPolPickingFrom(false);
+    setPolPickingTo(false);
     setPolSelected(null);
     setPolNewName("");
     setPolNewDistance("");
     setPolFrozenPreview(null);
+    polIdRef.current = 1;
   }
   function polCalc() {
     setPolFrozenPreview(polPendingPreview());
