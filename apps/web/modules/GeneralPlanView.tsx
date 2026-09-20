@@ -81,7 +81,7 @@ interface GpBeacon { id: string; east: number; north: number }
  *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
  *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult } = useStore();
+  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult, cogoWorkspaceDoc } = useStore();
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
@@ -1172,14 +1172,31 @@ export function GeneralPlanView() {
   // own doc comment above for why (the real parent diagram is often
   // surveyed separately and isn't always fully reconstructable from
   // whatever sub-lots happen to be drawn so far).
+  //
+  // The polygon ticked "Main figure" in the Cadastral tab's Polygon
+  // Attributes dialog takes priority over both (client req 2026-09-21: "The
+  // information from mainfigure is the one that should appear here") — its
+  // lot number (polygonMeta.position) names the saved plot whose ring,
+  // sides and area feed this table. No polygon ticked = unchanged.
+  const mainFigureNumber = useMemo(() => {
+    const doc = (cogoWorkspaceDoc ?? {}) as {
+      polygons?: { id: string }[];
+      polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }>;
+    };
+    for (const pg of doc.polygons ?? []) {
+      const m = doc.polygonMeta?.[pg.id];
+      if (m?.mainFigure && m.position?.trim()) return m.position.trim();
+    }
+    return null;
+  }, [cogoWorkspaceDoc]);
   const outerBoundary = useMemo(() => {
-    const trimmed = meta.parentPlotNumber.trim();
-    if (trimmed) {
+    for (const trimmed of [mainFigureNumber, meta.parentPlotNumber.trim()]) {
+      if (!trimmed) continue;
       const parent = cogoPlots.find((p) => p.number.trim() === trimmed);
       if (parent) return dropClosingDuplicate(parent.fig.points).map((pt) => ({ name: pt.name, east: pt.east, north: pt.north }));
     }
     return findOuterBoundary(gpPlots);
-  }, [gpPlots, cogoPlots, meta.parentPlotNumber]);
+  }, [gpPlots, cogoPlots, meta.parentPlotNumber, mainFigureNumber]);
   const outerSides = useMemo(
     () =>
       outerBoundary.map((p, i) => {
