@@ -3364,7 +3364,19 @@ export function GeneralPlanView() {
             }}
           />
         )}
-        <div className="relative mx-auto max-w-7xl" style={{ transform: `scale(${gpZoom})`, transformOrigin: "top center" }}>
+        {/* Zoom pans all the way left (client req 2026-09-21: "it is refusing
+            to pan far left at 150% zoom"). The sheet used to scale from
+            "top center" inside a centred max-w-7xl box: a CSS transform
+            doesn't change layout, so the enlarged sheet spilled equally left
+            and right, and the left spill sits at negative coordinates —
+            which a scroll box can never scroll back to, so that strip was
+            simply unreachable at any zoom above 100%. Now the sheet scales
+            from its top-LEFT corner inside a wrapper sized to the scaled
+            width (same min(box, 80rem) width the sheet always had, times
+            the zoom): everything grows right/down into real scrollable
+            overflow, and below 100% the auto margins still centre it. */}
+        <div style={{ width: `calc(min(100%, 80rem) * ${gpZoom})`, margin: "0 auto" }}>
+        <div className="relative" style={{ width: `${100 / gpZoom}%`, transform: `scale(${gpZoom})`, transformOrigin: "top left" }}>
           {layoutGroups.map((_, idx) => (
             <div key={idx} style={{ display: sheet === idx ? "block" : "none" }}>{renderLayoutSheet(idx)}</div>
           ))}
@@ -3401,6 +3413,7 @@ export function GeneralPlanView() {
               </div>
             </div>
           )}
+        </div>
         </div>
         </div>
       </Card>
