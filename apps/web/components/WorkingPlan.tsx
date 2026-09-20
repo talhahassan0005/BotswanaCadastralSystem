@@ -142,11 +142,11 @@ interface Props {
   /** Shared display rotation (degrees, client req 2026-08-28) — the same
    *  project-wide value CogoWorkspace's Rotate slider and General Plan use,
    *  so this sheet's figure/beacons/labels spin the same way. Applied only
-   *  to what's DRAWN (polygons, beacons, annotations) — the coordinate grid
-   *  and its axis labels, and the locality inset, stay north-up (a rotated
-   *  rectangular grid has no coherent edge to label against, and the inset
-   *  is more useful as a stable orientation reference); the SIDES/DIRECTIONS
-   *  values elsewhere never touch this at all. */
+   *  to what's DRAWN (polygons, beacons, annotations) and, since client req
+   *  2026-09-21, the locality inset too (so it matches the main figure's
+   *  orientation) — the coordinate grid and its axis labels stay north-up
+   *  (a rotated rectangular grid has no coherent edge to label against);
+   *  the SIDES/DIRECTIONS values elsewhere never touch this at all. */
   rotation?: number;
   /** North arrow's own rotation (client req 2026-09-15: "North arrow
    *  should face up") — deliberately separate from `rotation` above, which
@@ -465,23 +465,40 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // ---- Inset (locality, not to scale) ----
   const inset = { x: 26, y: VB_H - 130, w: 150, h: 104 };
   const insetPad = 24;
-  const iFit = Math.min((inset.w - 2 * insetPad) / spanE, (inset.h - 2 * insetPad) / spanN);
-  const iDrawW = spanE * iFit;
-  const iDrawH = spanN * iFit;
-  const iOffX = inset.x + (inset.w - iDrawW) / 2;
-  const iOffY = inset.y + (inset.h - iDrawH) / 2;
-  const iX = (e: number) => iOffX + (e - minE) * iFit;
-  const iY = (n: number) => iOffY + (maxN - n) * iFit;
-  const insetPolygons = activePlots.map((plot) =>
-    plot.points.map((p) => `${iX(p.east)},${iY(p.north)}`).join(" ")
-  );
+  // The inset now turns with the main drawing (client req 2026-09-21:
+  // "Correct the inset. the orientation is not ok") — it used to stay plain
+  // north-up while the figure above it applies the shared display rotation/
+  // flip (the 180-degree Lo-grid display fix among them), so the two showed
+  // the same lots mirrored/turned relative to each other. Same order as the
+  // main figure's fx/fy: flip (mirror x) -> rotate, here about the inset's
+  // own centre, then the rotated shape is re-fitted to the box so a
+  // non-right-angle rotation can't push it past the border.
+  const insetCx = inset.x + inset.w / 2, insetCy = inset.y + inset.h / 2;
+  const insetLocal = (e: number, n: number) => {
+    let u = e - (minE + maxE) / 2;
+    const v0 = -(n - (minN + maxN) / 2); // screen y grows downward, north is up
+    if (flip) u = -u;
+    return { u: u * figCosR - v0 * figSinR, v: u * figSinR + v0 * figCosR };
+  };
+  const insetLocalPts = activePlots.flatMap((plot) => plot.points.map((p) => insetLocal(p.east, p.north)));
+  const iMinU = Math.min(...insetLocalPts.map((q) => q.u)), iMaxU = Math.max(...insetLocalPts.map((q) => q.u));
+  const iMinV = Math.min(...insetLocalPts.map((q) => q.v)), iMaxV = Math.max(...insetLocalPts.map((q) => q.v));
+  const iSpanU = Math.max(iMaxU - iMinU, 1e-6), iSpanV = Math.max(iMaxV - iMinV, 1e-6);
+  const iFit = Math.min((inset.w - 2 * insetPad) / iSpanU, (inset.h - 2 * insetPad) / iSpanV);
+  const iX = (e: number, n: number) => insetCx + (insetLocal(e, n).u - (iMinU + iMaxU) / 2) * iFit;
+  const iY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (iMinV + iMaxV) / 2) * iFit;
+  const insetPolygons = activePlots.map((plot) => {
+    const pts = plot.points.map((p) => ({ x: iX(p.east, p.north), y: iY(p.east, p.north) }));
+    const c = polygonCentroid(pts);
+    return { number: plot.number, poly: pts.map((q) => `${q.x},${q.y}`).join(" "), labelX: c.x, labelY: c.y };
+  });
   // Real reference-mark points (client req 2026-08-20, Part 12b) — clamped to
   // stay inside the inset box since it's an explicitly "not to scale" locality
   // diagram and a ref mark's true coordinates are usually outside the tight
   // parcel bounding box the inset is fitted to.
   const refDots = (refMarks ?? []).map((r) => ({
-    x: Math.min(inset.x + inset.w - 8, Math.max(inset.x + 8, iX(r.east))),
-    y: Math.min(inset.y + inset.h - 8, Math.max(inset.y + 8, iY(r.north))),
+    x: Math.min(inset.x + inset.w - 8, Math.max(inset.x + 8, iX(r.east, r.north))),
+    y: Math.min(inset.y + inset.h - 8, Math.max(inset.y + 8, iY(r.east, r.north))),
     label: r.name || "RM",
   }));
 
@@ -874,9 +891,16 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={inset.x + inset.w / 2} y={inset.y - 4} textAnchor="middle" fontSize={7.5} fill={INSET_GREEN}>
           INSET NOT TO SCALE
         </text>
-        {insetPolygons.map((poly, i) => (
-          <polygon key={`ip${i}`} points={poly} fill="none" stroke="black" strokeWidth={1} strokeLinejoin="round" />
+        {insetPolygons.map((pg, i) => (
+          <polygon key={`ip${i}`} points={pg.poly} fill="none" stroke="black" strokeWidth={1} strokeLinejoin="round" />
         ))}
+        {/* Lot numbers inside the inset (client req 2026-09-21: "Also add lot
+            numbers") — same area-weighted centroid the main figure labels
+            with. Skipped past 20 lots, where they'd just smear together in
+            a box this small. */}
+        {activePlots.length <= 20 && insetPolygons.map((pg, i) => pg.number ? (
+          <text key={`il${i}`} x={pg.labelX} y={pg.labelY} textAnchor="middle" dominantBaseline="middle" fontSize={6} fontWeight="bold" fill="black">{pg.number}</text>
+        ) : null)}
         {refDots.map((d, i) => (
           <g key={`rm${i}`}>
             <circle cx={d.x} cy={d.y} r={2.2} fill={REF_RED} />
