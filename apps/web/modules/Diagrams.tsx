@@ -282,10 +282,43 @@ export function Diagrams() {
   const autoShared = useMemo(() => {
     const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
     if (!loadedPlotNumber || points.length < 3) return empty;
+    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
+    const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
+    const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
+    const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+      Math.abs(a.east - b.east) < 0.01 && Math.abs(a.north - b.north) < 0.01; // metres — matches computeDiagramLayout's point-identity tolerance
     const anns: ManualAnnotation[] = [];
+    const labels: ManualText[] = [];
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
       const dE = b.east - a.east, dN = b.north - a.north;
+      // Neighbouring plot number (client req 2026-09-21: "add neighboring
+      // plot numbers", reference sketch: plain "102"/"104" beside the
+      // side edges, no dash or leader) — a side that is also an edge of
+      // another plot in this same COGO layout gets that plot's number as
+      // plain text just outside the side. Independent of the dash below,
+      // which stays exactly as it was (horizontal sides only).
+      const neighbor = others.find((o) =>
+        o.fig.points.some((oa, j) => {
+          const ob = o.fig.points[(j + 1) % o.fig.points.length];
+          return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
+        })
+      );
+      if (neighbor) {
+        const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+        const len = Math.hypot(dE, dN) || 1;
+        let pE = -dN / len, pN = dE / len;
+        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+        const off = Math.min(15, Math.max(2, len * 0.25));
+        labels.push({
+          id: `auto-nbr-${i}-${neighbor.number}`,
+          east: mE + pE * off,
+          north: mN + pN * off,
+          text: neighbor.number,
+          upright: true,
+          from: { east: mE, north: mN },
+        });
+      }
       // Horizontal (road-frontage-style) edges only — no vertical marks
       // (client req 2026-09-19: "sirf horizontal lines, vertical lines
       // nahi chahiye" — the side edges between adjoining plots don't get
@@ -310,8 +343,8 @@ export function Diagrams() {
         e2: b.east + uE * (gap + dashLen), n2: b.north + uN * (gap + dashLen),
       });
     }
-    return { annotations: anns, texts: empty.texts };
-  }, [loadedPlotNumber, points]);
+    return { annotations: anns, texts: labels };
+  }, [loadedPlotNumber, cogoPlots, points]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
   // Part 24) — the client clarified these are added by hand by the

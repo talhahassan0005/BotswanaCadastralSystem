@@ -71,6 +71,12 @@ export interface ManualText {
    *  them illegibly). Free-text notes (which DO want to track `rotation`,
    *  by design — client req 2026-08-28) leave this unset. */
   upright?: boolean;
+  /** Where this label hangs off (e.g. the midpoint of the side it names).
+   *  When set, the text is anchored AWAY from that point — start-aligned on
+   *  the far side, end-aligned on the near side — so a number placed beside
+   *  a side never runs back over the boundary line, whichever way the
+   *  figure's display rotation turns that side. */
+  from?: { east: number; north: number };
 }
 
 /** Live conversion between this diagram's on-page pixel space and the real
@@ -608,11 +614,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const isSel = selectedTextId === t.id;
         const x = fx(t.east, t.north), y = fy(t.east, t.north);
         const textAngle = t.upright ? 0 : (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
+        let anchor: "start" | "middle" | "end" | undefined;
+        if (t.from) {
+          const ax = x - fx(t.from.east, t.from.north), ay = y - fy(t.from.east, t.from.north);
+          const al = Math.hypot(ax, ay) || 1;
+          anchor = ax / al > 0.35 ? "start" : ax / al < -0.35 ? "end" : "middle";
+        }
         return (
           <g key={t.id} transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}>
             <text
               x={x} y={y}
               fontSize={FS_BEACON_HEAD}
+              textAnchor={anchor}
               onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
               onDoubleClick={(e) => { e.stopPropagation(); onTextDoubleClick?.(t.id); }}
               onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } }}
