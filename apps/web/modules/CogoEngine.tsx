@@ -224,9 +224,12 @@ export function CogoEngine() {
     // scroll. Below `lg`, the grid already stacks into one column, where a
     // single page scroll is the expected/normal behaviour, so this is
     // scoped to `lg:` only.
-    <div className="grid gap-5 lg:h-[calc(100vh-160px)] lg:grid-cols-[300px_1fr] lg:items-stretch">
-      {/* Left control panel */}
-      <div className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+    <div className="grid gap-5 lg:grid-cols-[300px_1fr] lg:items-start">
+      {/* Left control panel — stays put while the page scrolls down to the
+          results, and scrolls on its own if taller than the viewport
+          (client req 2026-09-21: only the canvas should be a scroll
+          region; the sections below it are ordinary page content). */}
+      <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
         <Card title="Project Details">
           <div className="space-y-3">
             <Field label="Survey / project name">
@@ -341,12 +344,9 @@ export function CogoEngine() {
       </div>
 
       {/* Right results */}
-      <div className="lg:min-h-0">
-        <CogoWorkspace
-          points={workspacePoints}
-          resultBoundary={resultBoundary}
-          below={
-        <div className="space-y-5 p-3 lg:p-4">
+      <div className="min-w-0 space-y-5">
+        <CogoWorkspace points={workspacePoints} resultBoundary={resultBoundary} />
+
         {!cogoResult ? (
           <Card>
             <div className="py-12 text-center text-slate-400">
@@ -453,9 +453,6 @@ export function CogoEngine() {
             </Card>
           </>
         )}
-        </div>
-          }
-        />
       </div>
     </div>
   );
