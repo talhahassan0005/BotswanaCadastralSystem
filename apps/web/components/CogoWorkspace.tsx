@@ -1846,6 +1846,70 @@ export function CogoWorkspace({
     if (flip) x = W - x;
     return [view.cx + (x - W / 2) / view.zoom, view.cy - (y - H / 2) / view.zoom];
   };
+  // Canvas scrollbars that follow the DRAWING, not the page (client req
+  // 2026-09-21, after zooming in: "scrolling bar per koi effect nahi hua"
+  // — the box's native scrollbar only reflected how tall the <svg> element
+  // is, which never changes with zoom, so it looked dead). Extent = the
+  // screen-space bounding box of everything drawn (at the CURRENT zoom/
+  // rotation, so it grows as you zoom in) unioned with the viewport;
+  // thumb size = viewport / extent, and dragging it pans the view. Works in
+  // screen space on purpose so it stays correct under the display rotation/
+  // flip instead of assuming east/north line up with the screen axes.
+  const scrollExtent = (() => {
+    if (!active) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const add = (e: number, n: number) => {
+      const [x, y] = toScreen(e, n);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    };
+    for (const p of visible) add(p.east, p.north);
+    for (const l of lines) { add(l.aE, l.aN); add(l.bE, l.bN); }
+    for (const a of arcs) { add(a.cE - a.radius, a.cN - a.radius); add(a.cE + a.radius, a.cN + a.radius); }
+    for (const pg of polygons) for (const v of pg.points) add(v.east, v.north);
+    if (!Number.isFinite(minX)) return null;
+    const padX = W * 0.05, padY = H * 0.05;
+    const x0 = Math.min(minX - padX, 0), x1 = Math.max(maxX + padX, W);
+    const y0 = Math.min(minY - padY, 0), y1 = Math.max(maxY + padY, H);
+    return { x0, x1, y0, y1 };
+  })();
+  const scrollDrag = useRef<{ axis: "x" | "y"; startPx: number; trackPx: number; span: number; cx: number; cy: number } | null>(null);
+  const vTrackRef = useRef<HTMLDivElement>(null);
+  const hTrackRef = useRef<HTMLDivElement>(null);
+  /** Moves the view so the viewport sits `ds` screen units further along
+   *  `axis` than where the drag began. */
+  function scrollViewBy(axis: "x" | "y", ds: number, base: { cx: number; cy: number }) {
+    const [w0e, w0n] = toWorld(W / 2, H / 2);
+    const [w1e, w1n] = axis === "x" ? toWorld(W / 2 + ds, H / 2) : toWorld(W / 2, H / 2 + ds);
+    setView((v) => ({ ...v, cx: base.cx + (w1e - w0e), cy: base.cy + (w1n - w0n) }));
+  }
+  function scrollThumbDown(axis: "x" | "y", ev: RPointerEvent<HTMLDivElement>, track: HTMLElement | null) {
+    if (!scrollExtent || !track) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    const r = track.getBoundingClientRect();
+    scrollDrag.current = {
+      axis,
+      startPx: axis === "x" ? ev.clientX : ev.clientY,
+      trackPx: axis === "x" ? r.width : r.height,
+      span: axis === "x" ? scrollExtent.x1 - scrollExtent.x0 : scrollExtent.y1 - scrollExtent.y0,
+      cx: view.cx,
+      cy: view.cy,
+    };
+  }
+  function scrollThumbMove(ev: RPointerEvent<HTMLDivElement>) {
+    const d = scrollDrag.current;
+    if (!d || d.trackPx <= 0) return;
+    const px = d.axis === "x" ? ev.clientX : ev.clientY;
+    scrollViewBy(d.axis, ((px - d.startPx) / d.trackPx) * d.span, d);
+  }
+  function scrollThumbUp(ev: RPointerEvent<HTMLDivElement>) {
+    scrollDrag.current = null;
+    try { (ev.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId); } catch { /* already released */ }
+  }
   function eventToVb(ev: RPointerEvent | RWheelEvent): [number, number] {
     const r = svgRef.current!.getBoundingClientRect();
     return [((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H];
@@ -2796,8 +2860,49 @@ export function CogoWorkspace({
               box has its own bounded height and scrollbar instead of the
               whole column scrolling. */}
           <div className="lg:max-h-[calc(100vh-330px)] lg:overflow-y-auto">
-          <div className="flex items-stretch">
-          <div className="relative min-w-0 flex-1">
+          <div className="flex items-stretch lg:justify-center">
+          {/* max-w caps the canvas at the largest 720:460 box that still fits
+              the scroll box's height, so it never needs the native vertical
+              scrollbar (which ignored zoom); the wrapper's own left/right
+              % positioning of popups stays correct because this element
+              IS the svg's width. */}
+          <div className="relative min-w-0 flex-1 lg:max-w-[calc((100vh_-_330px)*1.5652)]">
+          {scrollExtent && (() => {
+            const spanX = scrollExtent.x1 - scrollExtent.x0, spanY = scrollExtent.y1 - scrollExtent.y0;
+            const showH = spanX > W * 1.001, showV = spanY > H * 1.001;
+            const thumb = (start: number, len: number, span: number) => ({
+              pos: Math.min(96, Math.max(0, ((start - 0) / span) * 100)),
+              size: Math.min(100, Math.max(6, (len / span) * 100)),
+            });
+            const th = thumb(-scrollExtent.x0, W, spanX);
+            const tv = thumb(-scrollExtent.y0, H, spanY);
+            return (
+              <>
+                {showV && (
+                  <div ref={vTrackRef} className="absolute bottom-3 right-0 top-0 z-10 w-2.5 bg-slate-200/50">
+                    <div
+                      onPointerDown={(e) => scrollThumbDown("y", e, vTrackRef.current)}
+                      onPointerMove={scrollThumbMove}
+                      onPointerUp={scrollThumbUp}
+                      className="absolute left-0 right-0 cursor-pointer touch-none rounded bg-slate-500/70 hover:bg-slate-600/80"
+                      style={{ top: `${tv.pos}%`, height: `${tv.size}%` }}
+                    />
+                  </div>
+                )}
+                {showH && (
+                  <div ref={hTrackRef} className="absolute bottom-0 left-0 right-3 z-10 h-2.5 bg-slate-200/50">
+                    <div
+                      onPointerDown={(e) => scrollThumbDown("x", e, hTrackRef.current)}
+                      onPointerMove={scrollThumbMove}
+                      onPointerUp={scrollThumbUp}
+                      className="absolute bottom-0 top-0 cursor-pointer touch-none rounded bg-slate-500/70 hover:bg-slate-600/80"
+                      style={{ left: `${th.pos}%`, width: `${th.size}%` }}
+                    />
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
