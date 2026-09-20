@@ -280,6 +280,9 @@ export function CogoWorkspace({
   const [polAddLines, setPolAddLines] = useState(true);
   const [polFrozenPreview, setPolFrozenPreview] = useState<{ name: string; east: number; north: number; segDist: number } | null>(null);
   const polIdRef = useRef(1);
+  // Last name handed to a queued point, so the next automatic name can follow
+  // its pattern (x1 -> x2, A1 -> A2) even after Draw empties the queue.
+  const polLastNameRef = useRef<string | null>(null);
 
   // ---- Splay Calculation panel (client req 2026-09-19) — reference
   // legacy tool's "Splay Calculation" dialog: cut a sharp corner (the
@@ -1065,6 +1068,20 @@ export function CogoWorkspace({
    *  pending-row preview updates on every keystroke or only when Calc is
    *  clicked, so both the checkbox and the Calc button end up with a real,
    *  distinct effect instead of Calc being a no-op. */
+  /** Automatic name for the next queued point (client req 2026-09-21: "auto
+   *  naming should also follow the naming pattern. eg, if i start with x1,
+   *  the next auto numbering should be x2... and if i start with A1 then
+   *  auto numbering should be A2") — bumps the trailing number of the last
+   *  name used (keeping any zero padding: x01 -> x02); a name with no
+   *  trailing number gets a 2 appended; with nothing used yet it starts at
+   *  P1 like before. */
+  function polAutoName(): string {
+    const prev = polRows.length ? polRows[polRows.length - 1].name : polLastNameRef.current;
+    if (!prev) return `P${polIdRef.current}`;
+    const m = prev.match(/^(.*?)(\d+)$/);
+    if (!m) return `${prev}2`;
+    return m[1] + String(parseInt(m[2], 10) + 1).padStart(m[2].length, "0");
+  }
   function polPendingPreview(): { name: string; east: number; north: number; segDist: number } | null {
     if (!polFrom || !polDirDist) return null;
     const typed = Number(polNewDistance);
@@ -1073,7 +1090,7 @@ export function CogoWorkspace({
     const cumulative = polMode === "individual" ? prevCum + typed : typed;
     const [brg] = polDirDist;
     const pt = forward({ east: polFrom.east, north: polFrom.north }, brg, cumulative);
-    return { name: polNewName.trim() || `P${polIdRef.current}`, east: pt.east, north: pt.north, segDist: cumulative - prevCum };
+    return { name: polNewName.trim() || polAutoName(), east: pt.east, north: pt.north, segDist: cumulative - prevCum };
   }
   const polPendingPreviewShown = polAutoCalc ? polPendingPreview() : polFrozenPreview;
   function polSetFrom(v: { east: number; north: number; existingId?: string }) {
@@ -1099,8 +1116,9 @@ export function CogoWorkspace({
     if (!Number.isFinite(typed) || typed <= 0) { window.alert("Enter a valid distance."); return; }
     const prevCum = polRows.length ? polRows[polRows.length - 1].cumulative : 0;
     const cumulative = polMode === "individual" ? prevCum + typed : typed;
-    const name = polNewName.trim() || `P${polIdRef.current}`;
+    const name = polNewName.trim() || polAutoName();
     polIdRef.current += 1;
+    polLastNameRef.current = name;
     setPolRows((rows) => [...rows, { name, cumulative }]);
     setPolNewName("");
     setPolNewDistance("");
@@ -1122,8 +1140,9 @@ export function CogoWorkspace({
     if (polSelected == null) { window.alert("Click a row in the list first, to insert before it."); return; }
     const typed = Number(polNewDistance);
     if (!Number.isFinite(typed) || typed <= 0) { window.alert("Enter a valid distance."); return; }
-    const name = polNewName.trim() || `P${polIdRef.current}`;
+    const name = polNewName.trim() || polAutoName();
     polIdRef.current += 1;
+    polLastNameRef.current = name;
     const cumulative = polResolveCumulative(polSelected, typed);
     setPolRows((rows) => [...rows.slice(0, polSelected), { name, cumulative }, ...rows.slice(polSelected)]);
     setPolSelected(null);
@@ -1178,6 +1197,7 @@ export function CogoWorkspace({
     setPolNewDistance("");
     setPolFrozenPreview(null);
     polIdRef.current = 1;
+    polLastNameRef.current = null;
   }
   function polCalc() {
     setPolFrozenPreview(polPendingPreview());
