@@ -20,6 +20,8 @@ export interface LineMeta { type?: string }
 // the table.
 export interface PolygonMeta {
   position?: string; village?: string; surveyor?: string; srNumber?: string; dsmNumber?: string; type?: string; parent?: string;
+  /** Marked as the plan's main figure in the Polygon Attributes dialog (client req 2026-09-21). */
+  mainFigure?: boolean;
 }
 
 type Tab = "points" | "lines" | "polygons";

@@ -217,7 +217,7 @@ export function CogoWorkspace({
   // Just Lot Number + (read-only) Area — the "ID / Erf" field was dropped
   // per client req 2026-08-24 ("I think we don't need that part, lets just
   // use Lot Number").
-  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; area: string } | null>(null);
+  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; area: string; mainFigure: boolean } | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
@@ -790,12 +790,12 @@ export function CogoWorkspace({
     // polygon always opens with a sensible number ready to accept or edit,
     // instead of a blank field.
     const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
-    setPolygonAttrDialog({ id, position: m.position ?? suggested, area: formatArea(areaM2) });
+    setPolygonAttrDialog({ id, position: m.position ?? suggested, area: formatArea(areaM2), mainFigure: !!m.mainFigure });
   }
   function savePolygonAttrs() {
     if (!polygonAttrDialog) return;
-    const { id, position } = polygonAttrDialog;
-    setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position } }));
+    const { id, position, mainFigure } = polygonAttrDialog;
+    setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, mainFigure } }));
     if (position.trim()) {
       setLastPlotNumber(position.trim());
       const poly = polygons.find((p) => p.id === id);
@@ -3912,9 +3912,22 @@ export function CogoWorkspace({
                   <span className="mb-0.5 block text-slate-500">Area</span>
                   <input value={polygonAttrDialog.area} readOnly className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-500" />
                 </label>
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
-                  <button type="button" onClick={savePolygonAttrs} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
+                <div className="flex items-center justify-between gap-2">
+                  {/* Main figure (client req 2026-09-21: "Add a check option
+                      here for Main figure") — stored per polygon in
+                      polygonMeta.mainFigure. */}
+                  <label className="flex items-center gap-1.5 text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={polygonAttrDialog.mainFigure}
+                      onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, mainFigure: e.target.checked })}
+                    />
+                    Main figure
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+                    <button type="button" onClick={savePolygonAttrs} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
+                  </div>
                 </div>
               </div>
             </div>
