@@ -72,8 +72,16 @@ type ToolGroupId = (typeof TOOL_GROUPS)[number]["id"];
 export function CogoWorkspace({
   points,
   resultBoundary,
+  below,
 }: {
   points: { name?: string | null; east: number; north: number }[];
+  /** Rendered at the end of the scrollable drafting area (client req
+   *  2026-09-21: "these should only cover the drafting area. not tools" —
+   *  the parent's own results cards used to sit outside this component, in
+   *  a column that scrolled the tool rows away along with everything
+   *  else; passing them in here lets them scroll WITH the drafting area
+   *  while the tools above stay put). */
+  below?: ReactNode;
   /** A computed traverse/coordinates result (client req 2026-08-21, Part
    *  13a) — when set, its boundary is drawn on the canvas (lines + bearing/
    *  distance labels + closed polygon), the same as a manually click-drawn
@@ -2482,8 +2490,13 @@ export function CogoWorkspace({
   }, [draft, extra, hidden, lines, arcs, polygons, texts]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
+    // On lg+ this fills whatever bounded height its parent gives it (see
+    // CogoEngine's two-column layout) as a flex column: header + tool rows
+    // stay fixed at the top, only the drafting area below them scrolls
+    // (client req 2026-09-21). Below lg, or with an unbounded parent, it's
+    // just normal stacked flow like before.
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 lg:shrink-0">
         <button
           type="button"
           onClick={() => setActive((v) => !v)}
@@ -2526,7 +2539,7 @@ export function CogoWorkspace({
               below has been scrolled. z-20 + opaque background so it
               actually occludes the canvas content scrolling underneath it,
               not just visually layer on top of it transparently. */}
-          <div className="sticky top-0 z-20 bg-white">
+          <div className="sticky top-0 z-20 bg-white lg:shrink-0">
           {/* Always-visible — used constantly regardless of which drawing
               category tab (below) is open. */}
           <ToolGroup label="Edit Tools">
@@ -2784,7 +2797,17 @@ export function CogoWorkspace({
             </div>
           )}
           </div>
+        </>
+      )}
 
+      {/* Drafting area — everything below the tool rows. On lg+ this is the
+          ONLY scrolling region of the workspace (client req 2026-09-21:
+          "these should only cover the drafting area. not tools"), so its
+          scrollbar starts under the tools instead of running alongside
+          them. `below` (the parent's results cards) scrolls with it. */}
+      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+      {active && (
+        <>
           <div className="flex items-stretch">
           <div className="relative min-w-0 flex-1">
           <svg
@@ -3820,6 +3843,8 @@ export function CogoWorkspace({
           )}
         </>
       )}
+      {below}
+      </div>
     </div>
   );
 }

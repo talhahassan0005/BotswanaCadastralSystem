@@ -341,9 +341,12 @@ export function CogoEngine() {
       </div>
 
       {/* Right results */}
-      <div className="space-y-5 lg:min-h-0 lg:overflow-y-auto lg:pl-1">
-        <CogoWorkspace points={workspacePoints} resultBoundary={resultBoundary} />
-
+      <div className="lg:min-h-0">
+        <CogoWorkspace
+          points={workspacePoints}
+          resultBoundary={resultBoundary}
+          below={
+        <div className="space-y-5 p-3 lg:p-4">
         {!cogoResult ? (
           <Card>
             <div className="py-12 text-center text-slate-400">
@@ -450,6 +453,9 @@ export function CogoEngine() {
             </Card>
           </>
         )}
+        </div>
+          }
+        />
       </div>
     </div>
   );
