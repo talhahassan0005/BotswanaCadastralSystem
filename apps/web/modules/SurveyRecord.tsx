@@ -125,6 +125,18 @@ export function SurveyRecord() {
     setConsistencyPlotError(null);
     setConsistencyPlotList((list) => [...list, n]);
     setConsistencyPlotInput("");
+    // Asking for a plot again brings back any of its entries dismissed
+    // earlier with ✕/Clear (client req 2026-09-21: "i want consistency for
+    // all plot but it is not showing" — a dismissal was permanent, so
+    // re-adding a plot, or "Get consistency for all", could still show
+    // nothing for it).
+    setConsistencyDismissed((d) => {
+      const next = new Set(d);
+      for (const e of allConsistencyEntries) {
+        if (e.plotA.toLowerCase() === n.toLowerCase() || e.plotB.toLowerCase() === n.toLowerCase()) next.delete(e.id);
+      }
+      return next;
+    });
   }
   function removeConsistencyPlot(n: string) {
     setConsistencyPlotList((list) => list.filter((x) => x !== n));
@@ -132,6 +144,7 @@ export function SurveyRecord() {
   function loadAllConsistencyPlots() {
     setConsistencyPlotError(null);
     setConsistencyPlotList(cogoPlots.map((p) => p.number));
+    setConsistencyDismissed(new Set()); // "all" means all — un-hide anything dismissed earlier
   }
   function clearConsistencyPlotList() {
     setConsistencyPlotError(null);
