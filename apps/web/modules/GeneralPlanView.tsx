@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
-import { Button, Card, Field, Input } from "@/components/ui";
+import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, dropClosingDuplicate, estimateDominantAngle, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
@@ -1172,7 +1172,8 @@ export function GeneralPlanView() {
   // whatever sub-lots happen to be drawn so far).
   //
   // The polygon ticked "Main figure" in the Cadastral tab's Polygon
-  // Attributes dialog takes priority over both (client req 2026-09-21: "The
+  // Attributes dialog feeds the table when no lot is picked in the General
+  // Plan details' Main Figure dropdown (client req 2026-09-21: "The
   // information from mainfigure is the one that should appear here", then
   // "where is that table" when it didn't show) — its ring is read straight
   // from the workspace polygon that carries the tick, not looked up through
@@ -1192,13 +1193,16 @@ export function GeneralPlanView() {
     }
     return null;
   }, [cogoWorkspaceDoc]);
+  // Order: the lot picked here in General Plan details (an explicit choice
+  // made right where the table is), then a polygon ticked "Main figure" in
+  // the Cadastral tab, then the auto-detected outer boundary.
   const outerBoundary = useMemo(() => {
-    if (mainFigureRing) return mainFigureRing;
     const trimmed = meta.parentPlotNumber.trim();
     if (trimmed) {
       const parent = cogoPlots.find((p) => p.number.trim() === trimmed);
       if (parent) return dropClosingDuplicate(parent.fig.points).map((pt) => ({ name: pt.name, east: pt.east, north: pt.north }));
     }
+    if (mainFigureRing) return mainFigureRing;
     return findOuterBoundary(gpPlots);
   }, [gpPlots, cogoPlots, meta.parentPlotNumber, mainFigureRing]);
   const outerSides = useMemo(
@@ -3126,11 +3130,22 @@ export function GeneralPlanView() {
           {sheetMode === "general" && (
             <Field label="Vide diagram DSM No. (parent diagram)"><Input value={meta.parentDsmNo} onChange={set("parentDsmNo")} placeholder="e.g. 1243/2026" /></Field>
           )}
+          {/* Picked from the lots already drawn in COGO instead of typed
+              (client req 2026-09-21: "lets have an option for selecting main
+              figure. then we can select it by lot number"). A value that's
+              no longer in the list (a plot since deleted, or typed by hand
+              in an earlier version) stays selectable so nothing is lost. */}
           <Field label="Parent (Main Figure) plot #">
-            <Input
+            <Select
               value={meta.parentPlotNumber}
               onChange={set("parentPlotNumber")}
-              placeholder="e.g. 14182 — a plot # already drawn in COGO"
+              options={[
+                { value: "", label: "— none (auto-detect outer boundary) —" },
+                ...(meta.parentPlotNumber.trim() && !cogoPlots.some((p) => p.number.trim() === meta.parentPlotNumber.trim())
+                  ? [{ value: meta.parentPlotNumber, label: `${meta.parentPlotNumber} (not drawn in COGO)` }]
+                  : []),
+                ...cogoPlots.map((p) => ({ value: p.number, label: p.number })),
+              ]}
             />
           </Field>
         </div>
@@ -3141,7 +3156,7 @@ export function GeneralPlanView() {
           blank to keep today's shorter title.
         </p>
         <p className="mt-1 text-xs text-slate-400">
-          "Parent (Main Figure) plot #": when it matches a plot number already drawn/joined in COGO, the
+          "Parent (Main Figure) plot #": pick a lot from the list (the lots already drawn/joined in COGO) — the
           bottom Sides/Directions/Co-ordinates table uses that plot's own boundary instead of auto-detecting
           the outer edge of whatever sub-lots are drawn so far, it's excluded from the "LOTS ..." title
           list above (it's their parent, not one of them), and it fills in "PORTIONS OF LOT" automatically —
