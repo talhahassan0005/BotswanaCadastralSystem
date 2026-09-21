@@ -1114,10 +1114,31 @@ export function GeneralPlanView() {
   // plot across every layout sheet, and only the per-sheet renderer knows
   // which sheet's own fit-to-bounds transform (`t.sx`/`t.sy`) to project
   // through, same reasoning as `displayBoundaryLabels`.
+  // The lot number of the main figure, when there is one: the lot picked in
+  // the Main Figure dropdown, else the Cadastral polygon ticked "Main
+  // figure". Its own bearing/distance labels and lot number stay off the
+  // drawing (client req 2026-09-21: "bearing, distance and lot number for
+  // main figure should not appear here") — it's the parent outline the
+  // sub-lots sit inside, and its labels just piled up in the middle of
+  // them.
+  const mainFigureLotNumber = useMemo(() => {
+    const picked = meta.parentPlotNumber.trim();
+    if (picked) return picked;
+    const doc = (cogoWorkspaceDoc ?? {}) as {
+      polygons?: { id: string }[];
+      polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }>;
+    };
+    for (const pg of doc.polygons ?? []) {
+      const m = doc.polygonMeta?.[pg.id];
+      if (m?.mainFigure && m.position?.trim()) return m.position.trim();
+    }
+    return null;
+  }, [meta.parentPlotNumber, cogoWorkspaceDoc]);
   const edgeDimensionLabels = useMemo<EdgeDimLabel[]>(() => {
     const out: EdgeDimLabel[] = [];
     for (let pi = 0; pi < gpPlots.length; pi++) {
       const plot = gpPlots[pi];
+      if (mainFigureLotNumber && plot.number.trim() === mainFigureLotNumber) continue;
       const pts = plot.points;
       if (pts.length < 3) continue;
       const cE = pts.reduce((a, p) => a + p.east, 0) / pts.length;
@@ -1152,7 +1173,7 @@ export function GeneralPlanView() {
       }
     }
     return out;
-  }, [gpPlots, flip]);
+  }, [gpPlots, flip, mainFigureLotNumber]);
 
 
   // Bottom traverse table (client req 2026-08-27, §2h) — Sides/Directions/
@@ -1469,6 +1490,7 @@ export function GeneralPlanView() {
     // together more than the SVG does at real subdivision density).
     for (const p of groupGpPlots) {
       if (!p.number || p.points.length < 3) continue;
+      if (mainFigureLotNumber && p.number.trim() === mainFigureLotNumber) continue;
       const cE = p.points.reduce((a, pt) => a + pt.east, 0) / p.points.length;
       const cN = p.points.reduce((a, pt) => a + pt.north, 0) / p.points.length;
       const w = toExportWorld(cE, cN);
@@ -2326,7 +2348,9 @@ export function GeneralPlanView() {
           return (
             <g key={p.number}>
               <polygon points={d} fill="none" stroke="#0f172a" strokeWidth={lineW} strokeLinejoin="round" />
-              <text x={cx} y={cy} textAnchor="middle" fontSize={Math.max(MIN_LOT_NUMBER_FS, LOT_NUMBER_GROUND_M * t.s)} fontWeight={700} fill="#0f172a">{p.number}</text>
+              {!(mainFigureLotNumber && p.number.trim() === mainFigureLotNumber) && (
+                <text x={cx} y={cy} textAnchor="middle" fontSize={Math.max(MIN_LOT_NUMBER_FS, LOT_NUMBER_GROUND_M * t.s)} fontWeight={700} fill="#0f172a">{p.number}</text>
+              )}
             </g>
           );
         })}
