@@ -3239,14 +3239,22 @@ export function CogoWorkspace({
               const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
               const angle = segLabelAngle(polFrom, polTo);
               const [brg] = polDirDist;
-              // The whole-line distance label that used to sit under the
-              // bearing is gone (client req 2026-09-21: "no need to show
+              // The line under the bearing shows the REMAINING distance, not
+              // the whole line's (client req 2026-09-21: "no need to show
               // total distance there because it is appearing at the top
-              // right" — the panel's own Distance field already shows it).
+              // right", then, pointing at this label, "this should
+              // remaining distance") — same number as the panel's Residual,
+              // so it counts down as points are added. Blank until a point
+              // is queued: before that the remainder IS the whole line,
+              // which the panel's Distance field already shows.
+              const showRemaining = polLivePreview.length > 0 && polResidual != null && polResidual > 0.0005;
               return (
                 <>
                   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c2410c" strokeWidth={1} strokeDasharray="3 5" opacity={0.5} />
                   <text x={midX} y={midY - 10} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY - 10})`}>{formatDms(brg)}</text>
+                  {showRemaining && (
+                    <text x={midX} y={midY + 3} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY + 3})`}>{polResidual!.toFixed(3)}m</text>
+                  )}
                 </>
               );
             })()}
@@ -3263,25 +3271,6 @@ export function CogoWorkspace({
                 </g>
               );
             })}
-            {/* Remaining distance (client req 2026-09-21: "as i add points via
-                point on line, i want to see the remaining distance") — the
-                leftover stretch from the last queued point to the To point,
-                labelled the same way as the queued segments, matching the
-                panel's Residual. Only once a point is queued: before that
-                the leftover IS the whole line, which the panel's Distance
-                field already shows. */}
-            {polOpen && polFrom && polTo && polLivePreview.length > 0 && polResidual != null && polResidual > 0.0005 && (() => {
-              const last = polLivePreview[polLivePreview.length - 1];
-              const [lx, ly] = toScreen(last.east, last.north);
-              const [tx, ty] = toScreen(polTo.east, polTo.north);
-              const mx = (lx + tx) / 2, my = (ly + ty) / 2;
-              const angle = segLabelAngle(last, polTo);
-              return (
-                <text x={mx} y={my - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${mx} ${my - 8})`}>
-                  {polResidual.toFixed(3)}m
-                </text>
-              );
-            })()}
             {polOpen && polFrom && polPendingPreviewShown && (() => {
               const p = polPendingPreviewShown;
               const [x, y] = toScreen(p.east, p.north);

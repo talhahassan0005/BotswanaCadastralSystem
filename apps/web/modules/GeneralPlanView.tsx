@@ -1103,11 +1103,11 @@ export function GeneralPlanView() {
   // Distance/bearing labels along each ROAD-FACING edge (client req
   // 2026-08-28, screenshot: "distance and bearings are placed nicely like
   // that" — rotated along the edge, distance over bearing, dotted DMS).
-  // Reuses the SAME unmatched-edge detection as the REMAINDER labels above
-  // — an edge with no matching neighbour plot is either road-facing or
-  // backs onto remainder land, and the reference labels both the same way;
-  // a shared internal edge between two adjoining lots is left unlabeled to
-  // avoid clutter (client's own choice among the options offered).
+  // Originally only edges with no matching neighbour plot (road-facing or
+  // backing onto remainder land); a shared internal edge between two
+  // adjoining lots was left unlabelled to avoid clutter (client's own
+  // choice among the options offered) — reversed 2026-09-21, every edge of
+  // every lot is labelled now (see the note in the loop below).
   // Auto-computed and purely visual — not draggable/editable like the
   // manual road/boundary labels above. Stores real east/north (like
   // `autoBoundaryLabels` above), NOT screen coordinates — this covers every
@@ -1124,14 +1124,12 @@ export function GeneralPlanView() {
       const cN = pts.reduce((a, p) => a + p.north, 0) / pts.length;
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
-        const matched = gpPlots.some((other, oi) => {
-          if (oi === pi) return false;
-          return other.points.some((oa, j) => {
-            const ob = other.points[(j + 1) % other.points.length];
-            return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
-          });
-        });
-        if (matched) continue;
+        // Shared edges are labelled too now (client req 2026-09-21,
+        // screenshot with red marks beside both sides of lot 1504 — "add
+        // distance and bearing"): the earlier rule left an edge shared with
+        // another plot unlabelled to avoid clutter; each lot's label sits on
+        // its OWN side of the edge (offset toward its own centroid below),
+        // so the two labels of a shared edge land on opposite sides of it.
         const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
         const dE = b.east - a.east, dN = b.north - a.north;
         const segLen = Math.hypot(dE, dN) || 1;
