@@ -292,7 +292,19 @@ export function SurveyRecord() {
   const coordListSituate = tribalArea ? `Situate in ${tribalArea}` : "";
   const coordSysShort = config.coordinateSystem.replace(" Botswana", "").replace(/(\d+)/, "$1°");
   const coordListSubtitle = `Coordinate List of ${coordSysShort} (Metres)`;
-  const coordListRows = importResult?.rows ?? [];
+  // Default marker descriptions per point type (client req 2026-09-21:
+  // Reference Marks "12mm iron peg in concrete"; Working Station and Beacons
+  // "12mm iron peg" — "user will edit on them if they have to"). Applied only
+  // to rows whose description was never set, so an edit — including clearing
+  // the box on purpose — always wins; the exported text uses the same rows.
+  const DEFAULT_POINT_DESCRIPTION: Partial<Record<PointType, string>> = {
+    ref: "12mm iron peg in concrete",
+    wp: "12mm iron peg",
+    beacon: "12mm iron peg",
+  };
+  const coordListRows = (importResult?.rows ?? []).map((r) =>
+    r.description == null ? { ...r, description: DEFAULT_POINT_DESCRIPTION[r.pointType ?? "beacon"] } : r
+  );
   // Sort beacons ascending/descending by name within each of the 4 sections
   // (client req 2026-08-26, Part 31c) — "none" leaves rows in their
   // original import order, matching the report's prior (unsorted) behaviour.

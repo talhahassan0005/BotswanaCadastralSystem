@@ -50,7 +50,7 @@ const AUTO_DETECT_LOTS_DISABLED = true;
 // tools — click one feature to inspect (with inline rename for points) or
 // immediately delete it, without building up a multi-select first.
 type DraftTool =
-  | "select" | "select-box" | "select-lasso" | "zoom-window" | "addpoint" | "move"
+  | "select" | "select-box" | "select-lasso" | "zoom-window" | "pan" | "addpoint" | "move"
   | "line" | "polyline" | "curve" | "polygon" | "offset"
   | "query-point" | "query-line" | "query-parcel" | "delete-line" | "delete-parcel";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
@@ -2265,7 +2265,9 @@ export function CogoWorkspace({
     const wasClick = !!pan.current && pan.current.moved < CLICK_SLOP_PX;
     if (wasClick) {
       const [vbx, vby] = eventToVb(ev);
-      if (diagramPicking) {
+      if (draftTool === "pan") {
+        // Pan tool: a click without a drag does nothing.
+      } else if (diagramPicking) {
         // "Diagram" action (7d): the next canvas click picks which specific
         // plot/polygon to generate a diagram for.
         diagramPickAt(vbx, vby, vbx, vby);
@@ -2696,6 +2698,16 @@ export function CogoWorkspace({
             <DraftButton label="Zoom in" onClick={() => zoomBy(1.25)} icon={iconZoomIn} />
             <DraftButton label="Zoom out" onClick={() => zoomBy(1 / 1.25)} icon={iconZoomOut} />
             <DraftButton label="Zoom to extents (fit all)" onClick={zoomExtents} icon={iconZoomExtents} />
+            {/* Pan tool (client req 2026-09-21: "add pad tool at COGO" — pad
+                read as pan): left-drag moves the view, clicks do nothing,
+                unlike Select where a click also picks something. Middle/
+                right-button drag panning still works with any tool. */}
+            <DraftButton
+              active={draftTool === "pan"}
+              label="Pan — drag the canvas to move the view"
+              onClick={() => activateDrawTool("pan")}
+              icon={iconPan}
+            />
             <DraftButton
               active={draftTool === "zoom-window"}
               label="Zoom Window — drag a rectangle to zoom to exactly that area"
@@ -2967,6 +2979,8 @@ export function CogoWorkspace({
                   ? "crosshair"
                   : pan.current
                   ? "grabbing"
+                  : draftTool === "pan"
+                  ? "grab"
                   : "default",
             }}
             onPointerDown={onPointerDown}
@@ -3261,12 +3275,19 @@ export function CogoWorkspace({
             {polOpen && polFrom && polLivePreview.map((p, i) => {
               const [x, y] = toScreen(p.east, p.north);
               const prev = i === 0 ? polFrom! : polLivePreview[i - 1];
+              const [px, py] = toScreen(prev.east, prev.north);
+              const mx = (px + x) / 2, my = (py + y) / 2;
               const angle = segLabelAngle(prev, p);
+              // The point's name stays at the point; the segment's distance
+              // sits on top of the LINE, at its midpoint (client req
+              // 2026-09-21: "the distance text should be on top of the line
+              // not point").
               return (
                 <g key={`polrow-${i}`}>
                   <circle cx={x} cy={y} r={4} fill="none" stroke="#c2410c" strokeWidth={1.6} />
-                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${x} ${y - 8})`}>
-                    {p.name} {p.segDist.toFixed(3)}m
+                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle">{p.name}</text>
+                  <text x={mx} y={my - 6} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${mx} ${my - 6})`}>
+                    {p.segDist.toFixed(3)}m
                   </text>
                 </g>
               );
@@ -3277,12 +3298,14 @@ export function CogoWorkspace({
               const last = polLivePreview.length ? polLivePreview[polLivePreview.length - 1] : polFrom;
               const [lx, ly] = toScreen(last.east, last.north);
               const angle = segLabelAngle(last, p);
+              const mx = (lx + x) / 2, my = (ly + y) / 2;
               return (
                 <g>
                   <line x1={lx} y1={ly} x2={x} y2={y} stroke="#c2410c" strokeWidth={1.4} strokeDasharray="5 4" opacity={0.85} />
                   <circle cx={x} cy={y} r={4} fill="none" stroke="#c2410c" strokeWidth={1.4} strokeDasharray="2 2" />
-                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${x} ${y - 8})`}>
-                    {p.name} {p.segDist.toFixed(3)}m
+                  <text x={x} y={y - 8} fontSize={10} fill="#c2410c" textAnchor="middle">{p.name}</text>
+                  <text x={mx} y={my - 6} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${mx} ${my - 6})`}>
+                    {p.segDist.toFixed(3)}m
                   </text>
                 </g>
               );
@@ -3775,6 +3798,8 @@ export function CogoWorkspace({
                 ? "Drag a freehand outline to select every point inside it"
                 : draftTool === "zoom-window"
                 ? "Drag a rectangle — the view zooms to fit exactly that area"
+                : draftTool === "pan"
+                ? "Drag to pan the view"
                 : draftTool === "query-point"
                 ? "Click a point for its details"
                 : draftTool === "query-line"
@@ -4106,6 +4131,14 @@ function iconZoomOut(c: string) {
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="M15.5 15.5L21 21" strokeLinecap="round" />
       <path d="M7.5 10.5h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function iconPan(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M12 3v18M3 12h18" strokeLinecap="round" />
+      <path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
