@@ -1173,28 +1173,34 @@ export function GeneralPlanView() {
   //
   // The polygon ticked "Main figure" in the Cadastral tab's Polygon
   // Attributes dialog takes priority over both (client req 2026-09-21: "The
-  // information from mainfigure is the one that should appear here") — its
-  // lot number (polygonMeta.position) names the saved plot whose ring,
-  // sides and area feed this table. No polygon ticked = unchanged.
-  const mainFigureNumber = useMemo(() => {
+  // information from mainfigure is the one that should appear here", then
+  // "where is that table" when it didn't show) — its ring is read straight
+  // from the workspace polygon that carries the tick, not looked up through
+  // a saved plot number: that lookup silently found nothing whenever the
+  // polygon had no lot number or its plot hadn't been saved, and with no
+  // ring the whole table is skipped. Reading the live polygon also keeps
+  // the table in step with later edits to it. No polygon ticked = unchanged.
+  const mainFigureRing = useMemo(() => {
     const doc = (cogoWorkspaceDoc ?? {}) as {
-      polygons?: { id: string }[];
+      polygons?: { id: string; points: { name?: string | null; east: number; north: number }[] }[];
       polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }>;
     };
     for (const pg of doc.polygons ?? []) {
-      const m = doc.polygonMeta?.[pg.id];
-      if (m?.mainFigure && m.position?.trim()) return m.position.trim();
+      if (doc.polygonMeta?.[pg.id]?.mainFigure && pg.points.length >= 3) {
+        return dropClosingDuplicate(pg.points as { name: string | null; east: number; north: number }[]).map((pt) => ({ name: pt.name, east: pt.east, north: pt.north }));
+      }
     }
     return null;
   }, [cogoWorkspaceDoc]);
   const outerBoundary = useMemo(() => {
-    for (const trimmed of [mainFigureNumber, meta.parentPlotNumber.trim()]) {
-      if (!trimmed) continue;
+    if (mainFigureRing) return mainFigureRing;
+    const trimmed = meta.parentPlotNumber.trim();
+    if (trimmed) {
       const parent = cogoPlots.find((p) => p.number.trim() === trimmed);
       if (parent) return dropClosingDuplicate(parent.fig.points).map((pt) => ({ name: pt.name, east: pt.east, north: pt.north }));
     }
     return findOuterBoundary(gpPlots);
-  }, [gpPlots, cogoPlots, meta.parentPlotNumber, mainFigureNumber]);
+  }, [gpPlots, cogoPlots, meta.parentPlotNumber, mainFigureRing]);
   const outerSides = useMemo(
     () =>
       outerBoundary.map((p, i) => {
