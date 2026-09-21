@@ -17,7 +17,7 @@ import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
  * LOTS 37455-37458 all drawn on one sheet).
  */
 export function WorkingPlanView() {
-  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput, importResult, cogoPlots } = useStore();
+  const { cogoResult, diagramFigure, config, setActiveTab, workingPlanInput, setWorkingPlanInput, diagramInput, importResult, cogoPlots, generalPlanInput, cogoWorkspaceDoc } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
   // Falls back to the raw COGO canvas traverse only when there are no
   // numbered plots to pick from at all (client req 2026-08-31: opening
@@ -219,12 +219,47 @@ export function WorkingPlanView() {
   const diagramAnnotations =
     (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
   const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
+  // Values that come from the General Plan information (client req
+  // 2026-09-21: "That should come frm gp information" beside Tribal
+  // territory / area and Coordinate system, and "Parent plot number should
+  // also appear here" on the "PORTIONS OF LOT" line) instead of being
+  // retyped here:
+  // - tribal area: the GP's "Tribal area" (its title reads "...IN THE
+  //   GHANZI TRIBAL AREA"), written the way this sheet's own line reads,
+  //   e.g. "GHANZI TRIBAL TERRITORY";
+  // - coordinate system: the project's, which is what the GP prints — read
+  //   live rather than frozen at the value it had when this tab first opened;
+  // - parent lot: the GP's Main Figure pick, else the Cadastral polygon
+  //   ticked "Main figure", else the GP's "Portions of Lot" — only when this
+  //   sheet's own parent-lot field is left blank, so a number typed here
+  //   still wins.
+  const gp = (generalPlanInput ?? {}) as { tribalArea?: string; parentPlotNumber?: string; parentLotNumber?: string };
+  const gpTribalRaw = (gp.tribalArea ?? "").trim();
+  const gpTribalArea = gpTribalRaw
+    ? /tribal/i.test(gpTribalRaw) ? gpTribalRaw.toUpperCase() : `${gpTribalRaw.toUpperCase()} TRIBAL TERRITORY`
+    : "";
+  const tickedMainFigureNumber = (() => {
+    const doc = (cogoWorkspaceDoc ?? {}) as {
+      polygons?: { id: string }[];
+      polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }>;
+    };
+    for (const pg of doc.polygons ?? []) {
+      const m = doc.polygonMeta?.[pg.id];
+      if (m?.mainFigure && m.position?.trim()) return m.position.trim();
+    }
+    return "";
+  })();
+  const gpParentLot = (gp.parentPlotNumber ?? "").trim() || tickedMainFigureNumber || (gp.parentLotNumber ?? "").trim();
+  const gpCoordinateSystem = config.coordinateSystem.replace(" Botswana", "");
   const effectiveMeta: WorkingPlanMeta = {
     ...meta,
     surveyor: config.surveyor || meta.surveyor || "",
     placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
     lotName: diagramLotName || meta.lotName,
     parent: diagramParent || meta.parent,
+    tribalArea: gpTribalArea || meta.tribalArea,
+    coordinateSystem: gpCoordinateSystem || meta.coordinateSystem,
+    parentLotNumber: (meta.parentLotNumber ?? "").trim() || gpParentLot,
   };
   const set = (k: keyof WorkingPlanMeta) => (v: string) =>
     setMeta((m) => ({ ...m, [k]: k === "scale" ? Number(v) || 0 : v }));
@@ -640,11 +675,15 @@ export function WorkingPlanView() {
             now squeezed into the same narrow sidebar). */}
         <div className="grid grid-cols-1 gap-3">
           <Field label="Lot / parcel name (auto from Diagram if set)"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
-          <Field label="Tribal territory / area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>
+          <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
+            <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
+          </Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
           <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
           <Field label="Checked from"><Input value={meta.checkedFrom} onChange={set("checkedFrom")} /></Field>
-          <Field label="Coordinate system"><Input value={meta.coordinateSystem} onChange={set("coordinateSystem")} /></Field>
+          <Field label={gpCoordinateSystem ? "Coordinate system (from General Plan)" : "Coordinate system"}>
+            <Input value={effectiveMeta.coordinateSystem} onChange={set("coordinateSystem")} readOnly={!!gpCoordinateSystem} />
+          </Field>
           <Field label="Reference marks"><Input value={meta.referenceMarkDescription} onChange={set("referenceMarkDescription")} /></Field>
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
           <Field label="Placed beacons (auto from Diagram if set)"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
@@ -704,7 +743,7 @@ export function WorkingPlanView() {
             {plotNumbers.length > 0 && (
               <div className="mt-3 grid grid-cols-1 gap-3">
                 <Field label='Parent lot number (for "PORTIONS OF LOT")'>
-                  <Input value={meta.parentLotNumber ?? ""} onChange={set("parentLotNumber")} placeholder="e.g. 37454" />
+                  <Input value={effectiveMeta.parentLotNumber ?? ""} onChange={set("parentLotNumber")} placeholder="e.g. 37454" />
                 </Field>
                 <Field label="Locality"><Input value={meta.locality ?? ""} onChange={set("locality")} placeholder="e.g. GABORONE" /></Field>
               </div>

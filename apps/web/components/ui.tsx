@@ -130,6 +130,7 @@ export function Input({
   onFocus,
   onBlur,
   onKeyDown,
+  readOnly,
 }: {
   value: string | number;
   onChange: (v: string) => void;
@@ -138,6 +139,8 @@ export function Input({
   onFocus?: () => void;
   onBlur?: () => void;
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  /** Shown but not editable (greyed) — for a value that comes from somewhere else. */
+  readOnly?: boolean;
 }) {
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
@@ -152,9 +155,10 @@ export function Input({
         onBlur={onBlur}
         onKeyDown={onKeyDown}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${
-          isPassword ? "pr-10" : ""
-        }`}
+        readOnly={readOnly}
+        className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${
+          readOnly ? "bg-slate-50 text-slate-500" : "bg-white"
+        } ${isPassword ? "pr-10" : ""}`}
       />
       {isPassword && (
         <button
