@@ -24,7 +24,7 @@ import * as curveMath from "@/lib/cogoTools/curveTools";
 import * as lineMath from "@/lib/cogoTools/lineTools";
 import type { ToolDef, ToolResult, WArc, WLine, WPoint, WPolygon, WText } from "@/lib/cogoTools/types";
 
-const W = 720;
+const DEFAULT_W = 720;
 const H = 460;
 const CLICK_SLOP_PX = 4; // pointerdown→up movement under this = a click, not a pan
 // Client req 2026-09-03: "de activate Auto calculation of the polygons for
@@ -108,6 +108,29 @@ export function CogoWorkspace({
   // of a wall of icons (client req 2026-08-16).
   const [activeGroup, setActiveGroup] = useState<ToolGroupId>("point");
   const svgRef = useRef<SVGSVGElement>(null);
+  const canvasBoxRef = useRef<HTMLDivElement>(null);
+  // Logical canvas width now follows the box's REAL on-screen aspect ratio
+  // (client req 2026-09-22: "diagram ke left ur right per space ku ah rahi
+  // hai" — a wide monitor left blank margins on both sides, since the
+  // canvas used to be a fixed 720:460 shape regardless of how wide its
+  // actual box was). H stays a fixed logical height; W is derived so the
+  // SVG's viewBox always matches the box's true width:height ratio, so it
+  // fills the box exactly with no letterboxing, in either direction — not
+  // a scale/stretch, so nothing already drawn distorts, it's the same
+  // "show more world" a wider window already gives you vertically.
+  const [W, setW] = useState(DEFAULT_W);
+  useEffect(() => {
+    const el = canvasBoxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box && box.width > 0 && box.height > 0) {
+        setW(Math.max(200, Math.round((box.width / box.height) * H)));
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
   const [autoDetectStart, setAutoDetectStart] = useState("");
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
@@ -2919,13 +2942,15 @@ export function CogoWorkspace({
               box has its own bounded height and scrollbar instead of the
               whole column scrolling. */}
           <div className="lg:max-h-[calc(100vh-330px)] lg:overflow-y-auto">
-          <div className="flex items-stretch lg:justify-center">
-          {/* max-w caps the canvas at the largest 720:460 box that still fits
-              the scroll box's height, so it never needs the native vertical
-              scrollbar (which ignored zoom); the wrapper's own left/right
-              % positioning of popups stays correct because this element
-              IS the svg's width. */}
-          <div className="relative min-w-0 flex-1 lg:max-w-[calc((100vh_-_330px)*1.5652)]">
+          <div className="flex items-stretch">
+          {/* Fills the full row width (client req 2026-09-22, see the W
+              state above) instead of being capped to a fixed-aspect box —
+              a fixed lg:h keeps it within the scroll region's own bounded
+              height (so it never needs the native vertical scrollbar,
+              which ignored zoom) while ResizeObserver reads its actual
+              rendered size. The wrapper's own left/right % positioning of
+              popups stays correct because this element IS the svg's box. */}
+          <div ref={canvasBoxRef} className="relative min-w-0 flex-1 lg:h-[calc(100vh-330px)]">
           {scrollExtent && (() => {
             const spanX = scrollExtent.x1 - scrollExtent.x0, spanY = scrollExtent.y1 - scrollExtent.y0;
             const showH = spanX > W * 1.001, showV = spanY > H * 1.001;
@@ -2965,7 +2990,7 @@ export function CogoWorkspace({
           <svg
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
-            className="w-full touch-none bg-slate-50"
+            className="w-full lg:h-full touch-none bg-slate-50"
             style={{
               cursor:
                 // Middle-button pan (Part 36) overrides every other tool's
@@ -4137,10 +4162,14 @@ function iconZoomOut(c: string) {
   );
 }
 function iconPan(c: string) {
+  // A real open-hand glyph, not the crosshair-arrows shape (client req
+  // 2026-09-22: the first version looked the same as the existing Move
+  // tool's own icon two spots to its left, so the new button wasn't
+  // noticeable as a distinct tool) — same hand path General Plan's own Pan
+  // button already uses, for the same tool concept.
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
-      <path d="M12 3v18M3 12h18" strokeLinecap="round" />
-      <path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 16 16" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.3">
+      <path d="M5.5 6V2.75a1 1 0 0 1 2 0V6m0-.5V1.75a1 1 0 0 1 2 0V6m0-.25V2.75a1 1 0 0 1 2 0V8m0 0V6.75a1 1 0 0 1 2 0v4.75a4 4 0 0 1-4 4h-2a4.5 4.5 0 0 1-3.5-1.9L2 9.8a1.1 1.1 0 0 1 1.7-1.4L5.5 10" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
