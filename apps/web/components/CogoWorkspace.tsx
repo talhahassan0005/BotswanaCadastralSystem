@@ -573,6 +573,15 @@ export function CogoWorkspace({
     if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom)) setView({ cx, cy, zoom });
   }
 
+  // Remembers the zoom level frameOn most recently picked for the current
+  // dataset (client req 2026-09-23: "the more i zoom, the more they become
+  // too small" — point markers/labels below were a fixed size regardless
+  // of zoom, so zooming IN — meant to make a crowded area easier to read —
+  // made them look relatively smaller against the now-larger gaps between
+  // points, not bigger). That auto-fit zoom is the reference "1x" size for
+  // this project's own density tier; zooming further in/out from there
+  // scales markers/labels proportionally, same as CAD viewers do.
+  const baselineZoomRef = useRef(1);
   function frameOn(pts: WPoint[]) {
     if (!pts.length) return;
     const es = pts.map((p) => p.east), ns = pts.map((p) => p.north);
@@ -580,7 +589,10 @@ export function CogoWorkspace({
     const cy = (Math.min(...ns) + Math.max(...ns)) / 2;
     const span = Math.max(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns), 1);
     const zoom = (Math.min(W, H) * 0.7) / span;
-    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) setView({ cx, cy, zoom });
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(zoom) && zoom > 0) {
+      setView({ cx, cy, zoom });
+      baselineZoomRef.current = zoom;
+    }
   }
 
   function addToolResult(result: ToolResult): { pointIds: string[]; lineIds: string[]; polygonIds: string[] } {
@@ -3111,7 +3123,17 @@ export function CogoWorkspace({
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
-                const r = visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2;
+                // Density tier is the size AT the auto-fit zoom level
+                // (baselineZoomRef); scaling by how far the current zoom has
+                // moved from that baseline (client req 2026-09-23, see
+                // frameOn's own comment) makes zooming in actually grow
+                // these instead of leaving them a fixed, increasingly-tiny
+                // size relative to the now-larger gaps between points.
+                // Floored, not capped — there's naturally less on screen to
+                // compete with at high zoom, so unbounded growth there is
+                // fine (matches every other zoom-scaled label in this app).
+                const zoomRatio = baselineZoomRef.current > 0 ? Math.max(0.3, view.zoom / baselineZoomRef.current) : 1;
+                const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * zoomRatio;
                 // Point-name labels never shrank with density the way the dot
                 // radius above already does (client req 2026-09-01: "cadastral
                 // per mess show ho raha hai jese... genral plan per... wasey ku
@@ -3121,8 +3143,8 @@ export function CogoWorkspace({
                 // solved with their own density tiers). "Show/hide point names"
                 // still fully turns these off when even the smallest tier is
                 // too much for a given project.
-                const nameFS = visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11;
-                const nameOff = visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7;
+                const nameFS = (visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11) * zoomRatio;
+                const nameOff = (visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7) * zoomRatio;
                 return (
                   <g key={p.id}>
                     <circle
