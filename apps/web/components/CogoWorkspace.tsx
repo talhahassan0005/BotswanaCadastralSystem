@@ -2812,13 +2812,13 @@ export function CogoWorkspace({
 
           {/* Tab bar — pick a category to see just its icons, instead of every
               category's row stacked on screen at once (client req 2026-08-16). */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-2 py-1">
+          <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-white px-2 py-0.5">
             {TOOL_GROUPS.map((g) => (
               <button
                 key={g.id}
                 type="button"
                 onClick={() => setActiveGroup(g.id)}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition ${
+                className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition ${
                   activeGroup === g.id ? "bg-brand text-white" : "text-slate-500 hover:bg-slate-100"
                 }`}
               >
@@ -4068,10 +4068,14 @@ export function CogoWorkspace({
  *  CogoDrawingToolbar's registry-driven rows, so a dense toolbar reads as
  *  named groups instead of one unbroken run of icons (client req 2026-08-14). */
 function ToolGroup({ label, children }: { label: string; children: ReactNode }) {
+  // Tightened (client req 2026-09-23: "i think we used too much space
+  // there.. reduce" — the fixed tool rows at the top were eating a lot of
+  // the canvas's own vertical room) — same rows, same buttons, just less
+  // padding around them.
   return (
     <div className="border-b border-slate-200 bg-slate-50">
-      <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5">{children}</div>
+      <div className="px-2 pt-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="flex flex-wrap items-center gap-0.5 px-2 pb-1">{children}</div>
     </div>
   );
 }
@@ -4096,7 +4100,7 @@ function DraftButton({
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={`grid h-9 w-9 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-30 ${
+      className={`grid h-7 w-7 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-30 ${
         active ? "bg-brand text-white" : "text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
       }`}
     >

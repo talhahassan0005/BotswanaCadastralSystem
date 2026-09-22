@@ -30,8 +30,11 @@ export function CogoDrawingToolbar({
 }) {
   const tools = TOOL_REGISTRY.filter((t) => t.category === category);
 
+  // Tightened (client req 2026-09-23: "i think we used too much space
+  // there.. reduce" — same buttons, less padding around them, matching
+  // CogoWorkspace.tsx's own ToolGroup/DraftButton tightening).
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-slate-50 px-2 py-1">
       {tools.map((t) => (
         <button
           key={t.id}
@@ -39,7 +42,7 @@ export function CogoDrawingToolbar({
           onClick={() => (interceptIds?.[t.id] ? interceptIds[t.id]() : onOpenTool(t))}
           title={t.label}
           aria-label={t.label}
-          className={`grid h-9 w-9 place-items-center rounded-md transition ${
+          className={`grid h-7 w-7 place-items-center rounded-md transition ${
             activeId === t.id ? "bg-brand text-white" : "text-slate-600 hover:bg-white hover:text-brand-dark hover:shadow-sm"
           }`}
         >
