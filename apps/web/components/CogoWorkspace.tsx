@@ -189,6 +189,15 @@ export function CogoWorkspace({
   const [showPointNames, setShowPointNames] = useState(true);
   const [showSegLabels, setShowSegLabels] = useState(true);
   const [showParcelNumbers, setShowParcelNumbers] = useState(true);
+  // Manual size control for the point/beacon circle + its name label
+  // (client req 2026-09-23: an earlier round tried scaling these
+  // automatically with zoom, which fell apart on real dense data — labels
+  // grew huge and piled on top of each other instead of getting clearer.
+  // Reverted that; this is the safer version — "leave the previous sizes
+  // and add an option to change size" — a plain multiplier the user drives
+  // by hand, on top of the existing density tier, never automatic). 1 =
+  // today's default size, exactly as it always was.
+  const [pointDisplayScale, setPointDisplayScale] = useState(1);
   // ---- Query tools (Part 15b-d) — info panel for whatever was last clicked
   // with the matching query tool active; pointQueryName is the editable
   // draft for the point panel's inline rename. ----
@@ -2796,6 +2805,30 @@ export function CogoWorkspace({
               onClick={() => setShowPointNames((s) => !s)}
               icon={iconTogglePointNames}
             />
+            {/* Manual point/beacon circle + name size (client req
+                2026-09-23: "leave the previous sizes and add an option to
+                change size of block corner circles and Block corner name"
+                — a plain user-driven control instead of the earlier
+                automatic zoom-scaling, which broke badly on dense data). */}
+            <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1" title="Point circle + name size">
+              <button
+                type="button"
+                onClick={() => setPointDisplayScale((s) => Math.max(0.4, +(s - 0.2).toFixed(1)))}
+                className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
+                aria-label="Smaller point circle/name"
+              >
+                −
+              </button>
+              <span className="w-8 text-center text-[10px] text-slate-500">{Math.round(pointDisplayScale * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => setPointDisplayScale((s) => Math.min(3, +(s + 0.2).toFixed(1)))}
+                className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
+                aria-label="Bigger point circle/name"
+              >
+                +
+              </button>
+            </div>
             <DraftButton
               active={showSegLabels}
               label="Show/hide distance-direction labels"
@@ -3111,7 +3144,7 @@ export function CogoWorkspace({
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
-                const r = visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2;
+                const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * pointDisplayScale;
                 // Point-name labels never shrank with density the way the dot
                 // radius above already does (client req 2026-09-01: "cadastral
                 // per mess show ho raha hai jese... genral plan per... wasey ku
@@ -3121,8 +3154,8 @@ export function CogoWorkspace({
                 // solved with their own density tiers). "Show/hide point names"
                 // still fully turns these off when even the smallest tier is
                 // too much for a given project.
-                const nameFS = visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11;
-                const nameOff = visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7;
+                const nameFS = (visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11) * pointDisplayScale;
+                const nameOff = (visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7) * pointDisplayScale;
                 return (
                   <g key={p.id}>
                     <circle
