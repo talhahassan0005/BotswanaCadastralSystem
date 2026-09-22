@@ -3250,24 +3250,26 @@ export function CogoWorkspace({
             {polOpen && polFrom && polTo && polDirDist && (() => {
               const [x1, y1] = toScreen(polFrom.east, polFrom.north);
               const [x2, y2] = toScreen(polTo.east, polTo.north);
-              const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
-              const angle = segLabelAngle(polFrom, polTo);
-              const [brg] = polDirDist;
-              // The line under the bearing shows the REMAINING distance, not
-              // the whole line's (client req 2026-09-21: "no need to show
-              // total distance there because it is appearing at the top
-              // right", then, pointing at this label, "this should
-              // remaining distance") — same number as the panel's Residual,
-              // so it counts down as points are added. Blank until a point
-              // is queued: before that the remainder IS the whole line,
-              // which the panel's Distance field already shows.
-              const showRemaining = polLivePreview.length > 0 && polResidual != null && polResidual > 0.0005;
+              // No bearing label (client req 2026-09-21: "also remove the
+              // bearing"). The remaining-distance label sits on the
+              // REMAINING stretch itself — between the last queued point
+              // (or From, if none queued yet) and To — not fixed at the
+              // full line's own midpoint ("the remaining distance label
+              // should not be permanently placed where you have placed it.
+              // it should always change its location based on the
+              // remaining distance", pointing at where the last queued
+              // point's own segment ends). Blank once there's nothing left
+              // to place (residual ~0).
+              const last = polLivePreview.length ? polLivePreview[polLivePreview.length - 1] : polFrom;
+              const [lx, ly] = toScreen(last.east, last.north);
+              const remMidX = (lx + x2) / 2, remMidY = (ly + y2) / 2;
+              const remAngle = segLabelAngle(last, polTo);
+              const showRemaining = polResidual != null && polResidual > 0.0005;
               return (
                 <>
                   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c2410c" strokeWidth={1} strokeDasharray="3 5" opacity={0.5} />
-                  <text x={midX} y={midY - 10} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY - 10})`}>{formatDms(brg)}</text>
                   {showRemaining && (
-                    <text x={midX} y={midY + 3} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${angle} ${midX} ${midY + 3})`}>{polResidual!.toFixed(3)}m</text>
+                    <text x={remMidX} y={remMidY - 8} fontSize={10} fill="#c2410c" textAnchor="middle" transform={`rotate(${remAngle} ${remMidX} ${remMidY - 8})`}>{polResidual!.toFixed(3)}m</text>
                   )}
                 </>
               );
