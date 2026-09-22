@@ -283,6 +283,32 @@ export function SurveyRecord() {
     const lines = ["Consistency Report", "", lotName, "", ...consistencyLines, areaLine];
     downloadText(`${lotName.replace(/\s+/g, "_")}_consistency_report.txt`, lines.join("\n"), "text/plain");
   }
+  // "This plot's own leg consistency" only ever showed the one plot picked
+  // via "Plot to check" (client req 2026-09-23: "consistency is this. i
+  // want to see for all the plots" — pointing at that single-plot report,
+  // not the separate cross-plot table above it). Same buildConsistencyLines
+  // per plot, just run for every saved plot instead of one queried at a
+  // time; a plot with too few points/legs for a leg-by-leg check (same
+  // >=3/>=3 guard as the single-plot version) is skipped rather than shown
+  // empty.
+  const [showAllOwnConsistency, setShowAllOwnConsistency] = useState(false);
+  const allOwnConsistency = useMemo(
+    () =>
+      cogoPlots
+        .map((p) => ({
+          number: p.number,
+          lines: p.fig.points.length >= 3 && p.fig.legs.length >= 3 ? buildConsistencyLines(p.fig.points, p.fig.legs) : null,
+          areaM2: p.fig.area_m2,
+        }))
+        .filter((r) => r.lines),
+    [cogoPlots]
+  );
+  function downloadAllOwnConsistency() {
+    const blocks = allOwnConsistency.map((r) =>
+      ["Consistency Report", "", r.number, "", ...r.lines!, `The area is ${r.areaM2.toFixed(2)} square metres.`].join("\n")
+    );
+    downloadText("all_plots_consistency_report.txt", blocks.join("\n\n"), "text/plain");
+  }
 
   // --- Coordinate List (Part 31b) ---
   // Lot reference and tribal area now come from the same shared fields as
@@ -589,6 +615,45 @@ export function SurveyRecord() {
                       : `The area is ${fig.area_m2.toFixed(2)} square metres.`}
                   </pre>
                   <Button variant="ghost" onClick={downloadConsistency}>⬇ Download as .txt</Button>
+                </div>
+              )}
+
+              {/* All plots' own leg consistency (client req 2026-09-23) —
+                  same report as above, run for every saved plot at once
+                  instead of one queried at a time. */}
+              {cogoPlots.length > 0 && (
+                <div className="space-y-3 border-t border-slate-200 pt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-sm font-bold text-slate-800">Every plot&apos;s own leg consistency</h2>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" onClick={() => setShowAllOwnConsistency((v) => !v)}>
+                        {showAllOwnConsistency ? "Hide" : `Show for all ${cogoPlots.length} plots`}
+                      </Button>
+                      {showAllOwnConsistency && (
+                        <Button variant="ghost" onClick={downloadAllOwnConsistency} disabled={!allOwnConsistency.length}>⬇ Download as .txt</Button>
+                      )}
+                    </div>
+                  </div>
+                  {showAllOwnConsistency && (
+                    allOwnConsistency.length === 0 ? (
+                      <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                        None of the {cogoPlots.length} saved plot(s) have at least 3 points and 3 legs to check.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {allOwnConsistency.map((r) => (
+                          <div key={r.number}>
+                            <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plot {r.number}</h3>
+                            <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
+                              {["Consistency Report", "", r.number, "", ...r.lines!].join("\n")}
+                              {"\n"}
+                              {`The area is ${r.areaM2.toFixed(2)} square metres.`}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
                 </div>
               )}
             </div>
