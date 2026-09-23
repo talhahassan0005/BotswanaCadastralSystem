@@ -255,7 +255,16 @@ export function CogoWorkspace({
   // Just Lot Number + (read-only) Area — the "ID / Erf" field was dropped
   // per client req 2026-08-24 ("I think we don't need that part, lets just
   // use Lot Number").
-  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string; position: string; area: string; mainFigure: boolean } | null>(null);
+  // `id: null` means this dialog is for a polygon that hasn't been added
+  // to the canvas yet (client req 2026-09-24: "if i dont press ok or if i
+  // cancel, the system should not add a polygon") — see pendingPolygonPts.
+  const [polygonAttrDialog, setPolygonAttrDialog] = useState<{ id: string | null; position: string; area: string; mainFigure: boolean } | null>(null);
+  // The just-drawn (but not yet committed) polygon's vertices, held here
+  // while its attributes dialog is open. savePolygonAttrs() is what
+  // actually adds it to the canvas (on OK); closePolygonAttrs() (Cancel/
+  // backdrop/Escape) discards it — including any brand-new points this
+  // draft created, the same cleanup cancelDraft() already does mid-draw.
+  const [pendingPolygonPts, setPendingPolygonPts] = useState<DraftPt[] | null>(null);
   // ---- bottom-docked command bar for numeric-input tools (Part 5) ----
   const [formTool, setFormTool] = useState<ToolDef | null>(null);
   const commandBarRef = useRef<CogoCommandBarHandle>(null);
@@ -822,47 +831,92 @@ export function CogoWorkspace({
     setTableAnchor(null);
     setSelected(null);
   }
-  function openPolygonAttrs(id: string, knownPoints?: { east: number; north: number }[]) {
-    // `knownPoints`, when given, lets a caller open this dialog for a
-    // polygon it JUST created in the same synchronous handler — `polygons`
-    // state hasn't re-rendered yet at that point, so looking the id up in
-    // it here would still see the old array and silently no-op.
-    const poly = knownPoints ? { points: knownPoints } : polygons.find((p) => p.id === id);
+  /** Opens the attributes dialog for an EXISTING, already-saved polygon
+   *  (Points/Lines/Polygons table's own "edit attributes" action) — unlike
+   *  finishDraftWith's use of this same dialog for a just-drawn polygon,
+   *  pendingPolygonPts stays null here, so Cancel on this dialog just
+   *  closes it (closePolygonAttrs only deletes something when
+   *  pendingPolygonPts is set) and never touches this already-real polygon. */
+  function openPolygonAttrs(id: string) {
+    const poly = polygons.find((p) => p.id === id);
     if (!poly) return;
     const m = polygonMeta[id] ?? {};
     const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
-    // Pre-fill Position with the auto-incremented next plot number (same
-    // suggestion the Traverse panel's Calculate dialog uses, Part 16c) when
-    // this polygon doesn't already have one — so a freshly-drawn/closed
-    // polygon always opens with a sensible number ready to accept or edit,
-    // instead of a blank field.
     const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
     setPolygonAttrDialog({ id, position: m.position ?? suggested, area: formatArea(areaM2), mainFigure: !!m.mainFigure });
   }
   function savePolygonAttrs() {
     if (!polygonAttrDialog) return;
     const { id, position, mainFigure } = polygonAttrDialog;
-    if (position.trim()) {
-      // Client req 2026-09-24, screenshot of a triangular "Lot 216" cut out
-      // of what should've been a 4-sided lot (an accidental diagonal line
-      // picked up as a boundary): "the system must reject this type of
-      // plot (Plot with 3 corners) and then ask the user if they want to
-      // accept it." A real cadastral lot is essentially never a triangle,
-      // so this is almost always a mis-click, not an intended shape —
-      // reject by default, only save if the user explicitly confirms.
-      const poly = polygons.find((p) => p.id === id);
-      if (poly && poly.points.length === 3) {
-        const ok = window.confirm(
-          `Lot ${position.trim()} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means an extra diagonal line got picked up by mistake.\n\nAccept it anyway?`
-        );
-        if (!ok) return; // leave the dialog open — nothing is saved/numbered
-      }
+    // Client req 2026-09-24, screenshot of a triangular "Lot 216" cut out
+    // of what should've been a 4-sided lot (an accidental diagonal line
+    // picked up as a boundary): "the system must reject this type of
+    // plot (Plot with 3 corners) and then ask the user if they want to
+    // accept it." A real cadastral lot is essentially never a triangle,
+    // so this is almost always a mis-click, not an intended shape —
+    // reject by default, only save if the user explicitly confirms.
+    const cornerCount = pendingPolygonPts ? pendingPolygonPts.length : polygons.find((p) => p.id === id)?.points.length;
+    if (position.trim() && cornerCount === 3) {
+      const ok = window.confirm(
+        `Lot ${position.trim()} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means an extra diagonal line got picked up by mistake.\n\nAccept it anyway?`
+      );
+      if (!ok) return; // leave the dialog (and, if pending, the draft) exactly as they are
     }
+    if (pendingPolygonPts) {
+      // A freshly click-drawn polygon isn't added to the canvas at all
+      // until OK is actually pressed, right here (client req 2026-09-24:
+      // "if i dont press ok or if i cancel, the system should not add a
+      // polygon") — Finish only opened this dialog and held the vertices
+      // in pendingPolygonPts; nothing has been committed to state yet.
+      const pts = pendingPolygonPts;
+      const segs: NonNullable<ToolResult["lines"]> = [];
+      const texts: NonNullable<ToolResult["texts"]> = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
+        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) });
+      }
+      const { polygonIds } = addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
+      const newId = polygonIds[0];
+      if (newId) {
+        setPolygonMeta((m) => ({ ...m, [newId]: { ...m[newId], position, mainFigure } }));
+        if (position.trim()) {
+          setLastPlotNumber(position.trim());
+          savePlotNumber(position, pts.map((p) => ({ name: p.name, east: p.east, north: p.north })));
+        }
+      }
+      setPendingPolygonPts(null);
+      setDraft([]);
+      setPolygonAttrDialog(null);
+      return;
+    }
+    // Editing an already-saved polygon's attributes (Points/Lines/Polygons
+    // table's "edit attributes" action, via openPolygonAttrs) — this
+    // polygon already existed before the dialog opened, so there's nothing
+    // to add here, just update its metadata.
+    if (!id) { setPolygonAttrDialog(null); return; }
     setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, mainFigure } }));
     if (position.trim()) {
       setLastPlotNumber(position.trim());
       const poly = polygons.find((p) => p.id === id);
       if (poly) savePlotNumber(position, poly.points);
+    }
+    setPolygonAttrDialog(null);
+  }
+  /** Cancel/backdrop/Escape on the Polygon Attributes dialog. If it was for
+   *  a not-yet-committed polygon (the normal case — see pendingPolygonPts),
+   *  this discards it entirely: nothing was ever added to the canvas, and
+   *  any brand-new points created while placing this polygon's vertices
+   *  (as opposed to ones that already existed) only exist because of this
+   *  now-abandoned attempt, so they're removed too (client req 2026-09-24:
+   *  "it should also cancel the joined points") — the same cleanup
+   *  cancelDraft() already does for a plain Escape mid-draw. */
+  function closePolygonAttrs() {
+    if (pendingPolygonPts) {
+      const newIds = new Set(pendingPolygonPts.filter((d) => d.newId).map((d) => d.newId!));
+      if (newIds.size) setExtra((e) => e.filter((p) => !newIds.has(p.id)));
+      setPendingPolygonPts(null);
+      setDraft([]);
     }
     setPolygonAttrDialog(null);
   }
@@ -1733,20 +1787,26 @@ export function CogoWorkspace({
       }
       addToolResult({ lines: segs, texts });
     } else if (draftTool === "polygon" && pts.length >= 3) {
-      const segs: NonNullable<ToolResult["lines"]> = [];
-      const texts: NonNullable<ToolResult["texts"]> = [];
-      for (let i = 0; i < pts.length; i++) {
-        const a = pts[i], b = pts[(i + 1) % pts.length];
-        segs.push({ aE: a.east, aN: a.north, bE: b.east, bN: b.north });
-        texts.push({ text: segLabel(a, b), east: (a.east + b.east) / 2, north: (a.north + b.north) / 2, size: 11, kind: "seglabel", angle: segLabelAngle(a, b) });
-      }
-      const { polygonIds } = addToolResult({ lines: segs, polygons: [{ points: pts.map((p) => ({ name: p.name, east: p.east, north: p.north })) }], texts });
       // Client req 2026-08-21: finishing a click-to-draw Polygon should ask
       // for the Lot/Erf number the same way the Traverse panel's Calculate
       // does (Part 16c) — reusing the existing Polygon Attributes dialog
       // (Part 9f) instead of a separate one, pre-filled with the
       // auto-incremented suggestion.
-      if (polygonIds[0]) openPolygonAttrs(polygonIds[0], pts);
+      //
+      // Client req 2026-09-24: "if i dont press ok or if i cancel, the
+      // system should not add a polygon" — nothing is committed to the
+      // canvas here anymore. The vertices are held in pendingPolygonPts;
+      // savePolygonAttrs() (OK) is what actually adds the polygon,
+      // closePolygonAttrs() (Cancel/backdrop/Escape) discards this attempt
+      // instead. `draft` is kept showing exactly these (deduped) vertices
+      // so the on-canvas outline and the Draw Polygon panel stay visible,
+      // unchanged, while the dialog is open.
+      const areaM2 = polygonArea(pts.map((p) => ({ east: p.east, north: p.north })));
+      const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
+      setDraft(pts);
+      setPendingPolygonPts(pts);
+      setPolygonAttrDialog({ id: null, position: suggested, area: formatArea(areaM2), mainFigure: false });
+      return; // skip the shared draft-reset below — see savePolygonAttrs/closePolygonAttrs
     } else if (draftTool === "curve" && pts.length >= 3) {
       // Click order: start, end, a point on the arc between them.
       try {
@@ -2613,6 +2673,7 @@ export function CogoWorkspace({
     setLassoPath(null);
   }
   function onDoubleClick() {
+    if (polygonAttrDialog) return; // its vertices are already held/pending — don't re-finish
     if (draftTool === "polyline" || draftTool === "polygon") finishDraft();
   }
   function onWheel(ev: RWheelEvent<SVGSVGElement>) {
@@ -2627,6 +2688,16 @@ export function CogoWorkspace({
   useEffect(() => {
     if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !splayOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
     function onKey(e: KeyboardEvent) {
+      // The Polygon Attributes dialog (client req 2026-09-24) holds the
+      // just-finished polygon's vertices in `draft`/pendingPolygonPts
+      // without committing them — while it's open, Escape/Enter/Ctrl+Z must
+      // go to the dialog's own Cancel/OK, not to the canvas draw-tool
+      // shortcuts below (which would otherwise silently cancel or re-finish
+      // the same draft out from under the open dialog).
+      if (polygonAttrDialog) {
+        if (e.key === "Escape") { e.preventDefault(); closePolygonAttrs(); }
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         if (gripDrag) cancelGripDrag();
@@ -2653,7 +2724,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, polOpen, splayOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag]);
+  }, [draftTool, draft, formTool, travOpen, polOpen, splayOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag, polygonAttrDialog]);
 
   // Ctrl+Z (or Cmd+Z) as a real, always-available Undo — Ctrl+Shift+Z /
   // Ctrl+Y as Redo (client req 2026-09-06: "Ctrl+Z should be undo"). Before
@@ -2986,13 +3057,13 @@ export function CogoWorkspace({
                       the last vertex; Escape cancels this shape (or stops drawing entirely if nothing's placed yet).
                     </>}
               </span>
-              <button type="button" onClick={removeLastDraftVertex} disabled={!draft.length} title="Undo — removes only the last placed vertex (Ctrl+Z)" className="ml-auto rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800 disabled:opacity-40">
+              <button type="button" onClick={removeLastDraftVertex} disabled={!draft.length || !!polygonAttrDialog} title="Undo — removes only the last placed vertex (Ctrl+Z)" className="ml-auto rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800 disabled:opacity-40">
                 Undo
               </button>
-              <button type="button" onClick={finishDraft} disabled={draft.length < (draftTool === "polygon" ? 3 : 2)} className="rounded-md bg-brand px-2 py-1 font-semibold text-white disabled:opacity-40">
+              <button type="button" onClick={finishDraft} disabled={draft.length < (draftTool === "polygon" ? 3 : 2) || !!polygonAttrDialog} className="rounded-md bg-brand px-2 py-1 font-semibold text-white disabled:opacity-40">
                 Finish
               </button>
-              <button type="button" onClick={cancelDraft} className="rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800">
+              <button type="button" onClick={cancelDraft} disabled={!!polygonAttrDialog} className="rounded-md border border-amber-300 px-2 py-1 font-semibold text-amber-800 disabled:opacity-40">
                 Cancel
               </button>
             </div>
@@ -4097,7 +4168,7 @@ export function CogoWorkspace({
               No "ID / Erf" field (client req 2026-08-24: "I think we don't
               need that part. Lets just use Lot Number"). */}
           {polygonAttrDialog && (
-            <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setPolygonAttrDialog(null)}>
+            <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={closePolygonAttrs}>
               {/* Client req 2026-09-24: "when i press enter key it should
                   press that OK" — a <form> with the OK button as its
                   submit gives Enter-submits-on-focused-field for free,
@@ -4134,7 +4205,7 @@ export function CogoWorkspace({
                     Main figure
                   </label>
                   <div className="flex justify-end gap-2">
-                    <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+                    <button type="button" onClick={closePolygonAttrs} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
                     <button type="submit" className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
                   </div>
                 </div>
