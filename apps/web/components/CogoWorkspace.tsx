@@ -452,6 +452,12 @@ export function CogoWorkspace({
     // Part 10e: a multi-selection (box/lasso/click-to-add) deletes as a
     // group, across points/lines/polygons together; otherwise fall back to
     // the single last-clicked point (unchanged single-item behavior).
+    // Client req 2026-09-24: select first, then an explicit delete that
+    // confirms before it actually removes anything — selecting already
+    // worked this way (this button is disabled until something's
+    // selected), the missing piece was the are-you-sure gate itself.
+    const count = canvasSelection.size || (selected ? 1 : 0);
+    if (!count || !window.confirm(count > 1 ? `Delete ${count} selected items?` : "Delete the selected item?")) return;
     if (canvasSelection.size) {
       snapshot();
       const lineIds = new Set<string>(), polyIds = new Set<string>(), pointIds = new Set<string>();
@@ -2457,21 +2463,34 @@ export function CogoWorkspace({
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
         if (hit) setParcelQueryId(hit.id);
       } else if (draftTool === "delete-line") {
+        // Client req 2026-09-24: "the system must first select item, then
+        // select delete... should confirm if the user is sure they want
+        // to delete" — the click itself IS the select step (it targets
+        // exactly one line), so what was missing was the are-you-sure
+        // gate before the actual removal.
         const hit = nearestLineHit(vbx, vby);
         if (hit) {
-          snapshot();
-          setLines((ls) => ls.filter((l) => l.id !== hit.id));
-          // Its own bearing/distance seg-label (client req 2026-09-02,
-          // screenshot: deleted lines' labels were piling up, orphaned,
-          // unreadably overlapping each other) — seg-labels have no stored
-          // link back to their line, only a position at its exact midpoint
-          // (see WText's own doc comment), so that's what identifies it here.
-          removeSegLabelsAt(hit.aE, hit.aN, hit.bE, hit.bN);
+          const label = hit.name || `${hit.aE.toFixed(2)},${hit.aN.toFixed(2)} → ${hit.bE.toFixed(2)},${hit.bN.toFixed(2)}`;
+          if (window.confirm(`Delete line ${label}?`)) {
+            snapshot();
+            setLines((ls) => ls.filter((l) => l.id !== hit.id));
+            // Its own bearing/distance seg-label (client req 2026-09-02,
+            // screenshot: deleted lines' labels were piling up, orphaned,
+            // unreadably overlapping each other) — seg-labels have no stored
+            // link back to their line, only a position at its exact midpoint
+            // (see WText's own doc comment), so that's what identifies it here.
+            removeSegLabelsAt(hit.aE, hit.aN, hit.bE, hit.bN);
+          }
         }
       } else if (draftTool === "delete-parcel") {
         const [wx, wy] = toWorld(vbx, vby);
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
-        if (hit) { snapshot(); setPolygons((ps) => ps.filter((p) => p.id !== hit.id)); }
+        if (hit) {
+          if (window.confirm(`Delete parcel ${hit.name || hit.id}? This removes the boundary polygon only, not its points/lines.`)) {
+            snapshot();
+            setPolygons((ps) => ps.filter((p) => p.id !== hit.id));
+          }
+        }
       } else if (tablesOpen && tableTab === "lines") {
         // Two-way canvas<->table highlight sync (Part 9e) — Lines tab.
         const hit = nearestLineHit(vbx, vby);
