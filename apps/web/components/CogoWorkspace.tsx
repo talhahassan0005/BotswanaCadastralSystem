@@ -393,6 +393,13 @@ export function CogoWorkspace({
   // ---- Multi-select (Part 10) — click-to-add / box-drag / lasso-drag build
   // up this set; Delete and (for points) Move act on it as a group. ----
   const [canvasSelection, setCanvasSelection] = useState<Set<string>>(new Set());
+  // Client req 2026-09-24: "Add selection tools. Separately for points,
+  // lines and polygons" — a type filter on Select/Box Select/Lasso Select
+  // (all default on, so nothing changes until a type is switched off) so
+  // a drag-select or single click in a dense/overlapping drawing can be
+  // restricted to just one kind, e.g. to Delete-selected only the lines
+  // without also sweeping up the points/polygons underneath them.
+  const [selectTypes, setSelectTypes] = useState({ points: true, lines: true, polygons: true });
   const [rectSelect, setRectSelect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
   const groupMoveOrigin = useRef<Record<string, { east: number; north: number }> | null>(null);
@@ -2598,15 +2605,17 @@ export function CogoWorkspace({
       } else {
         // Click-to-add multi-select (Part 10a/10c/10d): a point or line click
         // adds to the current selection; a polygon click toggles membership.
-        const hit = nearestVisible(vbx, vby);
+        // Each kind is only tried when its type-filter toggle is on (client
+        // req 2026-09-24 — see selectTypes).
+        const hit = selectTypes.points ? nearestVisible(vbx, vby) : null;
         setSelected(hit?.id ?? null);
         if (hit) {
           setCanvasSelection((s) => new Set(s).add(hit.id));
         } else {
-          const lineHit = nearestLineHit(vbx, vby);
+          const lineHit = selectTypes.lines ? nearestLineHit(vbx, vby) : null;
           if (lineHit) {
             setCanvasSelection((s) => new Set(s).add(lineHit.id));
-          } else {
+          } else if (selectTypes.polygons) {
             const [wx, wy] = toWorld(vbx, vby);
             const polyHit = polygons.find((p) => pointInPolygon(wx, wy, p));
             if (polyHit) {
@@ -2629,23 +2638,31 @@ export function CogoWorkspace({
       const x1 = Math.min(rectSelect.x1, rectSelect.x2), x2 = Math.max(rectSelect.x1, rectSelect.x2);
       const y1 = Math.min(rectSelect.y1, rectSelect.y2), y2 = Math.max(rectSelect.y1, rectSelect.y2);
       const hitIds = new Set<string>();
-      visible.forEach((p) => {
-        const [sx, sy] = toScreen(p.east, p.north);
-        if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) hitIds.add(p.id);
-      });
-      lines.forEach((l) => {
-        const [ax, ay] = toScreen(l.aE, l.aN);
-        const [bx, by] = toScreen(l.bE, l.bN);
-        if (ax >= x1 && ax <= x2 && ay >= y1 && ay <= y2 && bx >= x1 && bx <= x2 && by >= y1 && by <= y2) hitIds.add(l.id);
-      });
-      polygons.forEach((pg) => {
-        if (!pg.points.length) return;
-        const allIn = pg.points.every((v) => {
-          const [sx, sy] = toScreen(v.east, v.north);
-          return sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2;
+      // Each kind only swept up when its type-filter toggle is on (client
+      // req 2026-09-24 — see selectTypes).
+      if (selectTypes.points) {
+        visible.forEach((p) => {
+          const [sx, sy] = toScreen(p.east, p.north);
+          if (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) hitIds.add(p.id);
         });
-        if (allIn) hitIds.add(pg.id);
-      });
+      }
+      if (selectTypes.lines) {
+        lines.forEach((l) => {
+          const [ax, ay] = toScreen(l.aE, l.aN);
+          const [bx, by] = toScreen(l.bE, l.bN);
+          if (ax >= x1 && ax <= x2 && ay >= y1 && ay <= y2 && bx >= x1 && bx <= x2 && by >= y1 && by <= y2) hitIds.add(l.id);
+        });
+      }
+      if (selectTypes.polygons) {
+        polygons.forEach((pg) => {
+          if (!pg.points.length) return;
+          const allIn = pg.points.every((v) => {
+            const [sx, sy] = toScreen(v.east, v.north);
+            return sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2;
+          });
+          if (allIn) hitIds.add(pg.id);
+        });
+      }
       if (hitIds.size) setCanvasSelection((s) => new Set([...s, ...hitIds]));
       setRectSelect(null);
     } else if (draftTool === "zoom-window" && rectSelect) {
@@ -2654,8 +2671,10 @@ export function CogoWorkspace({
       zoomToRect(rectSelect.x1, rectSelect.y1, rectSelect.x2, rectSelect.y2);
       setRectSelect(null);
     } else if (draftTool === "select-lasso" && lassoPath) {
-      // Freehand lasso multi-select (Part 10a) — points only, per spec.
-      if (lassoPath.length > 2) {
+      // Freehand lasso multi-select (Part 10a) — points only, per spec, so
+      // it naturally selects nothing while the Points type-filter toggle
+      // (client req 2026-09-24 — see selectTypes) is switched off.
+      if (lassoPath.length > 2 && selectTypes.points) {
         const hitIds = new Set<string>();
         visible.forEach((p) => {
           const [sx, sy] = toScreen(p.east, p.north);
@@ -2834,6 +2853,31 @@ export function CogoWorkspace({
               onClick={() => activateDrawTool("select-lasso")}
               icon={iconLassoSelect}
             />
+            {/* Selection type filter (client req 2026-09-24: "Add selection
+                tools. Separately for points, lines and polygons") — narrows
+                what Select/Box Select/Lasso Select above are allowed to
+                pick up. All on by default (unchanged behaviour); switch one
+                off to, e.g., box-select only the lines in a dense area
+                without also sweeping up the points/polygons under them. */}
+            <div className="mx-1 flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1 py-0.5">
+              {([
+                ["points", "Pts"],
+                ["lines", "Lines"],
+                ["polygons", "Poly"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSelectTypes((t) => ({ ...t, [key]: !t[key] }))}
+                  title={`${selectTypes[key] ? "Selecting" : "Not selecting"} ${key} with Select/Box/Lasso — click to toggle`}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition ${
+                    selectTypes[key] ? "bg-brand text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <DraftButton
               label={`Clear selection${canvasSelection.size ? ` (${canvasSelection.size})` : ""}`}
               onClick={clearSelection}
