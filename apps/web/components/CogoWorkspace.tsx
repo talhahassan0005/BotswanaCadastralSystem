@@ -53,7 +53,7 @@ const AUTO_DETECT_LOTS_DISABLED = true;
 type DraftTool =
   | "select" | "select-box" | "select-lasso" | "zoom-window" | "pan" | "addpoint" | "move"
   | "line" | "polyline" | "curve" | "polygon" | "offset"
-  | "query-point" | "query-line" | "query-parcel" | "delete-line" | "delete-parcel";
+  | "query-point" | "query-line" | "query-parcel" | "delete-point" | "delete-line" | "delete-parcel";
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
 // Edit Tools (Select/Add/Move/Delete/Undo/Redo/Zoom/Snap) stay permanently
@@ -2562,6 +2562,23 @@ export function CogoWorkspace({
         const [wx, wy] = toWorld(vbx, vby);
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
         if (hit) setParcelQueryId(hit.id);
+      } else if (draftTool === "delete-point") {
+        // Client req 2026-09-24: "also add delete tool for points" —
+        // same dedicated single-click erase pattern as Delete Line/Delete
+        // Parcel, including the same are-you-sure confirm. Deletion
+        // semantics match deleteSelected()'s single-point case: an
+        // imported/base point is hidden (its source data isn't touched),
+        // a drafted/added-here point is actually removed.
+        const hit = nearestVisible(vbx, vby);
+        if (hit) {
+          if (window.confirm(`Delete point ${hit.name}?`)) {
+            snapshot();
+            if (hit.id.startsWith("imp-")) setHidden((h) => new Set(h).add(hit.id));
+            else setExtra((e) => e.filter((p) => p.id !== hit.id));
+            if (selected === hit.id) setSelected(null);
+            setCanvasSelection((s) => { if (!s.has(hit.id)) return s; const n = new Set(s); n.delete(hit.id); return n; });
+          }
+        }
       } else if (draftTool === "delete-line") {
         // Client req 2026-09-24: "the system must first select item, then
         // select delete... should confirm if the user is sure they want
@@ -2959,6 +2976,12 @@ export function CogoWorkspace({
               icon={iconQueryParcel}
             />
             <DraftButton
+              active={draftTool === "delete-point"}
+              label="Delete Point — click a point to remove it"
+              onClick={() => activateDrawTool("delete-point")}
+              icon={iconDeletePoint}
+            />
+            <DraftButton
               active={draftTool === "delete-line"}
               label="Delete Line — click a line to remove just that segment"
               onClick={() => activateDrawTool("delete-line")}
@@ -3204,7 +3227,7 @@ export function CogoWorkspace({
                   ? "grabbing"
                   : diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
                     draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window" ||
-                    draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-line" || draftTool === "delete-parcel"
+                    draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-point" || draftTool === "delete-line" || draftTool === "delete-parcel"
                   ? "crosshair"
                   : pan.current
                   ? "grabbing"
@@ -4053,6 +4076,8 @@ export function CogoWorkspace({
                 ? "Click a line for its direction/distance"
                 : draftTool === "query-parcel"
                 ? "Click a parcel for its details"
+                : draftTool === "delete-point"
+                ? "Click a point to delete it"
                 : draftTool === "delete-line"
                 ? "Click a line to delete it"
                 : draftTool === "delete-parcel"
@@ -4521,6 +4546,14 @@ function iconQueryParcel(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
       <text x="12" y="15" fontSize="8" fill={c} stroke="none" textAnchor="middle">?</text>
+    </svg>
+  );
+}
+function iconDeletePoint(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="10" cy="14" r="2.4" fill={c} stroke="none" />
+      <path d="M15 3l6 6" strokeWidth="2" stroke="#dc2626" />
     </svg>
   );
 }
