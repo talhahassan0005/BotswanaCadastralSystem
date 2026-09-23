@@ -189,15 +189,20 @@ export function CogoWorkspace({
   const [showPointNames, setShowPointNames] = useState(true);
   const [showSegLabels, setShowSegLabels] = useState(true);
   const [showParcelNumbers, setShowParcelNumbers] = useState(true);
-  // Manual size control for the point/beacon circle + its name label
-  // (client req 2026-09-23: an earlier round tried scaling these
-  // automatically with zoom, which fell apart on real dense data — labels
-  // grew huge and piled on top of each other instead of getting clearer.
-  // Reverted that; this is the safer version — "leave the previous sizes
-  // and add an option to change size" — a plain multiplier the user drives
-  // by hand, on top of the existing density tier, never automatic). 1 =
-  // today's default size, exactly as it always was.
-  const [pointDisplayScale, setPointDisplayScale] = useState(1);
+  // Manual size controls (client req 2026-09-23: "Put fonts to the initial
+  // sizes. Then add an editing tool there. Then under the tool bar, add
+  // block corner size, block corner text size, ERF text size, Bearing /
+  // Distance text Size" — replaces the earlier single inline +/- stepper
+  // with a proper settings row, toggled open by its own tool button, with
+  // one multiplier per label kind instead of one combined control). Every
+  // scale defaults to 1 — today's original fixed sizes, unchanged, nothing
+  // automatic tied to zoom (an earlier attempt at that broke badly on
+  // dense data and was reverted).
+  const [showSizePanel, setShowSizePanel] = useState(false);
+  const [blockCornerScale, setBlockCornerScale] = useState(1); // point/beacon circle radius
+  const [blockCornerTextScale, setBlockCornerTextScale] = useState(1); // point/beacon name label
+  const [erfTextScale, setErfTextScale] = useState(1); // polygon/plot number label
+  const [bearingDistScale, setBearingDistScale] = useState(1); // seg-label (bearing + distance) text
   // ---- Query tools (Part 15b-d) — info panel for whatever was last clicked
   // with the matching query tool active; pointQueryName is the editable
   // draft for the point panel's inline rename. ----
@@ -2805,30 +2810,18 @@ export function CogoWorkspace({
               onClick={() => setShowPointNames((s) => !s)}
               icon={iconTogglePointNames}
             />
-            {/* Manual point/beacon circle + name size (client req
-                2026-09-23: "leave the previous sizes and add an option to
-                change size of block corner circles and Block corner name"
-                — a plain user-driven control instead of the earlier
-                automatic zoom-scaling, which broke badly on dense data). */}
-            <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1" title="Point circle + name size">
-              <button
-                type="button"
-                onClick={() => setPointDisplayScale((s) => Math.max(0.4, +(s - 0.2).toFixed(1)))}
-                className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
-                aria-label="Smaller point circle/name"
-              >
-                −
-              </button>
-              <span className="w-8 text-center text-[10px] text-slate-500">{Math.round(pointDisplayScale * 100)}%</span>
-              <button
-                type="button"
-                onClick={() => setPointDisplayScale((s) => Math.min(3, +(s + 0.2).toFixed(1)))}
-                className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
-                aria-label="Bigger point circle/name"
-              >
-                +
-              </button>
-            </div>
+            {/* Size settings tool (client req 2026-09-23: "Put fonts to the
+                initial sizes. Then add an editing tool there. Then under
+                the tool bar, add block corner size, block corner text
+                size, ERF text size, Bearing / Distance text Size" —
+                replaces the earlier inline +/- stepper with a proper
+                toggled settings row, further down this same toolbar). */}
+            <DraftButton
+              active={showSizePanel}
+              label="Text/marker size settings"
+              onClick={() => setShowSizePanel((s) => !s)}
+              icon={iconTextSize}
+            />
             <DraftButton
               active={showSegLabels}
               label="Show/hide distance-direction labels"
@@ -2962,6 +2955,17 @@ export function CogoWorkspace({
               </button>
             </div>
           )}
+          {/* Size settings row (client req 2026-09-23) — under the toolbar,
+              one multiplier per label kind, each defaulting to 1 (today's
+              original fixed sizes). */}
+          {showSizePanel && (
+            <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+              <SizeStepper label="Block corner size" value={blockCornerScale} onChange={setBlockCornerScale} />
+              <SizeStepper label="Block corner text size" value={blockCornerTextScale} onChange={setBlockCornerTextScale} />
+              <SizeStepper label="ERF text size" value={erfTextScale} onChange={setErfTextScale} />
+              <SizeStepper label="Bearing / Distance text size" value={bearingDistScale} onChange={setBearingDistScale} />
+            </div>
+          )}
           </div>
         </>
       )}
@@ -3075,7 +3079,7 @@ export function CogoWorkspace({
                     strokeWidth={isTableSel ? 2.4 : 1.4}
                   />
                   {showParcelNumbers && label && (
-                    <text x={ctx} y={cty} textAnchor="middle" fontSize={12} fontWeight="bold" className="fill-amber-800">
+                    <text x={ctx} y={cty} textAnchor="middle" fontSize={12 * erfTextScale} fontWeight="bold" className="fill-amber-800">
                       {label}
                     </text>
                   )}
@@ -3115,14 +3119,14 @@ export function CogoWorkspace({
               if (t.angle) {
                 return (
                   <g key={t.id} transform={`rotate(${t.angle} ${x} ${y})`}>
-                    <text x={x} y={y - 4} textAnchor="middle" fontSize={t.size} className="fill-slate-800 font-medium">
+                    <text x={x} y={y - 4} textAnchor="middle" fontSize={t.size * (t.kind === "seglabel" ? bearingDistScale : 1)} className="fill-slate-800 font-medium">
                       {t.text}
                     </text>
                   </g>
                 );
               }
               return (
-                <text key={t.id} x={x} y={y} fontSize={t.size} className="fill-slate-800 font-medium">
+                <text key={t.id} x={x} y={y} fontSize={t.size * (t.kind === "seglabel" ? bearingDistScale : 1)} className="fill-slate-800 font-medium">
                   {t.text}
                 </text>
               );
@@ -3144,7 +3148,7 @@ export function CogoWorkspace({
               visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
-                const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * pointDisplayScale;
+                const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * blockCornerScale;
                 // Point-name labels never shrank with density the way the dot
                 // radius above already does (client req 2026-09-01: "cadastral
                 // per mess show ho raha hai jese... genral plan per... wasey ku
@@ -3154,8 +3158,8 @@ export function CogoWorkspace({
                 // solved with their own density tiers). "Show/hide point names"
                 // still fully turns these off when even the smallest tier is
                 // too much for a given project.
-                const nameFS = (visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11) * pointDisplayScale;
-                const nameOff = (visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7) * pointDisplayScale;
+                const nameFS = (visible.length > 400 ? 6 : visible.length > 100 ? 8 : 11) * blockCornerTextScale;
+                const nameOff = (visible.length > 400 ? 3 : visible.length > 100 ? 5 : 7) * blockCornerTextScale;
                 return (
                   <g key={p.id}>
                     <circle
@@ -4142,6 +4146,37 @@ function DraftButton({
   );
 }
 
+/** One −/%/+ row in the size settings panel (client req 2026-09-23) — a
+ *  plain multiplier on top of a label kind's existing fixed size, 40%-300%
+ *  in 20% steps, same range/step as the earlier single stepper this panel
+ *  replaces. 100% is always the original, untouched size. */
+function SizeStepper({ label, value, onChange }: { label: string; value: number; onChange: (updater: (s: number) => number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-slate-500">{label}</span>
+      <div className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1">
+        <button
+          type="button"
+          onClick={() => onChange((s) => Math.max(0.4, +(s - 0.2).toFixed(1)))}
+          className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
+          aria-label={`Smaller ${label}`}
+        >
+          −
+        </button>
+        <span className="w-8 text-center text-[10px] text-slate-500">{Math.round(value * 100)}%</span>
+        <button
+          type="button"
+          onClick={() => onChange((s) => Math.min(3, +(s + 0.2).toFixed(1)))}
+          className="grid h-6 w-5 place-items-center text-slate-500 hover:text-brand-dark"
+          aria-label={`Bigger ${label}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function iconSelect(c: string) {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
@@ -4207,6 +4242,16 @@ function iconPan(c: string) {
   return (
     <svg viewBox="0 0 16 16" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.3">
       <path d="M5.5 6V2.75a1 1 0 0 1 2 0V6m0-.5V1.75a1 1 0 0 1 2 0V6m0-.25V2.75a1 1 0 0 1 2 0V8m0 0V6.75a1 1 0 0 1 2 0v4.75a4 4 0 0 1-4 4h-2a4.5 4.5 0 0 1-3.5-1.9L2 9.8a1.1 1.1 0 0 1 1.7-1.4L5.5 10" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function iconTextSize(c: string) {
+  // A big "A" and a small "a" — the standard "text size" glyph — for the
+  // size settings panel toggle (client req 2026-09-23).
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.6">
+      <path d="M3 17L7.5 6l4.5 11M4.3 13.5h6.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 17v-5.3c0-1 .8-1.7 2.4-1.7s2.6.7 2.6 1.7V17M14.1 14.3h4.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
