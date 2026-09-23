@@ -841,6 +841,22 @@ export function CogoWorkspace({
   function savePolygonAttrs() {
     if (!polygonAttrDialog) return;
     const { id, position, mainFigure } = polygonAttrDialog;
+    if (position.trim()) {
+      // Client req 2026-09-24, screenshot of a triangular "Lot 216" cut out
+      // of what should've been a 4-sided lot (an accidental diagonal line
+      // picked up as a boundary): "the system must reject this type of
+      // plot (Plot with 3 corners) and then ask the user if they want to
+      // accept it." A real cadastral lot is essentially never a triangle,
+      // so this is almost always a mis-click, not an intended shape —
+      // reject by default, only save if the user explicitly confirms.
+      const poly = polygons.find((p) => p.id === id);
+      if (poly && poly.points.length === 3) {
+        const ok = window.confirm(
+          `Lot ${position.trim()} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means an extra diagonal line got picked up by mistake.\n\nAccept it anyway?`
+        );
+        if (!ok) return; // leave the dialog open — nothing is saved/numbered
+      }
+    }
     setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], position, mainFigure } }));
     if (position.trim()) {
       setLastPlotNumber(position.trim());
