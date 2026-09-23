@@ -11,6 +11,9 @@ import { inverse, polygonArea } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
+import { buildShapefileSet } from "@/lib/shpWriter";
+import { crsToWkt } from "@/lib/crsWkt";
+import { createZip } from "@/lib/zip";
 
 const COORDS_PER_SHEET = 48;
 const W = 1000;
@@ -1672,6 +1675,46 @@ export function GeneralPlanView() {
     a2.click();
     URL.revokeObjectURL(url);
   }
+  // Shapefile export (client req 2026-09-24) — the .shp/.shx/.dbf/.prj set
+  // GIS software (ArcGIS/QGIS) expects, one Polygon feature per lot/plot,
+  // zipped together since a lone .shp isn't valid without its siblings.
+  // Reads straight from cogoPlots — the same authoritative source General
+  // Plan/Working Plan already draw from — so the export can't disagree
+  // with what's on the printed sheet: geometry via dropClosingDuplicate
+  // (same ring-cleanup every other cogoPlots consumer applies) and area
+  // via fig.area_m2, the exact value the LOT AREAS table itself prints,
+  // not a separately recomputed one. .prj text reflects the PROJECT'S
+  // actual configured coordinate system (config.coordinateSystem) rather
+  // than a hardcoded one, via the same parameters lib/server/crs.ts uses
+  // for that CRS everywhere else in the app.
+  function downloadShapefile() {
+    const features = cogoPlots
+      .map((p) => ({
+        number: p.number,
+        points: dropClosingDuplicate(p.fig.points).map((pt) => ({ east: pt.east, north: pt.north })),
+        areaM2: p.fig.area_m2,
+      }))
+      .filter((f) => f.points.length >= 3);
+    if (!features.length) {
+      window.alert("No plots to export yet — number/join plots in Cadastral first, then Shapefile export will pick them up.");
+      return;
+    }
+    const { shp, shx, dbf } = buildShapefileSet(features);
+    const prj = new TextEncoder().encode(crsToWkt(config.coordinateSystem));
+    const base = (meta.name || "layout").replace(/\s+/g, "_");
+    const zip = createZip([
+      { name: `${base}.shp`, data: shp },
+      { name: `${base}.shx`, data: shx },
+      { name: `${base}.dbf`, data: dbf },
+      { name: `${base}.prj`, data: prj },
+    ]);
+    const url = URL.createObjectURL(zip);
+    const a3 = document.createElement("a");
+    a3.href = url;
+    a3.download = `${base}_shapefile.zip`;
+    a3.click();
+    URL.revokeObjectURL(url);
+  }
   function printAll() {
     const all: string[] = [];
     for (let i = 0; i < sheetCount; i++) {
@@ -3244,6 +3287,14 @@ export function GeneralPlanView() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={download}>⬇ Download sheet SVG</Button>
           {sheet < layoutSheetCount && <Button variant="ghost" onClick={downloadDxf}>⬇ Download DXF</Button>}
+          {/* Shapefile export (client req 2026-09-24) — GIS format (.shp/
+              .shx/.dbf/.prj, zipped) for ArcGIS/QGIS, one polygon feature
+              per lot/plot with its number + area as attributes. Not tied
+              to a specific sheet (unlike DXF above), so shown regardless
+              of which sheet is active. */}
+          <Button variant="ghost" onClick={downloadShapefile} title="Lot/plot boundaries as an ESRI Shapefile (.shp/.shx/.dbf/.prj, zipped) for GIS software">
+            ⬇ Download Shapefile
+          </Button>
           <Button variant="ghost" onClick={printAll}>Print all sheets / PDF</Button>
           <span className="ml-2 inline-flex items-center gap-2 text-sm">
             <Button variant="ghost" onClick={() => setSheet((x) => Math.max(0, x - 1))} disabled={sheet === 0}>← Prev</Button>
