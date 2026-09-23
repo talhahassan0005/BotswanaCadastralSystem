@@ -4049,7 +4049,15 @@ export function CogoWorkspace({
               need that part. Lets just use Lot Number"). */}
           {polygonAttrDialog && (
             <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setPolygonAttrDialog(null)}>
-              <div className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl" onClick={(e) => e.stopPropagation()}>
+              {/* Client req 2026-09-24: "when i press enter key it should
+                  press that OK" — a <form> with the OK button as its
+                  submit gives Enter-submits-on-focused-field for free,
+                  the same way it does natively in any browser form. */}
+              <form
+                onClick={(e) => e.stopPropagation()}
+                onSubmit={(e) => { e.preventDefault(); savePolygonAttrs(); }}
+                className="w-72 rounded-lg bg-white p-4 text-xs shadow-xl"
+              >
                 <h3 className="mb-3 text-sm font-semibold text-slate-700">Polygon Attributes</h3>
                 <label className="mb-2 block">
                   <span className="mb-0.5 block text-slate-500">Lot Number</span>
@@ -4057,6 +4065,7 @@ export function CogoWorkspace({
                     value={polygonAttrDialog.position}
                     onChange={(e) => setPolygonAttrDialog({ ...polygonAttrDialog, position: e.target.value })}
                     className="w-full rounded border border-slate-200 px-2 py-1.5"
+                    autoFocus
                   />
                 </label>
                 <label className="mb-3 block">
@@ -4077,10 +4086,10 @@ export function CogoWorkspace({
                   </label>
                   <div className="flex justify-end gap-2">
                     <button type="button" onClick={() => setPolygonAttrDialog(null)} className="rounded border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Cancel</button>
-                    <button type="button" onClick={savePolygonAttrs} className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
+                    <button type="submit" className="rounded bg-brand px-3 py-1.5 font-semibold text-white hover:bg-brand-dark">OK</button>
                   </div>
                 </div>
-              </div>
+              </form>
             </div>
           )}
 
