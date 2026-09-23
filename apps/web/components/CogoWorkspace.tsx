@@ -15,6 +15,7 @@ import { forward, inverse, polygonArea, polygonCentroid, formatArea } from "@/li
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { CogoTraversePanel } from "@/components/CogoTraversePanel";
 import { CogoPointsOnLinePanel } from "@/components/CogoPointsOnLinePanel";
+import { CogoPolygonDrawPanel } from "@/components/CogoPolygonDrawPanel";
 import { CogoSplayPanel } from "@/components/CogoSplayPanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { useStore, type CogoPlot } from "@/lib/store";
@@ -2059,6 +2060,22 @@ export function CogoWorkspace({
     return best;
   }
 
+  // ---- Draw Polygon side panel (client req 2026-09-24) — read-only
+  // live readout of the polygon currently being click-drawn: the leg from
+  // the last placed vertex to wherever the cursor is right now, plus every
+  // leg already placed. Reuses the same `draft`/`cursor` state the on-canvas
+  // rubber-band preview already draws from, so the two always agree. ----
+  const polygonDrawFrom = draftTool === "polygon" && draft.length ? draft[draft.length - 1] : null;
+  const polygonDrawLive = polygonDrawFrom && cursor ? inverse(polygonDrawFrom, { east: cursor.e, north: cursor.n }) : null;
+  const polygonDrawRows: { name: string; direction: string | null; distance: number | null }[] =
+    draftTool === "polygon"
+      ? draft.map((v, i) => {
+          if (i === 0) return { name: v.name, direction: null, distance: null };
+          const [brg, dist] = inverse(draft[i - 1], v);
+          return { name: v.name, direction: formatDms(brg), distance: dist };
+        })
+      : [];
+
   const SNAP_PX = 16; // generous/forgiving on purpose (client req 2026-08-17, 7a) — "close enough" should snap
   // Point-to-point snap is even more generous than line/grid snap: since
   // Line/Polyline/Polygon now refuse to invent a new point on a miss
@@ -3778,6 +3795,22 @@ export function CogoWorkspace({
               onSelectRow={polSelectRow}
               onDraw={polDraw}
               onClose={polClose}
+            />
+          )}
+
+          {/* Side-docked Draw Polygon panel (client req 2026-09-24: "As I
+              join a polygon there should be a window which shows which
+              points I am joining", "slightly similar to [Points on
+              Line]") — shown for the whole time the Polygon tool is
+              active, same as the other side panels, not just once a
+              vertex has been placed. */}
+          {draftTool === "polygon" && (
+            <CogoPolygonDrawPanel
+              fromName={polygonDrawFrom?.name ?? null}
+              direction={polygonDrawLive ? formatDms(polygonDrawLive[0]) : null}
+              distance={polygonDrawLive ? polygonDrawLive[1] : null}
+              rows={polygonDrawRows}
+              onClose={() => activateDrawTool("select")}
             />
           )}
 
