@@ -339,7 +339,7 @@ export function SurveyRecord() {
         </Card>
       )}
 
-      {(doc === "consistency" || doc === "comparison") && (
+      {doc === "comparison" && (
         <Card title="Plot to check">
           <div className="max-w-xs">
             <Field label="Query plot number">
@@ -354,15 +354,6 @@ export function SurveyRecord() {
                 ? `Showing plot ${queriedPlot.number}.`
                 : "Leave blank to use whatever figure is already loaded (Diagrams tab's plot pick, or the legacy COGO Computation)."}
             </p>
-          </div>
-        </Card>
-      )}
-      {doc === "consistency" && (
-        <Card title="Data consistency details">
-          <div className="max-w-xs">
-            <Field label="Declared area from title deed (optional)">
-              <Input type="number" value={declaredArea} onChange={setDeclaredArea} placeholder={fig ? `e.g. ${fig.area_m2.toFixed(2)}` : "e.g. 981.00"} />
-            </Field>
           </div>
         </Card>
       )}
@@ -386,28 +377,9 @@ export function SurveyRecord() {
           )}
           {doc === "consistency" && (
             <div className="space-y-5">
-              {/* Single-plot own internal-leg consistency: checks whether
-                  ONE plot's own traverse legs are internally consistent
-                  with its own recorded points. Only shown once a figure is
-                  actually loaded via "Plot to check" above, Diagrams, or
-                  the legacy COGO Computation. */}
-              {consistencyLines && fig && (
-                <div className="space-y-3 border-t border-slate-200 pt-4">
-                  <h2 className="text-sm font-bold text-slate-800">This plot's own leg consistency</h2>
-                  <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
-                    {["Consistency Report", "", lotName, "", ...consistencyLines].join("\n")}
-                    {"\n"}
-                    {declaredArea.trim()
-                      ? `The area is ${(Number(declaredArea) || 0).toFixed(2)} (${fig.area_m2.toFixed(2)}) square metres.`
-                      : `The area is ${fig.area_m2.toFixed(2)} square metres.`}
-                  </pre>
-                  <Button variant="ghost" onClick={downloadConsistency}>⬇ Download as .txt</Button>
-                </div>
-              )}
-
-              {/* All plots' own leg consistency (client req 2026-09-23) —
-                  same report as above, run for every saved plot at once
-                  instead of one queried at a time. */}
+              {/* Per-leg bearing/distance vs. recorded-coordinate misclosure
+                  check, run for every saved plot at once (client req
+                  2026-09-23/24). */}
               {cogoPlots.length > 0 && (
                 <div className="space-y-3 border-t border-slate-200 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
