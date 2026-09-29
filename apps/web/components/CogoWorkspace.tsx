@@ -43,6 +43,13 @@ const AUTO_DETECT_LOTS_DISABLED = true;
 // point (and, for the box, every fully-enclosed line/polygon) to the
 // current canvasSelection, instead of the plain "select" tool's one-at-a-
 // time click-to-add.
+// "select-points"/"select-lines"/"select-polygons" (client req 2026-09-24:
+// "Add selection tools. Separately for points, Lines and Polygons") are
+// the same rectangle-drag (or single-click) mechanic as "select-box", each
+// restricted to just its own one kind — same idea as Delete Point/Delete
+// Line/Delete Parcel being separate single-purpose tools rather than one
+// generic "delete" mode. "select-box"/"select"/"select-lasso" are
+// unaffected — they still pick up every kind, same as before.
 // "zoom-window" (client req 2026-08-20, Part 12a) drags the same rectangle
 // as "select-box" but zooms the view to exactly that area instead of
 // selecting what's inside it — the legacy "Zoom Window" tool.
@@ -51,9 +58,13 @@ const AUTO_DETECT_LOTS_DISABLED = true;
 // tools — click one feature to inspect (with inline rename for points) or
 // immediately delete it, without building up a multi-select first.
 type DraftTool =
-  | "select" | "select-box" | "select-lasso" | "zoom-window" | "pan" | "addpoint" | "move"
+  | "select" | "select-box" | "select-lasso" | "select-points" | "select-lines" | "select-polygons"
+  | "zoom-window" | "pan" | "addpoint" | "move"
   | "line" | "polyline" | "curve" | "polygon" | "offset"
   | "query-point" | "query-line" | "query-parcel" | "delete-point" | "delete-line" | "delete-parcel";
+/** Rectangle-drag select tools that only pick up ONE kind (client req
+ *  2026-09-24) — "select-box" itself stays unrestricted (all kinds). */
+const SINGLE_TYPE_SELECT_TOOLS: DraftTool[] = ["select-points", "select-lines", "select-polygons"];
 type DraftPt = { east: number; north: number; name: string; newId?: string };
 
 // Edit Tools (Select/Add/Move/Delete/Undo/Redo/Zoom/Snap) stay permanently
@@ -182,6 +193,18 @@ export function CogoWorkspace({
 
   // ---- drafting state: points/lines added/removed in the workspace only ----
   const [draftTool, setDraftTool] = useState<DraftTool>("select");
+  // Client req 2026-09-24: "Add selection tools. Separately for points,
+  // Lines and Polygons" — which kinds Select/Box Select/Lasso Select/the
+  // three dedicated select-points/-lines/-polygons tools are each allowed
+  // to pick up. Derived straight from draftTool (not its own toggle state)
+  // so it's always exactly what the active tool's name says: "Select
+  // Points" only ever picks up points, etc.; the generic Select/Box
+  // Select/Lasso Select keep picking up every kind, unchanged.
+  const selectTypes =
+    draftTool === "select-points" ? { points: true, lines: false, polygons: false } :
+    draftTool === "select-lines" ? { points: false, lines: true, polygons: false } :
+    draftTool === "select-polygons" ? { points: false, lines: false, polygons: true } :
+    { points: true, lines: true, polygons: true };
   const [extra, setExtra] = useState<WPoint[]>(savedDoc.extra ?? []);
   const [hidden, setHidden] = useState<Set<string>>(new Set(savedDoc.hidden ?? []));
   const [moving, setMoving] = useState<string | null>(null); // point picked up by the Move tool, awaiting drop
@@ -393,13 +416,6 @@ export function CogoWorkspace({
   // ---- Multi-select (Part 10) — click-to-add / box-drag / lasso-drag build
   // up this set; Delete and (for points) Move act on it as a group. ----
   const [canvasSelection, setCanvasSelection] = useState<Set<string>>(new Set());
-  // Client req 2026-09-24: "Add selection tools. Separately for points,
-  // lines and polygons" — a type filter on Select/Box Select/Lasso Select
-  // (all default on, so nothing changes until a type is switched off) so
-  // a drag-select or single click in a dense/overlapping drawing can be
-  // restricted to just one kind, e.g. to Delete-selected only the lines
-  // without also sweeping up the points/polygons underneath them.
-  const [selectTypes, setSelectTypes] = useState({ points: true, lines: true, polygons: true });
   const [rectSelect, setRectSelect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
   const groupMoveOrigin = useRef<Record<string, { east: number; north: number }> | null>(null);
@@ -2342,7 +2358,7 @@ export function CogoWorkspace({
     }
     if (pan.current) {
       pan.current.moved += Math.abs(vbx - pan.current.vbx) + Math.abs(vby - pan.current.vby);
-      if (draftTool === "select-box" || draftTool === "zoom-window") {
+      if (draftTool === "select-box" || draftTool === "zoom-window" || SINGLE_TYPE_SELECT_TOOLS.includes(draftTool)) {
         setRectSelect((r) => (r ? { ...r, x2: vbx, y2: vby } : r));
       } else if (draftTool === "select-lasso") {
         setLassoPath((p) => (p ? [...p, { x: vbx, y: vby }] : p));
@@ -2368,7 +2384,7 @@ export function CogoWorkspace({
       return;
     }
     pan.current = { vbx, vby, cx: view.cx, cy: view.cy, moved: 0 };
-    if (draftTool === "select-box" || draftTool === "zoom-window") setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
+    if (draftTool === "select-box" || draftTool === "zoom-window" || SINGLE_TYPE_SELECT_TOOLS.includes(draftTool)) setRectSelect({ x1: vbx, y1: vby, x2: vbx, y2: vby });
     else if (draftTool === "select-lasso") setLassoPath([{ x: vbx, y: vby }]);
   }
   const DRAW_TOOLS: DraftTool[] = ["line", "polyline", "curve", "polygon", "offset"];
@@ -2650,13 +2666,14 @@ export function CogoWorkspace({
           setTableSelected(hit ? new Set([hit.id]) : new Set());
         }
       }
-    } else if (draftTool === "select-box" && rectSelect) {
+    } else if ((draftTool === "select-box" || SINGLE_TYPE_SELECT_TOOLS.includes(draftTool)) && rectSelect) {
       // Box/rectangle multi-select (Part 10a/10c/10d) — a real drag ended.
+      // Select Points/Select Lines/Select Polygons (client req 2026-09-24)
+      // reuse this exact same rectangle-drag mechanic, just restricted to
+      // one kind via selectTypes below.
       const x1 = Math.min(rectSelect.x1, rectSelect.x2), x2 = Math.max(rectSelect.x1, rectSelect.x2);
       const y1 = Math.min(rectSelect.y1, rectSelect.y2), y2 = Math.max(rectSelect.y1, rectSelect.y2);
       const hitIds = new Set<string>();
-      // Each kind only swept up when its type-filter toggle is on (client
-      // req 2026-09-24 — see selectTypes).
       if (selectTypes.points) {
         visible.forEach((p) => {
           const [sx, sy] = toScreen(p.east, p.north);
@@ -2870,31 +2887,33 @@ export function CogoWorkspace({
               onClick={() => activateDrawTool("select-lasso")}
               icon={iconLassoSelect}
             />
-            {/* Selection type filter (client req 2026-09-24: "Add selection
-                tools. Separately for points, lines and polygons") — narrows
-                what Select/Box Select/Lasso Select above are allowed to
-                pick up. All on by default (unchanged behaviour); switch one
-                off to, e.g., box-select only the lines in a dense area
-                without also sweeping up the points/polygons under them. */}
-            <div className="mx-1 flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1 py-0.5">
-              {([
-                ["points", "Pts"],
-                ["lines", "Lines"],
-                ["polygons", "Poly"],
-              ] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSelectTypes((t) => ({ ...t, [key]: !t[key] }))}
-                  title={`${selectTypes[key] ? "Selecting" : "Not selecting"} ${key} with Select/Box/Lasso — click to toggle`}
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition ${
-                    selectTypes[key] ? "bg-brand text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <div className="mx-1 h-5 w-px bg-slate-200" />
+            {/* Dedicated per-type selection tools (client req 2026-09-24:
+                "Add selection tools. Separately for points, Lines and
+                Polygons") — same drag-a-rectangle (or single click)
+                mechanic as Box Select above, each restricted to just its
+                own one kind, same idea as Delete Point/Delete Line/Delete
+                Parcel being separate tools rather than one generic delete.
+                Select/Box Select/Lasso Select above are unaffected — they
+                still pick up every kind. */}
+            <DraftButton
+              active={draftTool === "select-points"}
+              label="Select Points — drag a rectangle (or click) to select only points"
+              onClick={() => activateDrawTool("select-points")}
+              icon={iconSelectPoints}
+            />
+            <DraftButton
+              active={draftTool === "select-lines"}
+              label="Select Lines — drag a rectangle (or click) to select only lines"
+              onClick={() => activateDrawTool("select-lines")}
+              icon={iconSelectLines}
+            />
+            <DraftButton
+              active={draftTool === "select-polygons"}
+              label="Select Polygons — drag a rectangle (or click) to select only polygons"
+              onClick={() => activateDrawTool("select-polygons")}
+              icon={iconSelectPolygons}
+            />
             <DraftButton
               label={`Clear selection${canvasSelection.size ? ` (${canvasSelection.size})` : ""}`}
               onClick={clearSelection}
@@ -3227,6 +3246,7 @@ export function CogoWorkspace({
                   ? "grabbing"
                   : diagramPicking || travPickingStart || travChoosingTo || DRAW_TOOLS.includes(draftTool) ||
                     draftTool === "addpoint" || draftTool === "move" || draftTool === "select-box" || draftTool === "select-lasso" || draftTool === "zoom-window" ||
+                    SINGLE_TYPE_SELECT_TOOLS.includes(draftTool) ||
                     draftTool === "query-point" || draftTool === "query-line" || draftTool === "query-parcel" || draftTool === "delete-point" || draftTool === "delete-line" || draftTool === "delete-parcel"
                   ? "crosshair"
                   : pan.current
@@ -4066,6 +4086,12 @@ export function CogoWorkspace({
                 ? "Drag a rectangle to select every point/line/polygon inside it"
                 : draftTool === "select-lasso"
                 ? "Drag a freehand outline to select every point inside it"
+                : draftTool === "select-points"
+                ? "Drag a rectangle (or click) to select only points"
+                : draftTool === "select-lines"
+                ? "Drag a rectangle (or click) to select only lines"
+                : draftTool === "select-polygons"
+                ? "Drag a rectangle (or click) to select only polygons"
                 : draftTool === "zoom-window"
                 ? "Drag a rectangle — the view zooms to fit exactly that area"
                 : draftTool === "pan"
@@ -4513,6 +4539,34 @@ function iconLassoSelect(c: string) {
       <circle cx="13.3" cy="18" r="1.6" fill={c} stroke="none" />
       <circle cx="8" cy="10" r="1.3" fill={c} stroke="none" />
       <circle cx="15" cy="7" r="1.3" fill={c} stroke="none" />
+    </svg>
+  );
+}
+// Dedicated per-type selection tools (client req 2026-09-24) — same dashed
+// selection-rectangle motif as Box Select above, each with just its own
+// one kind's glyph inside so the three read as an obviously-related family.
+function iconSelectPoints(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
+      <circle cx="9" cy="9" r="1.6" fill={c} stroke="none" />
+      <circle cx="15.5" cy="14.5" r="1.6" fill={c} stroke="none" />
+    </svg>
+  );
+}
+function iconSelectLines(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
+      <path d="M6 18L18 6" strokeWidth="2" />
+    </svg>
+  );
+}
+function iconSelectPolygons(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
+      <path d="M8 8l8-1.5 2 8-9 2.5z" fill={c} fillOpacity="0.18" strokeWidth="1.6" />
     </svg>
   );
 }
