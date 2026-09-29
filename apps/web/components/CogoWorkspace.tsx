@@ -878,10 +878,17 @@ export function CogoWorkspace({
     // accept it." A real cadastral lot is essentially never a triangle,
     // so this is almost always a mis-click, not an intended shape —
     // reject by default, only save if the user explicitly confirms.
+    // Client req 2026-09-24 (re-flagged, "re check that"): this must fire
+    // for ANY 3-corner polygon, whether or not a Lot Number has been typed
+    // yet — it previously only checked `position.trim() && cornerCount ===
+    // 3`, so a blank Lot Number field (e.g. the very first plot in a fresh
+    // project, before lastPlotNumber has anything to suggest from) let a
+    // triangle through with no warning at all.
     const cornerCount = pendingPolygonPts ? pendingPolygonPts.length : polygons.find((p) => p.id === id)?.points.length;
-    if (position.trim() && cornerCount === 3) {
+    if (cornerCount === 3) {
+      const label = position.trim() ? `Lot ${position.trim()}` : "This plot";
       const ok = window.confirm(
-        `Lot ${position.trim()} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means an extra diagonal line got picked up by mistake.\n\nAccept it anyway?`
+        `${label} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means an extra diagonal line got picked up by mistake.\n\nAccept it anyway?`
       );
       if (!ok) return; // leave the dialog (and, if pending, the draft) exactly as they are
     }
