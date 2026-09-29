@@ -57,6 +57,7 @@ export function Parcels() {
   const [selId, setSelId] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[]>([]); // beacon ids for a new parcel
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmTriangle, setConfirmTriangle] = useState(false);
   // The line the user is currently working on in "Compute subdivision point" (drawn on the plot).
   const [activeLine, setActiveLine] = useState<{ from: string; to: string } | null>(null);
 
@@ -161,9 +162,13 @@ export function Parcels() {
     () => (building.length >= 2 ? parcelMetrics(building, by) : null),
     [building, by]
   );
-  function createParcel() {
+  function createParcel(force = false) {
     if (building.length < 3) {
       flash("Pick at least 3 beacons (in boundary order) to form a parcel.");
+      return;
+    }
+    if (building.length === 3 && !force) {
+      setConfirmTriangle(true);
       return;
     }
     setDoc((d) => {
@@ -171,6 +176,7 @@ export function Parcels() {
       return { ...d, parcels: [...d.parcels, p] };
     });
     setBuilding([]);
+    setConfirmTriangle(false);
     flash("Parcel created.");
   }
 
@@ -232,6 +238,18 @@ export function Parcels() {
       </div>
 
       {msg && <div className="rounded-md bg-brand-light/40 px-3 py-2 text-sm text-brand-dark">{msg}</div>}
+
+      {confirmTriangle && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="mb-3 text-sm font-medium text-amber-800">
+            ⚠️ This parcel has only <strong>3 corners</strong> (a triangle). Triangular plots are unusual in cadastral practice and may not meet DSM requirements. Do you want to accept it?
+          </p>
+          <div className="flex gap-2">
+            <Button onClick={() => createParcel(true)}>Yes, accept triangular parcel</Button>
+            <Button variant="ghost" onClick={() => setConfirmTriangle(false)}>No, go back</Button>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Beacon manager */}
@@ -308,7 +326,7 @@ export function Parcels() {
           {doc.beacons.length === 0 && <span className="text-sm text-slate-400">Add beacons first.</span>}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button onClick={createParcel} disabled={building.length < 3}>Create parcel →</Button>
+          <Button onClick={() => createParcel()} disabled={building.length < 3}>Create parcel →</Button>
           {building.length > 0 && <Button variant="ghost" onClick={() => setBuilding([])}>Clear selection</Button>}
           {buildMetrics && (
             <span className="text-sm text-slate-600">
