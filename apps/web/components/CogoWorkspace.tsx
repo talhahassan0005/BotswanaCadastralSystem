@@ -1141,6 +1141,18 @@ export function CogoWorkspace({
     if (!travCompleteDialog || !travStartPoint) return;
     const boundary = [travStartPoint, ...travLegs.map((l) => l.point)];
     const plotNumber = travCompleteDialog.plotNumber.trim();
+    // Same 3-corner (triangle) confirm as the click-to-draw Polygon tool's
+    // own Attributes dialog (client req 2026-09-24) — a closed 3-leg
+    // traverse builds a polygon exactly the same way and was going straight
+    // to setPolygons() below with no check at all, a second way to end up
+    // with an unconfirmed triangle that the click-to-draw check never saw.
+    if (boundary.length === 3) {
+      const label = plotNumber ? `Lot ${plotNumber}` : "This plot";
+      const ok = window.confirm(
+        `${label} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means a leg was entered wrong.\n\nAccept it anyway?`
+      );
+      if (!ok) return; // leave the dialog exactly as it is — nothing committed
+    }
     snapshot();
     const polyId = `travpoly-${Date.now()}`;
     const boundaryPts = boundary.map((p) => ({ name: p.name, east: p.east, north: p.north }));
