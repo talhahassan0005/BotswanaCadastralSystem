@@ -42,6 +42,12 @@ export interface CogoLeg {
   distance: number;
   d_east_adj: number;
   d_north_adj: number;
+  /** Raw (unadjusted) east/north increments — present only for traverse-
+   *  computed results (Bowditch/Transit/LSQ). Used by the Data Consistency
+   *  report to show the real per-leg misclosure against recorded coordinates,
+   *  instead of the adjusted increments which always give 0.000. */
+  d_east_raw?: number;
+  d_north_raw?: number;
 }
 
 export interface CogoResult {

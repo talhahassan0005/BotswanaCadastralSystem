@@ -19,7 +19,7 @@ import type { ParsedRow, PointType } from "./types";
  *  finalized). */
 export function buildConsistencyLines(
   points: { name: string | null; east: number; north: number }[],
-  legs: { from: string | null; to: string | null; bearing: number; bearing_dms: string; distance: number }[]
+  legs: { from: string | null; to: string | null; bearing: number; bearing_dms: string; distance: number; d_east_raw?: number; d_north_raw?: number }[]
 ): string[] {
   const byName = new Map(points.map((p) => [p.name, p]));
   const lines: string[] = [];
@@ -32,9 +32,17 @@ export function buildConsistencyLines(
     if (!from || !to) return;
     if (i === 0) lines.push(nameRow(from.name ?? "", from.east, from.north));
     lines.push(`${toDotted(leg.bearing_dms)}    ${leg.distance.toFixed(2)}`);
-    const rad = (leg.bearing * Math.PI) / 180;
-    const computedE = from.east + leg.distance * Math.sin(rad);
-    const computedN = from.north + leg.distance * Math.cos(rad);
+    // Use raw (unadjusted) increments when available — these are the
+    // observed bearing/distance forward-projected, BEFORE Bowditch/Transit
+    // correction, so the difference against the recorded coordinate is the
+    // real per-leg misclosure. Falling back to recomputing from the stored
+    // bearing (which is the adjusted bearing for Cadastral plots built from
+    // exact coordinates) always gives 0.000 because the adjusted bearing
+    // was derived from those same coordinates.
+    const rawDE = leg.d_east_raw ?? leg.distance * Math.sin((leg.bearing * Math.PI) / 180);
+    const rawDN = leg.d_north_raw ?? leg.distance * Math.cos((leg.bearing * Math.PI) / 180);
+    const computedE = from.east + rawDE;
+    const computedN = from.north + rawDN;
     lines.push(nameRow(to.name ?? "", to.east, to.north));
     lines.push(misRow(computedE - to.east, computedN - to.north));
   });
