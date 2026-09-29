@@ -257,6 +257,20 @@ export function CogoWorkspace({
     if (dupLineWarnTimer.current) clearTimeout(dupLineWarnTimer.current);
     dupLineWarnTimer.current = setTimeout(() => setDupLineWarn(false), 1600);
   }
+  // Client req 2026-09-24, screenshot of a "Points joined" list with the
+  // same point (L1511) landed on twice back to back, producing a
+  // zero-length "0°00'00" 0.000m" ghost leg: "the system shall not allow
+  // joining on the same point more than once, unless the point is a start
+  // and end point" — same flash pattern again, own message; the
+  // start-equals-end case is deliberately exempt (that's the polygon's own
+  // closesPolygon check, a completely different code path — see below).
+  const [dupVertexWarn, setDupVertexWarn] = useState(false);
+  const dupVertexWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashDupVertexWarn() {
+    setDupVertexWarn(true);
+    if (dupVertexWarnTimer.current) clearTimeout(dupVertexWarnTimer.current);
+    dupVertexWarnTimer.current = setTimeout(() => setDupVertexWarn(false), 1600);
+  }
   const [rename, setRename] = useState<{ east: number; north: number; value: string; targetId: string } | null>(null); // inline name field for a freshly-placed single point
   const [offsetLineId, setOffsetLineId] = useState<string | null>(null); // source line picked for the Offset tool
   const [offsetInput, setOffsetInput] = useState<{ screenX: number; screenY: number; side: 1 | -1; value: string } | null>(null);
@@ -2598,8 +2612,15 @@ export function CogoWorkspace({
         // copied straight from the same stored point draft[0] itself came
         // from (resolveVertex's snapped-point branch), not recomputed.
         const closesPolygon = draftTool === "polygon" && draft.length >= 3 && v.existingId && v.east === draft[0].east && v.north === draft[0].north;
+        // Client req 2026-09-24: a point already used earlier in this same
+        // shape (the screenshot's L1511 landed on twice back to back,
+        // producing a zero-length "0°00'00" 0.000m" ghost leg) is refused
+        // — except the polygon's own start-equals-end close, which is the
+        // closesPolygon branch above and never reaches this check.
+        const duplicatesVertex = !closesPolygon && draft.some((d) => d.east === v.east && d.north === v.north);
         if (!v.existingId) flashSnapMiss();
         else if (closesPolygon) finishDraftWith([...draft, addVertexPoint(v)]);
+        else if (duplicatesVertex) flashDupVertexWarn();
         else if (last && lineExistsInDraft(last.east, last.north, v.east, v.north)) flashDupLineWarn();
         else setDraft((d) => [...d, addVertexPoint(v)]);
       } else if (draftTool === "offset") {
@@ -3188,6 +3209,8 @@ export function CogoWorkspace({
               <span>
                 {snapMiss
                   ? "No point there — click nearer an existing point. To create a brand-new one, use Add Point instead."
+                  : dupVertexWarn
+                  ? "That point is already used in this shape — pick a different point (or the starting point, to close)."
                   : draftTool === "polygon"
                   ? <>
                       {draft.length} vertex(es) placed —
@@ -4130,8 +4153,10 @@ export function CogoWorkspace({
 
           {!formTool && (
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500">
-            <span className={(snapMiss || dupLineWarn) && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon") ? "font-semibold text-red-600" : undefined}>
-              {dupLineWarn && (draftTool === "polyline" || draftTool === "polygon")
+            <span className={(snapMiss || dupLineWarn || dupVertexWarn) && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon") ? "font-semibold text-red-600" : undefined}>
+              {dupVertexWarn && (draftTool === "polyline" || draftTool === "polygon")
+                ? "That point is already used in this shape — pick a different point (or the starting point, to close)"
+                : dupLineWarn && (draftTool === "polyline" || draftTool === "polygon")
                 ? "That line is already drawn — pick a different point"
                 : snapMiss && (draftTool === "line" || draftTool === "polyline" || draftTool === "polygon")
                 ? "No point there — click nearer an existing point (use Add Point to create a new one)"
