@@ -1835,6 +1835,25 @@ export function CogoWorkspace({
       // (Part 9f) instead of a separate one, pre-filled with the
       // auto-incremented suggestion.
       //
+      // Client req 2026-09-24: "when joining a polygon, user should start
+      // at a point and finish/close as same point. otherwise it should not
+      // calculate polygon" — this only succeeds when the clicked sequence
+      // actually closed itself by landing back on the exact starting
+      // vertex. The polygon click-routing branch (onPointerUp) is what
+      // normally gets here: it detects that closing click and calls this
+      // function immediately itself ("it should then automatically
+      // finish"), with that closing vertex still included as the last
+      // point of `pts`. Finish/Enter/double-click reaching here any other
+      // way (the shape was never actually closed) is refused instead of
+      // silently auto-connecting an arbitrary last-to-first edge the user
+      // never drew.
+      const closesBackToStart = pts.length >= 4 && pts[pts.length - 1].east === pts[0].east && pts[pts.length - 1].north === pts[0].north;
+      if (!closesBackToStart) {
+        window.alert("This polygon isn't closed yet — click back on the starting point (the orange ring) to close it.");
+        return; // stays in draw mode — the vertices placed so far are untouched
+      }
+      const ring = pts.slice(0, -1); // drop the duplicate closing vertex; the segment loop below reconnects the last point to the first on its own
+      //
       // Client req 2026-09-24: "if i dont press ok or if i cancel, the
       // system should not add a polygon" — nothing is committed to the
       // canvas here anymore. The vertices are held in pendingPolygonPts;
@@ -1843,10 +1862,10 @@ export function CogoWorkspace({
       // instead. `draft` is kept showing exactly these (deduped) vertices
       // so the on-canvas outline and the Draw Polygon panel stay visible,
       // unchanged, while the dialog is open.
-      const areaM2 = polygonArea(pts.map((p) => ({ east: p.east, north: p.north })));
+      const areaM2 = polygonArea(ring.map((p) => ({ east: p.east, north: p.north })));
       const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
-      setDraft(pts);
-      setPendingPolygonPts(pts);
+      setDraft(ring);
+      setPendingPolygonPts(ring);
       setPolygonAttrDialog({ id: null, position: suggested, area: formatArea(areaM2), mainFigure: false });
       return; // skip the shared draft-reset below — see savePolygonAttrs/closePolygonAttrs
     } else if (draftTool === "curve" && pts.length >= 3) {
@@ -2567,7 +2586,20 @@ export function CogoWorkspace({
         // stray vertex like the reported "T5" point.
         const v = resolveVertex(vbx, vby);
         const last = draft[draft.length - 1];
+        // Client req 2026-09-24: "user should start at a point and finish/
+        // close as same point" — clicking back on the exact starting
+        // vertex closes the polygon and finishes it right here, the same
+        // click, no separate Finish/Enter/double-click needed
+        // ("it should then automatically finish then wait for user to
+        // save polygon attribute/press ok"). finishDraftWith's own polygon
+        // branch does the actual validate+commit (it's also what a manual
+        // Finish reaches, and refuses, if the shape was never closed this
+        // way). Exact-coordinate match is safe here: v.east/north are
+        // copied straight from the same stored point draft[0] itself came
+        // from (resolveVertex's snapped-point branch), not recomputed.
+        const closesPolygon = draftTool === "polygon" && draft.length >= 3 && v.existingId && v.east === draft[0].east && v.north === draft[0].north;
         if (!v.existingId) flashSnapMiss();
+        else if (closesPolygon) finishDraftWith([...draft, addVertexPoint(v)]);
         else if (last && lineExistsInDraft(last.east, last.north, v.east, v.north)) flashDupLineWarn();
         else setDraft((d) => [...d, addVertexPoint(v)]);
       } else if (draftTool === "offset") {
@@ -3156,9 +3188,17 @@ export function CogoWorkspace({
               <span>
                 {snapMiss
                   ? "No point there — click nearer an existing point. To create a brand-new one, use Add Point instead."
+                  : draftTool === "polygon"
+                  ? <>
+                      {draft.length} vertex(es) placed —
+                      {draft.length >= 3
+                        ? " click back on the starting point (the orange ring) to close and finish the polygon."
+                        : " click an existing point to add the next vertex (at least 3 needed)."}{" "}
+                      Undo removes the last vertex; Escape cancels this shape (or stops drawing entirely if nothing's placed yet).
+                    </>
                   : <>
-                      {draft.length} vertex(es) placed — click an existing point to add the next vertex, then double-click, press Enter, or Finish to complete
-                      {draftTool === "polygon" ? " (closes back to the first point)" : ""}, ready to start the next one right away. Undo removes
+                      {draft.length} vertex(es) placed — click an existing point to add the next vertex, then double-click, press Enter, or Finish to complete,
+                      ready to start the next one right away. Undo removes
                       the last vertex; Escape cancels this shape (or stops drawing entirely if nothing's placed yet).
                     </>}
               </span>
