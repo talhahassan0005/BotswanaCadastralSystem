@@ -354,6 +354,7 @@ export function GeneralPlanView() {
     lotTableCols: number;
     blockCornerCols: number;
     gridSpacingM: number;
+    plotsPerSheet: number;
   }> | null;
   const [meta, setMeta] = useState({
     name: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "TOWNSHIP LAYOUT",
@@ -433,6 +434,7 @@ export function GeneralPlanView() {
     // (non-round) coordinate happened to fall there; now they land on
     // actual round real-world multiples of this value instead.
     gridSpacingM: 50,
+    plotsPerSheet: 300,
     ...(savedGp ?? {}),
     // Sanitises a scale value already saved from BEFORE the scale-field
     // fix above (client req 2026-09-04, round 3 — a huge "108" plot-number
@@ -497,11 +499,31 @@ export function GeneralPlanView() {
   // fit-to-bounds scales to whatever it's given (via computeTransform), so
   // there's no rendering reason to cap this low; raised to match what the
   // reference actually does with a real subdivision.
-  const PLOTS_PER_SHEET = 300;
-  const sortedPlots = useMemo(
-    () => [...cogoPlots].sort((a, b) => comparePointNames(a.number, b.number)),
-    [cogoPlots]
-  );
+  const PLOTS_PER_SHEET = Math.max(1, Math.round(meta.plotsPerSheet) || 300);
+  const sortedPlots = useMemo(() => {
+    // Geographic sort: group spatially close plots together so multi-sheet
+    // splits put nearby lots on the same sheet (client req 2026-10-xx).
+    // Compute each plot's centroid, find the axis with the greater spread,
+    // sort along that axis; ties broken by the other axis then lot number.
+    const withCentroid = cogoPlots.map((p) => {
+      const pts = p.fig?.points ?? [];
+      const cx = pts.length ? pts.reduce((s, q) => s + q.east, 0) / pts.length : 0;
+      const cy = pts.length ? pts.reduce((s, q) => s + q.north, 0) / pts.length : 0;
+      return { p, cx, cy };
+    });
+    if (!withCentroid.length) return [];
+    const minX = Math.min(...withCentroid.map((w) => w.cx));
+    const maxX = Math.max(...withCentroid.map((w) => w.cx));
+    const minY = Math.min(...withCentroid.map((w) => w.cy));
+    const maxY = Math.max(...withCentroid.map((w) => w.cy));
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    withCentroid.sort((a, b) => {
+      const [primary, secondary] = spanX >= spanY ? [a.cx - b.cx, a.cy - b.cy] : [a.cy - b.cy, a.cx - b.cx];
+      return primary !== 0 ? primary : secondary !== 0 ? secondary : comparePointNames(a.p.number, b.p.number);
+    });
+    return withCentroid.map((w) => w.p);
+  }, [cogoPlots]);
   const layoutGroups = useMemo(() => {
     if (!sortedPlots.length) return [[] as typeof sortedPlots];
     // BALANCED split, not a fixed cap-then-remainder slice (client req
@@ -2275,6 +2297,41 @@ export function GeneralPlanView() {
     const groupUsedBeacons: GpBeacon[] = dedupePoints(groupGpPlots)
       .filter((p): p is { name: string; east: number; north: number } => !!p.name)
       .map((p) => ({ id: p.name, east: p.east, north: p.north }));
+    // Block corners = beacons where direction changes. Intermediate beacons
+    // (collinear between neighbours across all plot edges) are suppressed
+    // from drawing circles/labels but kept in the Block Corner Table.
+    const blockCornerIds = (() => {
+      const adj = new Map<string, Set<string>>();
+      const byId = new Map<string, { east: number; north: number }>();
+      for (const b of groupUsedBeacons) byId.set(b.id, b);
+      for (const plot of groupGpPlots) {
+        const pts = plot.points;
+        for (let i = 0; i < pts.length; i++) {
+          const cur = pts[i], prev = pts[(i + pts.length - 1) % pts.length], next = pts[(i + 1) % pts.length];
+          if (!cur.name) continue;
+          if (!adj.has(cur.name)) adj.set(cur.name, new Set());
+          if (prev.name) adj.get(cur.name)!.add(prev.name);
+          if (next.name) adj.get(cur.name)!.add(next.name);
+        }
+      }
+      const TOL = 0.05;
+      const brg = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+        Math.atan2(b.east - a.east, b.north - a.north) * (180 / Math.PI);
+      const diff = (a: number, b: number) => { let d = Math.abs(a - b) % 180; return d > 90 ? 180 - d : d; };
+      const result = new Set<string>();
+      for (const [id, neighbours] of adj) {
+        const me = byId.get(id);
+        if (!me) { result.add(id); continue; }
+        const ns = [...neighbours].map((nid) => byId.get(nid)).filter(Boolean) as { east: number; north: number }[];
+        if (ns.length < 2) { result.add(id); continue; }
+        let inter = true;
+        for (let i = 0; i < ns.length && inter; i++)
+          for (let j = i + 1; j < ns.length && inter; j++)
+            if (diff(brg(ns[i], me), brg(me, ns[j])) > TOL) inter = false;
+        if (!inter) result.add(id);
+      }
+      return result;
+    })();
     const t = computeTransform(groupUsedBeacons);
     // Right-side panel + Lot Areas + Block Corner Table text, all sized the
     // same as the drawing's own plot numbers (client req 2026-09-05,
@@ -2358,7 +2415,57 @@ export function GeneralPlanView() {
       tt.east >= t.bounds.minX - 1 && tt.east <= t.bounds.maxX + 1 && tt.north >= t.bounds.minY - 1 && tt.north <= t.bounds.maxY + 1;
     const sheetRoadLabels = meta.roadLabels.filter(inBounds);
     const sheetBoundaryLabels = displayBoundaryLabels.filter(inBounds);
-    const sheetDimLabels = edgeDimensionLabels.filter((d) => inBounds({ id: d.id, east: d.east, north: d.north, text: "" }));
+    const sheetDimLabels = (() => {
+      const raw = edgeDimensionLabels.filter((d) => inBounds({ id: d.id, east: d.east, north: d.north, text: "" }));
+      // Suppress duplicate bearings on collinear runs: group labels that share
+      // the same bearing string AND lie on the same straight line (collinear
+      // within tolerance). Within each group keep only the middle label's
+      // bearing; the rest show distance only. (client req 2026-10-xx)
+      const TOL_DEG = 0.05;
+      const normBrg = (b: string) => b.trim();
+      // Check if point c lies on the line through a and b (collinear test)
+      const onLine = (
+        a: { east: number; north: number },
+        b: { east: number; north: number },
+        c: { east: number; north: number }
+      ) => {
+        const cross = (b.east - a.east) * (c.north - a.north) - (b.north - a.north) * (c.east - a.east);
+        const len = Math.hypot(b.east - a.east, b.north - a.north) || 1;
+        return Math.abs(cross) / len < TOL_DEG * 111000 * 0.01; // ~1m tolerance
+      };
+      // Group indices by same bearing, then within each bearing group find
+      // runs of collinear labels and keep only the middle one's bearing.
+      const suppressBearing = new Set<string>();
+      // Group by normalised bearing string
+      const byBrg = new Map<string, typeof raw>();
+      for (const d of raw) {
+        const k = normBrg(d.bearing);
+        if (!byBrg.has(k)) byBrg.set(k, []);
+        byBrg.get(k)!.push(d);
+      }
+      for (const [, group] of byBrg) {
+        if (group.length < 2) continue;
+        // Find collinear runs within this bearing group using union-find
+        const n = group.length;
+        const parent = group.map((_, i) => i);
+        const find = (i: number): number => parent[i] === i ? i : (parent[i] = find(parent[i]));
+        const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+        for (let i = 0; i < n; i++)
+          for (let j = i + 1; j < n; j++)
+            if (onLine(group[i], group[j], { east: (group[i].east + group[j].east) / 2, north: (group[i].north + group[j].north) / 2 }))
+              union(i, j);
+        // For each run of size >= 2, suppress all but the middle label's bearing
+        const runs = new Map<number, number[]>();
+        for (let i = 0; i < n; i++) { const r = find(i); if (!runs.has(r)) runs.set(r, []); runs.get(r)!.push(i); }
+        for (const [, idxs] of runs) {
+          if (idxs.length < 2) continue;
+          const mid = Math.floor(idxs.length / 2);
+          for (let k = 0; k < idxs.length; k++)
+            if (k !== mid) suppressBearing.add(group[idxs[k]].id);
+        }
+      }
+      return raw.map((d) => suppressBearing.has(d.id) ? { ...d, bearing: "" } : d);
+    })();
 
     return (
       <svg
@@ -2457,7 +2564,7 @@ export function GeneralPlanView() {
           const r = n > 150 ? 0.42 : n > 60 ? 0.6533 : 0.9333;
           const cornerFS = Math.max(MIN_EDGE_TEXT_FS, EDGE_TEXT_GROUND_M * t.s);
           const off = cornerFS + 2;
-          return groupUsedBeacons.map((b) => {
+          return groupUsedBeacons.filter((b) => blockCornerIds.has(b.id)).map((b) => {
             const bx = t.sx(b.east, b.north), by = t.sy(b.east, b.north);
             return (
               <g key={b.id}>
@@ -3631,6 +3738,21 @@ export function GeneralPlanView() {
                 className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 {n}m
+              </button>
+            ))}
+          </span>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-slate-500">Plots per sheet (multi-sheet split)</div>
+          <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            {[100, 150, 200, 300].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, plotsPerSheet: n }))}
+                className={`px-3 py-1.5 text-sm font-medium ${(meta.plotsPerSheet ?? 300) === n ? 'bg-brand text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                {n}
               </button>
             ))}
           </span>

@@ -899,6 +899,17 @@ export function CogoWorkspace({
     // project, before lastPlotNumber has anything to suggest from) let a
     // triangle through with no warning at all.
     const cornerCount = pendingPolygonPts ? pendingPolygonPts.length : polygons.find((p) => p.id === id)?.points.length;
+    // CW-only check for pending (click-drawn) polygon in savePolygonAttrs.
+    if (pendingPolygonPts) {
+      const pendingArea = polygonArea(pendingPolygonPts.map((p) => ({ east: p.east, north: p.north })));
+      if (pendingArea <= 0) {
+        const doReverse = window.confirm(
+          "This polygon is counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse it, or Cancel to go back."
+        );
+        if (!doReverse) return;
+        pendingPolygonPts.reverse();
+      }
+    }
     if (cornerCount === 3) {
       const label = position.trim() ? `Lot ${position.trim()}` : "This plot";
       const ok = window.confirm(
@@ -1166,6 +1177,15 @@ export function CogoWorkspace({
         `${label} has only 3 corners (a triangle) — that's unusual for a cadastral lot and often means a leg was entered wrong.\n\nAccept it anyway?`
       );
       if (!ok) return; // leave the dialog exactly as it is — nothing committed
+    }
+    // CW-only check for traverse polygon.
+    const travArea = polygonArea(boundary.map((p) => ({ east: p.east, north: p.north })));
+    if (travArea <= 0) {
+      const doReverse = window.confirm(
+        "This traverse polygon is counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse the boundary, or Cancel to go back."
+      );
+      if (!doReverse) return;
+      boundary.reverse();
     }
     snapshot();
     const polyId = `travpoly-${Date.now()}`;
@@ -1867,6 +1887,15 @@ export function CogoWorkspace({
         return; // stays in draw mode — the vertices placed so far are untouched
       }
       const ring = pts.slice(0, -1); // drop the duplicate closing vertex; the segment loop below reconnects the last point to the first on its own
+      // CW-only check: with BASE_ORIENTATION_DEG=180, screen-CW = polygonArea > 0.
+      const ringArea = polygonArea(ring.map((p) => ({ east: p.east, north: p.north })));
+      if (ringArea <= 0) {
+        const doReverse = window.confirm(
+          "This polygon was drawn counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse it, or Cancel to go back and redraw."
+        );
+        if (!doReverse) return;
+        ring.reverse();
+      }
       //
       // Client req 2026-09-24: "if i dont press ok or if i cancel, the
       // system should not add a polygon" — nothing is committed to the
