@@ -920,9 +920,12 @@ export function CogoWorkspace({
         return;
       }
     }
-    // Skip check: warn if the new number skips over one or more integers
-    if (position.trim() && lastPlotNumber) {
-      const prev = parseInt(lastPlotNumber, 10);
+    // Skip check: only for NEW polygons, using highest existing number
+    if (position.trim() && (pendingPolygonPts || !id)) {
+      const existingNums = Object.values(polygonMeta)
+        .map((m) => parseInt(m.position ?? "", 10))
+        .filter(Number.isFinite);
+      const prev = existingNums.length ? Math.max(...existingNums) : NaN;
       const next = parseInt(position.trim(), 10);
       if (Number.isFinite(prev) && Number.isFinite(next) && next > prev + 1) {
         const skipped = Array.from({ length: next - prev - 1 }, (_, k) => prev + 1 + k).join(", ");
@@ -1217,9 +1220,12 @@ export function CogoWorkspace({
         return;
       }
     }
-    // Skip check
-    if (plotNumber && lastPlotNumber) {
-      const prev = parseInt(lastPlotNumber, 10);
+    // Skip check: use highest existing number across all polygons
+    if (plotNumber) {
+      const existingNums = Object.values(polygonMeta)
+        .map((m) => parseInt(m.position ?? "", 10))
+        .filter(Number.isFinite);
+      const prev = existingNums.length ? Math.max(...existingNums) : NaN;
       const next = parseInt(plotNumber, 10);
       if (Number.isFinite(prev) && Number.isFinite(next) && next > prev + 1) {
         const skipped = Array.from({ length: next - prev - 1 }, (_, k) => prev + 1 + k).join(", ");
