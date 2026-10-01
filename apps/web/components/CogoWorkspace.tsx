@@ -920,6 +920,18 @@ export function CogoWorkspace({
         return;
       }
     }
+    // Skip check: warn if the new number skips over one or more integers
+    if (position.trim() && lastPlotNumber) {
+      const prev = parseInt(lastPlotNumber, 10);
+      const next = parseInt(position.trim(), 10);
+      if (Number.isFinite(prev) && Number.isFinite(next) && next > prev + 1) {
+        const skipped = Array.from({ length: next - prev - 1 }, (_, k) => prev + 1 + k).join(", ");
+        const ok = window.confirm(
+          `Plot number "${position.trim()}" skips over: ${skipped}.\n\nDo you want to skip these numbers?`
+        );
+        if (!ok) return;
+      }
+    }
     if (cornerCount === 3) {
       const label = position.trim() ? `Lot ${position.trim()}` : "This plot";
       const ok = window.confirm(
@@ -1203,6 +1215,18 @@ export function CogoWorkspace({
       if (alreadyUsed) {
         window.alert(`Plot number "${plotNumber}" is already used. Please enter a unique plot number.`);
         return;
+      }
+    }
+    // Skip check
+    if (plotNumber && lastPlotNumber) {
+      const prev = parseInt(lastPlotNumber, 10);
+      const next = parseInt(plotNumber, 10);
+      if (Number.isFinite(prev) && Number.isFinite(next) && next > prev + 1) {
+        const skipped = Array.from({ length: next - prev - 1 }, (_, k) => prev + 1 + k).join(", ");
+        const ok = window.confirm(
+          `Plot number "${plotNumber}" skips over: ${skipped}.\n\nDo you want to skip these numbers?`
+        );
+        if (!ok) return;
       }
     }
     snapshot();
