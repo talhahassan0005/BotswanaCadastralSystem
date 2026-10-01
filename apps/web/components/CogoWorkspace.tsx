@@ -910,6 +910,16 @@ export function CogoWorkspace({
         pendingPolygonPts.reverse();
       }
     }
+    // Duplicate plot number check
+    if (position.trim()) {
+      const existingId = Object.entries(polygonMeta).find(
+        ([pid, m]) => m.position?.trim() === position.trim() && pid !== id
+      )?.[0];
+      if (existingId) {
+        window.alert(`Plot number "${position.trim()}" is already used. Please enter a unique plot number.`);
+        return;
+      }
+    }
     if (cornerCount === 3) {
       const label = position.trim() ? `Lot ${position.trim()}` : "This plot";
       const ok = window.confirm(
@@ -1186,6 +1196,14 @@ export function CogoWorkspace({
       );
       if (!doReverse) return;
       boundary.reverse();
+    }
+    // Duplicate plot number check
+    if (plotNumber) {
+      const alreadyUsed = Object.values(polygonMeta).some((m) => m.position?.trim() === plotNumber);
+      if (alreadyUsed) {
+        window.alert(`Plot number "${plotNumber}" is already used. Please enter a unique plot number.`);
+        return;
+      }
     }
     snapshot();
     const polyId = `travpoly-${Date.now()}`;

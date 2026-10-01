@@ -1157,38 +1157,10 @@ export function GeneralPlanView() {
       const m = doc.polygonMeta?.[pg.id];
       if (m?.mainFigure && m.position?.trim()) return m.position.trim();
     }
-    // Neither picked (client req 2026-09-22, repeat of the same complaint on
-    // an untouched-by-the-picker layout: "bearing, distance and lot number
-    // for main figure should not appear here... parent plot number should
-    // also not appear there") — fall back to detecting it from the geometry
-    // itself: a plot whose own boundary encloses every other plot's centroid
-    // is unambiguously the parent outline the sub-lots sit inside, same as
-    // 1207 around 1500-1504, so it gets the same treatment without needing
-    // it picked by hand first. Ordinary side-by-side lots never satisfy
-    // this (no single one contains all the others), so this can't misfire
-    // on a normal subdivision.
-    if (gpPlots.length < 2) return null;
-    const centroidOf = (pts: { east: number; north: number }[]) => ({
-      east: pts.reduce((s, p) => s + p.east, 0) / pts.length,
-      north: pts.reduce((s, p) => s + p.north, 0) / pts.length,
-    });
-    const inRing = (pt: { east: number; north: number }, ring: { east: number; north: number }[]) => {
-      let inside = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const a = ring[i], b = ring[j];
-        const hit = a.north > pt.north !== b.north > pt.north &&
-          pt.east < ((b.east - a.east) * (pt.north - a.north)) / (b.north - a.north) + a.east;
-        if (hit) inside = !inside;
-      }
-      return inside;
-    };
-    for (const candidate of gpPlots) {
-      if (candidate.points.length < 3) continue;
-      const others = gpPlots.filter((p) => p !== candidate);
-      if (others.every((o) => o.points.length >= 3 && inRing(centroidOf(o.points), candidate.points))) {
-        return candidate.number;
-      }
-    }
+    // Geometry-based auto-detection removed — it was too aggressive and
+    // caused large corner plots to be silently treated as the main figure,
+    // suppressing their lot number on the drawing. Only explicit picks
+    // (parentPlotNumber field or mainFigure checkbox) are honoured.
     return null;
   }, [meta.parentPlotNumber, cogoWorkspaceDoc, gpPlots]);
   const edgeDimensionLabels = useMemo<EdgeDimLabel[]>(() => {
