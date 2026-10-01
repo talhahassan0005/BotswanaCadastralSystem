@@ -3266,6 +3266,28 @@ export function GeneralPlanView() {
     // the scroll box's 82vh -> 90vh let it actually use that extra room
     // instead of staying capped at its old width/height regardless.
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+      {/* Unnumbered polygon warning (client req 2026-10-xx: "the system
+          must be able to pick that error" — a joined polygon with no lot
+          number set shows as a blank/? on the GP). Shown as a dismissible
+          banner at the top of the GP view whenever any polygon in the
+          workspace has no position set in polygonMeta. */}
+      {(() => {
+        const doc = (cogoWorkspaceDoc ?? {}) as {
+          polygons?: { id: string }[];
+          polygonMeta?: Record<string, { position?: string }>;
+        };
+        const unnamed = (doc.polygons ?? []).filter((pg) => !doc.polygonMeta?.[pg.id]?.position?.trim());
+        if (!unnamed.length) return null;
+        return (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="mt-0.5 text-lg leading-none">&#9888;</span>
+            <span>
+              <strong>{unnamed.length} polygon{unnamed.length > 1 ? 's' : ''}</strong> in the workspace {unnamed.length > 1 ? 'have' : 'has'} no lot number assigned.
+              {' '}Go to the <strong>COGO Workspace</strong> and open each polygon&apos;s attributes to assign a number before generating the General Plan.
+            </span>
+          </div>
+        );
+      })()}
       <div className="flex flex-col gap-4 lg:w-80 lg:flex-shrink-0">
       <Card title="General Plan details">
         {/* Single column (client req 2026-09-15, screenshot: "ye ho raha
