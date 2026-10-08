@@ -74,9 +74,10 @@ export const BoreholeDiagram = forwardRef<SVGSVGElement, Props>(function Borehol
     return { p, dist, brg };
   });
 
-  const tbl = { x: 812, y: 70, w: 564 };
+  const tbl = { x: 812, y: 70, w: 400 }; // narrowed to leave room for DSM box
   const rowH = 24;
-  const col = { name: tbl.x + 10, y: tbl.x + 180, x: tbl.x + 360 };
+  const col = { name: tbl.x + 10, y: tbl.x + 180, x: tbl.x + 300 };
+  const dsm = { x: tbl.x + tbl.w, y: tbl.y, w: VB_W - 14 - (tbl.x + tbl.w), h: 300 };
 
   return (
     <svg
@@ -171,10 +172,16 @@ export const BoreholeDiagram = forwardRef<SVGSVGElement, Props>(function Borehol
         })}
       </g>
 
-      {/* D.S.M No */}
-      <text x={VB_W - 30} y={40} textAnchor="end" fontSize={11} fontWeight="bold">
-        D.S.M No. {meta.dsmNo || "—"}
-      </text>
+      {/* D.S.M No. / Approved / Director of Surveys box — top-right of coordinate table */}
+      <g fontSize={10}>
+        <rect x={dsm.x} y={dsm.y} width={dsm.w} height={dsm.h} fill="white" stroke="black" strokeWidth={1} />
+        <text x={dsm.x + dsm.w / 2} y={dsm.y + 20} textAnchor="middle" fontSize={9.5} fontWeight="bold">D.S.M No.</text>
+        <text x={dsm.x + dsm.w / 2} y={dsm.y + 34} textAnchor="middle" fontSize={9.5}>{meta.dsmNo || ""}</text>
+        <line x1={dsm.x} y1={dsm.y + 42} x2={dsm.x + dsm.w} y2={dsm.y + 42} stroke="black" strokeWidth={0.5} />
+        <text x={dsm.x + 8} y={dsm.y + 60} fontSize={9.5}>Approved</text>
+        <text x={dsm.x + 8} y={dsm.y + 220} fontSize={9.5}>Director of Surveys</text>
+        <text x={dsm.x + 8} y={dsm.y + 234} fontSize={9.5}>and Mapping</text>
+      </g>
 
       {/* Legal description */}
       <g textAnchor="middle" fontSize={12}>
