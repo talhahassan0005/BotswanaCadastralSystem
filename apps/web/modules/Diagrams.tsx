@@ -1441,7 +1441,7 @@ export function Diagrams() {
                   {(kind === "compiled" || kind === "framed") && (
                     <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
                       {kind === "framed"
-                        ? 'The certification line reads "Framed from G.P. [General Plan No.] in [date] by me" — fill in the General Plan No. below, under Registration.'
+                        ? 'The certification line reads "Framed From Sr. No [S.R No.] and DSM No. [D.S.M No.] In [date] by me" — fill in the S.R No., D.S.M No. and date below.'
                         : 'The certification line reads "Compiled from Sr. [S.R No.], Dsm. [D.S.M No.] in [date] by me" — fill in the S.R No. and D.S.M No. below, under Registration.'}
                     </p>
                   )}

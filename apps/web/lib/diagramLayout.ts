@@ -81,8 +81,10 @@ export function certificationLine(meta: DiagramMeta): string {
       const refs = [meta.srNo ? `Sr. ${meta.srNo}` : "", meta.dsmNo ? `Dsm. ${meta.dsmNo}` : ""].filter(Boolean).join(", ");
       return `Compiled${refs ? ` from ${refs}` : ""} in ${meta.surveyedDate} by me,`;
     }
-    case "framed":
-      return `Framed${meta.gpNo ? ` from G.P. ${meta.gpNo}` : ""} in ${meta.surveyedDate} by me,`;
+    case "framed": {
+      const refs = [meta.srNo ? `Sr. No ${meta.srNo}` : "", meta.dsmNo ? `DSM No. ${meta.dsmNo}` : ""].filter(Boolean).join(" and ");
+      return `Framed${refs ? ` From ${refs}` : ""}${meta.gpNo ? ` from G.P. ${meta.gpNo}` : ""} In ${meta.surveyedDate} by me,`;
+    }
     default:
       return `Surveyed in ${meta.surveyedDate} by me,`;
   }
