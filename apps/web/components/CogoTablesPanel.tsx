@@ -234,8 +234,8 @@ export function CogoTablesPanel({
                     onMouseDown={(e) => { draggingRef.current = true; onRowMouseDown(p.id, e.shiftKey); }}
                     onMouseEnter={() => { if (draggingRef.current) onRowMouseEnter(p.id); }}
                     onDoubleClick={() => onOpenPolygonAttrs(p.id)}
-                    className={`cursor-pointer select-none ${isSel ? "bg-brand-light/40" : "hover:bg-slate-50"}`}
-                    title="Double-click for Attributes. Select a row, then Delete above to remove it."
+                    className={`cursor-pointer select-none ${isSel ? "bg-brand-light/40" : !m.position?.trim() ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-slate-50"}`}
+                    title={!m.position?.trim() ? "No lot number assigned — double-click Attrs to add one" : "Double-click for Attributes. Select a row, then Delete above to remove it."}
                   >
                     <td className="border-b border-slate-100 px-1 py-0.5">
                       <button

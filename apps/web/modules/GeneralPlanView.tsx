@@ -84,7 +84,7 @@ interface GpBeacon { id: string; east: number; north: number }
  *  reads `cogoPlots` (see WorkingPlanView.tsx's `resolvedPlots`) but without
  *  its manual `plotNumbers` picker: General Plan always shows ALL of them. */
 export function GeneralPlanView() {
-  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult, cogoWorkspaceDoc } = useStore();
+  const { cogoPlots, config, generalPlanInput, setGeneralPlanInput, importResult, cogoWorkspaceDoc, setActiveTab } = useStore();
 
   const refs = useRef<(SVGSVGElement | null)[]>([]);
   const [sheet, setSheet] = useState(0);
@@ -3283,7 +3283,13 @@ export function GeneralPlanView() {
             <span className="mt-0.5 text-lg leading-none">&#9888;</span>
             <span>
               <strong>{unnamed.length} polygon{unnamed.length > 1 ? 's' : ''}</strong> in the workspace {unnamed.length > 1 ? 'have' : 'has'} no lot number assigned.
-              {' '}Go to the <strong>COGO Workspace</strong> and open each polygon&apos;s attributes to assign a number before generating the General Plan.
+              {' '}Go to the{' '}
+              <button
+                type="button"
+                onClick={() => setActiveTab('editor')}
+                className="font-bold underline hover:text-amber-900"
+              >COGO Workspace</button>
+              {' '}→ open the Polygons table → the unnumbered rows are highlighted in amber.
             </span>
           </div>
         );
