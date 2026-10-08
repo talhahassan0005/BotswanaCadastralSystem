@@ -68,6 +68,7 @@ export interface DiagramMeta {
   annexedInFavourOf?: string;// "in favour of"
   parentDiagramNo?: string;  // "The immediate parent diagram is annexed to No."
   annexName?: string;        // optional name printed above "Registrar of Deeds"
+  certLine?: string;         // optional manual override for the certification line
 }
 
 /** Certification line wording — differs per diagram type per SG convention.
@@ -78,14 +79,17 @@ export interface DiagramMeta {
 export function certificationLine(meta: DiagramMeta): string {
   switch (meta.kind) {
     case "compiled": {
-      const refs = [meta.srNo ? `Sr. ${meta.srNo}` : "", meta.dsmNo ? `Dsm. ${meta.dsmNo}` : ""].filter(Boolean).join(", ");
-      return `Compiled${refs ? ` from ${refs}` : ""} in ${meta.surveyedDate} by me,`;
+      if (meta.certLine?.trim()) return meta.certLine.trim();
+      const refs = [meta.srNo ? `Sr. No ${meta.srNo}` : "", meta.dsmNo ? `DSM No. ${meta.dsmNo}` : ""].filter(Boolean).join(" and ");
+      return `Compiled${refs ? ` From ${refs}` : ""} In ${meta.surveyedDate} by me,`;
     }
     case "framed": {
+      if (meta.certLine?.trim()) return meta.certLine.trim();
       const refs = [meta.srNo ? `Sr. No ${meta.srNo}` : "", meta.dsmNo ? `DSM No. ${meta.dsmNo}` : ""].filter(Boolean).join(" and ");
       return `Framed${refs ? ` From ${refs}` : ""}${meta.gpNo ? ` from G.P. ${meta.gpNo}` : ""} In ${meta.surveyedDate} by me,`;
     }
     default:
+      if (meta.certLine?.trim()) return meta.certLine.trim();
       return `Surveyed in ${meta.surveyedDate} by me,`;
   }
 }

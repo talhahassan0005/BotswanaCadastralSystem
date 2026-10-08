@@ -192,6 +192,7 @@ export function Diagrams() {
     degreeSquare: "",
     parentDiagram: "",
     beaconDescription: defaultBeaconDescription(fig?.points ?? []),
+    certLine: "",
     areaHa: fig?.area_ha ?? 0,
     boreholeNo: "",
     boreholeE: 0,
@@ -1452,6 +1453,17 @@ export function Diagrams() {
                   <Field label="Scale 1:N"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
                   {!isBorehole && (
                     <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} /></Field>
+                  )}
+                  {(kind === "compiled" || kind === "framed") && (
+                    <Field label="Certification line (leave blank for auto)">
+                      <textarea
+                        value={meta.certLine ?? ""}
+                        onChange={(e) => setMeta((m) => ({ ...m, certLine: e.target.value }))}
+                        placeholder={kind === "framed" ? "e.g. Framed From Sr. No 425/2021 and DSM No. 564/2021 In February 2026 by me," : "e.g. Compiled From Sr. No 435/2017 and DSM No. 657/2017 In May 2025 by me,"}
+                        rows={2}
+                        className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs"
+                      />
+                    </Field>
                   )}
                 </div>
               </Card>
