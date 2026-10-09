@@ -5,6 +5,7 @@ import { apiJson, apiUpload } from "@/lib/api";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import type { ImportResult } from "@/lib/types";
 import { Badge, Button } from "@/components/ui";
+import { parseCadastralShp } from "@/lib/shp";
 
 // Real client data — Lot 14182 Charleshill (DG-Model.pdf, System Lo 21°).
 // Reproduces the published 35.9794 ha to ~1 m²; closes 1:334,976.
@@ -22,6 +23,12 @@ export function DataImport() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cShpRef = useRef<HTMLInputElement>(null);
+  const pShpRef = useRef<HTMLInputElement>(null);
+  const lShpRef = useRef<HTMLInputElement>(null);
+  const [pendingC, setPendingC] = useState<{ shp: ArrayBuffer; dbf: ArrayBuffer } | null>(null);
+  const [pendingL, setPendingL] = useState<{ dbf: ArrayBuffer } | null>(null);
+  const [pendingP, setPendingP] = useState<{ dbf: ArrayBuffer } | null>(null);
 
   async function handleFile(file: File) {
     setError(null);
@@ -33,6 +40,40 @@ export function DataImport() {
       setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Client-side cadastral SHP import — C must come first, then L and P are optional
+  async function handleCadastralShp(files: FileList | null, role: "C" | "L" | "P") {
+    if (!files?.length) return;
+    const arr = Array.from(files);
+    const shpFile = arr.find((f) => f.name.toLowerCase().endsWith(".shp"));
+    const dbfFile = arr.find((f) => f.name.toLowerCase().endsWith(".dbf"));
+    if (!dbfFile) { setError("Select the .dbf file (and optionally the .shp) for this layer."); return; }
+    if (role === "C" && !shpFile) { setError("Select both .shp and .dbf for the C (coordinate) file."); return; }
+
+    const dbfBuf = await dbfFile.arrayBuffer();
+    const shpBuf = shpFile ? await shpFile.arrayBuffer() : null;
+
+    if (role === "C") {
+      const c = { shp: shpBuf!, dbf: dbfBuf };
+      setPendingC(c);
+      setPendingL(null);
+      setPendingP(null);
+      setImportResult(parseCadastralShp(c.shp, c.dbf));
+      setError(null);
+    } else if (role === "L") {
+      if (!pendingC) { setError("Load the C (coordinate) shapefile first."); return; }
+      const l = { dbf: dbfBuf };
+      setPendingL(l);
+      setImportResult(parseCadastralShp(pendingC.shp, pendingC.dbf, pendingP?.dbf, l.dbf));
+      setError(null);
+    } else {
+      if (!pendingC) { setError("Load the C (coordinate) shapefile first."); return; }
+      const p = { dbf: dbfBuf };
+      setPendingP(p);
+      setImportResult(parseCadastralShp(pendingC.shp, pendingC.dbf, p.dbf, pendingL?.dbf));
+      setError(null);
     }
   }
 
@@ -83,12 +124,15 @@ export function DataImport() {
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl border-2 border-brand/40 text-2xl text-brand">
         </div>
         <p className="text-lg font-medium text-brand-dark">Drop your survey file here</p>
-        <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT / Excel (.xlsx) observations, or a DXF / Shapefile parent diagram</p>
+        <p className="mt-1 text-sm text-emerald-600">Supports: CSV / TXT / Excel (.xlsx) observations, or a DXF / Shapefile parent diagram · Use <strong>Import C SHP</strong> for cadastral C+P shapefiles</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <Button onClick={() => fileRef.current?.click()} loading={busy}>Browse file</Button>
           <Button variant="ghost" onClick={loadSample} loading={busy}>
             Load sample
           </Button>
+          <Button variant="ghost" onClick={() => cShpRef.current?.click()}>Import C SHP</Button>
+          {pendingC && <Button variant="ghost" onClick={() => lShpRef.current?.click()}>+ Add L SHP</Button>}
+          {pendingC && <Button variant="ghost" onClick={() => pShpRef.current?.click()}>+ Add P SHP</Button>}
         </div>
         <input
           ref={fileRef}
@@ -99,6 +143,30 @@ export function DataImport() {
             const f = e.target.files?.[0];
             if (f) handleFile(f);
           }}
+        />
+        <input
+          ref={cShpRef}
+          type="file"
+          accept=".shp,.dbf"
+          multiple
+          className="hidden"
+          onChange={(e) => { handleCadastralShp(e.target.files, "C"); e.target.value = ""; }}
+        />
+        <input
+          ref={lShpRef}
+          type="file"
+          accept=".shp,.dbf"
+          multiple
+          className="hidden"
+          onChange={(e) => { handleCadastralShp(e.target.files, "L"); e.target.value = ""; }}
+        />
+        <input
+          ref={pShpRef}
+          type="file"
+          accept=".shp,.dbf"
+          multiple
+          className="hidden"
+          onChange={(e) => { handleCadastralShp(e.target.files, "P"); e.target.value = ""; }}
         />
       </div>
 
@@ -116,7 +184,7 @@ export function DataImport() {
               Preview — {importResult.filename} ({importResult.rows.length} rows detected · columns: {importResult.detectedColumns.join(", ")})
             </p>
             <button
-              onClick={() => { setImportResult(null); setError(null); if (fileRef.current) fileRef.current.value = ""; }}
+              onClick={() => { setImportResult(null); setError(null); setPendingC(null); setPendingL(null); setPendingP(null); if (fileRef.current) fileRef.current.value = ""; }}
               className="whitespace-nowrap text-xs font-medium text-red-500 underline hover:text-red-700"
             >
               ✕ Remove / unload file
