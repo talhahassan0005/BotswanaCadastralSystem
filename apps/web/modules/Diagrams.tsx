@@ -282,7 +282,10 @@ export function Diagrams() {
   );
   const autoShared = useMemo(() => {
     const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
-    if (!loadedPlotNumber || points.length < 3) return empty;
+    // Client req: auto boundary marks only when this plot is part of a
+    // multi-lot layout. A single standalone plot has no lines by default —
+    // the surveyor adds them manually via Draw Extension Line.
+    if (!loadedPlotNumber || points.length < 3 || cogoPlots.length <= 1) return empty;
     const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
     const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
     const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
