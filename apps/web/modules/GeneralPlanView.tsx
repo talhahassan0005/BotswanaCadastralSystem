@@ -1382,14 +1382,14 @@ export function GeneralPlanView() {
     // touching the SVG's own title spacing, which was never reported as
     // an issue).
     let dxfTitleY = TITLE_Y1;
-    text(W / 2, dxfTitleY, `${sheetMode === "working" ? "WORKING" : "GENERAL"} PLAN`, MIN_TITLE_FS, "middle");
+    text(W / 2, dxfTitleY, sheetMode === "working" ? "Working Plan" : "General Plan", MIN_TITLE_FS, "middle");
     dxfTitleY += MIN_TITLE_FS * 1.5;
     text(W / 2, dxfTitleY, "OF", MIN_SUBTITLE_FS, "middle");
     dxfTitleY += MIN_SUBTITLE_FS * 1.4;
     text(
       W / 2, dxfTitleY,
       lotRangeTextForTitle
-        ? `LOTS ${lotRangeTextForTitle} ${meta.name}`
+        ? `Lots ${lotRangeTextForTitle} ${meta.name}`
         : `Layout of ${layoutGroups[activeGroupIdx].length} parcel(s)${meta.name ? ` ${meta.name}` : ""}`,
       MIN_SUBTITLE_FS, "middle"
     );
@@ -1409,7 +1409,7 @@ export function GeneralPlanView() {
       screenPolyline([[regX, regY + 30 * regScale], [regX + regW, regY + 30 * regScale]], false, "REG_BOX");
       screenPolyline([[regX, regY + 86 * regScale], [regX + regW, regY + 86 * regScale]], false, "REG_BOX");
       text(regX, mapY(18), `GC-${meta.gcNo || "—"}`, 5);
-      text(regX + regW, mapY(18), `SHEET No - ${activeGroupIdx + 1} of ${sheetCount}`, 5, "end");
+      text(regX + regW, mapY(18), `Sheet No - ${activeGroupIdx + 1} of ${sheetCount}`, 5, "end");
       text(regX + 6 * regScale, regY + 24 * regScale, `DSM No: ${meta.dsmNo || "—"}`, 9.5 * regScale);
       text(regX + 6 * regScale, regY + 46 * regScale, "Approved", 8.5 * regScale);
       text(regX + 6 * regScale, regY + 76 * regScale, "Director of Surveys and Mapping", 7.5 * regScale);
@@ -1558,7 +1558,7 @@ export function GeneralPlanView() {
         [[tblL, lotTableTop - 9], [dxfLotBoxRight, lotTableTop - 9], [dxfLotBoxRight, dxfLotBoxBottom], [tblL, dxfLotBoxBottom]],
         true, "LOT_AREAS"
       );
-      textM(panelX, lotTableTop, "LOT AREAS", PANEL_HEADING_GROUND_M);
+      textM(panelX, lotTableTop, "Lot Areas", PANEL_HEADING_GROUND_M);
       // Value text height capped to the row's own height (matching the
       // SVG's valueFS = Math.min(panelFS, lotRowH*0.65)) — otherwise a
       // shrunk row (many lots) would still get full-size ground-metre
@@ -1566,8 +1566,8 @@ export function GeneralPlanView() {
       const dxfLotValueM = Math.min(LOT_NUMBER_GROUND_M, dxfLotRowH * 0.65 * metresPerUnit);
       for (let c = 0; c < lotTableCols; c++) {
         const col = dxfLotColBounds[c];
-        textM(col.lotColL, lotTableTop + 13, "LOT", dxfLotValueM);
-        textM(col.sqmColL, lotTableTop + 13, "SQ.M", dxfLotValueM);
+        textM(col.lotColL, lotTableTop + 13, "Lot", dxfLotValueM);
+        textM(col.sqmColL, lotTableTop + 13, "Sq.m", dxfLotValueM);
         dxfSortedPlots.slice(c * dxfRowsPerCol, (c + 1) * dxfRowsPerCol).forEach((p, k) => {
           const y = lotTableTop + 22 + k * dxfLotRowH;
           textM(col.lotColL, y, p.number || "(none)", dxfLotValueM);
@@ -1592,14 +1592,14 @@ export function GeneralPlanView() {
         [[tblL, dxfBcTop - 9], [dxfBcTblR, dxfBcTop - 9], [dxfBcTblR, dxfBcBottom], [tblL, dxfBcBottom]],
         true, "BLOCK_CORNER"
       );
-      textM(panelX, dxfBcTop, "BLOCK CORNER TABLE", PANEL_HEADING_GROUND_M);
+      textM(panelX, dxfBcTop, "Block Corner Table", PANEL_HEADING_GROUND_M);
       const dxfBcSystemY = dxfBcTop + 9;
       // Same row-height cap as Lot Areas' own dxfLotValueM, against
       // BC_ROW_H (fixed, unlike Lot Areas' — the SVG's Block Corner Table
       // doesn't shrink its row height, but its text still can't exceed
       // that fixed row without overlapping the next one).
       const dxfBcValueM = Math.min(LOT_NUMBER_GROUND_M, BC_ROW_H * 0.65 * metresPerUnit);
-      textM(panelX, dxfBcSystemY, `SYSTEM ${fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)`, dxfBcValueM);
+      textM(panelX, dxfBcSystemY, `System ${fmtSystem(config.coordinateSystem)} Co-ordinates (metres)`, dxfBcValueM);
       for (let g = 0; g < dxfBcCols; g++) {
         const left = tblL + g * dxfBcGroupW;
         // Column gaps tightened (client req 2026-09-17: "block table corner
@@ -1609,7 +1609,7 @@ export function GeneralPlanView() {
         const col0 = left, col1 = left + dxfBcGroupW * 0.19, col2 = left + dxfBcGroupW * 0.52;
         textM(col1 + 6, dxfBcSystemY + 6, "Y", dxfBcValueM);
         textM(col2 + 6, dxfBcSystemY + 6, "X", dxfBcValueM);
-        textM(col0 + 6, dxfBcSystemY + 12, "CONSTANTS", dxfBcValueM);
+        textM(col0 + 6, dxfBcSystemY + 12, "Constants", dxfBcValueM);
         textM(col1 + 6, dxfBcSystemY + 12, "+0,00", dxfBcValueM);
         textM(col2 + 6, dxfBcSystemY + 12, "+0,00", dxfBcValueM);
         dxfBcSorted.slice(g * dxfBcRowsPerCol, (g + 1) * dxfBcRowsPerCol).forEach((b, k) => {
@@ -1643,7 +1643,7 @@ export function GeneralPlanView() {
     // Bottom outer-boundary traverse table (sheet 1 only, matching the
     // SVG's isFirstSheet gate).
     if (activeGroupIdx === 0 && outerSides.length > 0) {
-      text(mapX(30), FY1 + 44, "OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES", 5);
+      text(mapX(30), FY1 + 44, "Outer Boundary — Sides / Directions / Co-ordinates", 5);
       text(mapX(30), FY1 + 58, "Point", 4);
       text(mapX(110), FY1 + 58, "Direction", 4);
       text(mapX(230), FY1 + 58, "Distance (m)", 4);
@@ -1885,10 +1885,10 @@ export function GeneralPlanView() {
   // shown identically on every sheet so a reader can find any lot's sheet
   // from any page, matching the reference's own Sheet Index panel.
   const sheetIndexLines = layoutGroups.map((g, i) => {
-    if (!g.length) return `SHEET ${i + 1}: 0 plot(s)`;
+    if (!g.length) return `Sheet ${i + 1}: 0 plot(s)`;
     const nums = g.map((p) => Number(p.number)).filter((n) => Number.isFinite(n));
-    if (!nums.length) return `SHEET ${i + 1}: ${g.length} plot(s)`;
-    return `SHEET ${i + 1}: Lots ${Math.min(...nums)}-${Math.max(...nums)}`;
+    if (!nums.length) return `Sheet ${i + 1}: ${g.length} plot(s)`;
+    return `Sheet ${i + 1}: Lots ${Math.min(...nums)}-${Math.max(...nums)}`;
   });
   // The Sheet Index lists one line per layout sheet — unbounded, it pushed
   // everything below it (Lot Numbers table, Block Corner Table) off the
@@ -1902,7 +1902,7 @@ export function GeneralPlanView() {
           `… +${sheetIndexLines.length - (MAX_SHEET_INDEX_LINES - 1)} more sheet(s)`,
         ]
       : sheetIndexLines;
-  // "SHEET INDEX" is a General Plan thing only — verified against the real
+  // "Sheet Index" is a General Plan thing only — verified against the real
   // WP_CH.pdf reference text (client req 2026-09-01): it never appears on
   // the Working Plan reference sheet at all, only Beacon Description/Splay
   // Information/Ped Way do.
@@ -1917,19 +1917,19 @@ export function GeneralPlanView() {
   interface PanelSection { id: string; rows: { text: string; heading?: boolean }[] }
   const panelSections: PanelSection[] = [
     ...(sheetMode === "general"
-      ? [{ id: "sheetIndex", rows: [{ text: "SHEET INDEX", heading: true }, ...shownSheetIndex.map((text) => ({ text }))] }]
+      ? [{ id: "sheetIndex", rows: [{ text: "Sheet Index", heading: true }, ...shownSheetIndex.map((text) => ({ text }))] }]
       : []),
-    { id: "beaconDesc", rows: [{ text: "BEACON DESCRIPTION", heading: true }, { text: meta.beaconDescription || "—" }] },
+    { id: "beaconDesc", rows: [{ text: "Beacon Description", heading: true }, { text: meta.beaconDescription || "—" }] },
     {
       id: "splay",
       rows: [
-        { text: "SPLAY INFORMATION", heading: true },
+        { text: "Splay Information", heading: true },
         ...meta.splayEntries
           .filter((e) => e.corner.trim() || e.distance.trim())
           .map((e) => ({ text: `${e.corner || "—"}: ${e.distance || "—"}` })),
       ],
     },
-    { id: "pedWay", rows: [{ text: "PED WAY", heading: true }, { text: meta.pedWay || "—" }] },
+    { id: "pedWay", rows: [{ text: "Ped Way", heading: true }, { text: meta.pedWay || "—" }] },
   ];
   let panelCursorY = panelTop;
   const panelSectionLayouts = panelSections.map((section, si) => {
@@ -1937,8 +1937,8 @@ export function GeneralPlanView() {
     const rowYs = section.rows.map((row) => {
       const y = panelCursorY;
       // Heading's own line-height reduced (client req 2026-09-05,
-      // screenshot bracketing the gap under each of "SHEET INDEX"/"BEACON
-      // DESCRIPTION"/"SPLAY INFORMATION"/"PED WAY": "inke darmaaya space
+      // screenshot bracketing the gap under each of "Sheet Index"/"BEACON
+      // DESCRIPTION"/"Splay Information"/"Ped Way": "inke darmaaya space
       // reduce karo heading ur text ke darmayan" — this value is the gap
       // BEFORE the row that follows it, so a heading row's own 14 is what
       // set the distance down to its own content line beneath it). Content-
@@ -2001,7 +2001,7 @@ export function GeneralPlanView() {
   // ke liye bi rakho").
   const blockCornerCols = Math.max(1, Math.min(4, Math.round(meta.blockCornerCols) || 1));
   // Bordered grid — outer box, header underline, and a vertical rule between
-  // every column, matching the reference sheet's own boxed "LOT AREAS" table
+  // every column, matching the reference sheet's own boxed "Lot Areas" table
   // exactly (client req 2026-09-01, screenshot: "put lot areas in a table
   // like that" — was plain floating text with no lines at all before).
   const tblL = mapX(685), tblR = mapX(975);
@@ -2136,7 +2136,7 @@ export function GeneralPlanView() {
         // the original "Layout of N parcel(s)" wording (still with the name
         // appended) when there's nothing numbered yet to range over.
         const line2 = lotRangeTextForTitle
-          ? `LOTS ${lotRangeTextForTitle} ${meta.name}`
+          ? `Lots ${lotRangeTextForTitle} ${meta.name}`
           : `${label}${meta.name ? ` ${meta.name}` : ""}`;
         return (
           <g
@@ -2152,7 +2152,7 @@ export function GeneralPlanView() {
                 matching the GC-122/WP_CH reference exactly instead of
                 running "GENERAL PLAN OF {name}" together on one line. */}
             <text x={W / 2} y={TITLE_Y1} textAnchor="middle" fontSize={titleFS} fontWeight={700} fill={titleSelected ? "#dc2626" : "#0f172a"}>
-              {sheetMode === "working" ? "WORKING PLAN" : "GENERAL PLAN"}
+              {sheetMode === "working" ? "Working Plan" : "General Plan"}
             </text>
             <text x={W / 2} y={TITLE_OF_Y} textAnchor="middle" fontSize={subtitleFS} fill={titleSelected ? "#dc2626" : "#334155"}>
               OF
@@ -2209,7 +2209,7 @@ export function GeneralPlanView() {
               box's left edge and the other right-anchored at its right
               edge with nothing keeping them apart in between. */}
           <text x={regX} y={mapY(18)} fontSize={5} fontWeight={700} fill="#dc2626">GC-{meta.gcNo || "—"}</text>
-          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={5} fontWeight={700} fill="#0f172a">SHEET No - {no} of {sheetCount}</text>
+          <text x={regX + regW} y={mapY(18)} textAnchor="end" fontSize={5} fontWeight={700} fill="#0f172a">Sheet No - {no} of {sheetCount}</text>
           {/* Matched to the GC-122 reference exactly (client req 2026-08-28,
               screenshot circling this whole box): no "G.P. No." row here (that
               field stays editable for other diagrams' own cross-reference, just
@@ -2674,9 +2674,9 @@ export function GeneralPlanView() {
             {groupSortedPlots.length > 0 && (() => {
               const laX = tblL - 8, laY = lotTableTop - 20;
               const laW = lotBoxRight - tblL + 16;
-              // "LOT AREAS" is itself a table heading, not a caption sitting
+              // "Lot Areas" is itself a table heading, not a caption sitting
               // above the table (client req 2026-09-06, screenshot circling
-              // both this and "BLOCK CORNER TABLE" as floating outside their
+              // both this and "Block Corner Table" as floating outside their
               // own boxes: "ye dono table se bahar ku hain ye bi table
               // headings hi hain") — the box top now sits ABOVE the title
               // text instead of just below it, so the title becomes the
@@ -2701,7 +2701,7 @@ export function GeneralPlanView() {
               const laH = boxBottom - lotTableTop + LOT_FOOTER_H + 20;
               return panelResizable("lotAreas", { x: laX, y: laY, w: laW, h: laH }, (
                 <>
-                  <text x={panelX} y={lotTableTop} fontSize={panelHeadingFS} fontWeight={700} fill="#0f172a">LOT AREAS</text>
+                  <text x={panelX} y={lotTableTop} fontSize={panelHeadingFS} fontWeight={700} fill="#0f172a">Lot Areas</text>
                   <rect x={tblL} y={boxTop} width={lotBoxRight - tblL} height={boxBottom - boxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={titleRuleY} x2={lotBoxRight} y2={titleRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={headerRuleY} x2={lotBoxRight} y2={headerRuleY} stroke="#0f172a" strokeWidth={0.7} />
@@ -2709,7 +2709,7 @@ export function GeneralPlanView() {
                     <g key={c}>
                       {lotPairHeader(col.lotColL, col.sqmColL, lotTableTop + 13, lotFonts.headerFS, lotFonts.lotLabel, lotFonts.sqmLabel)}
                       {/* Column dividers start at titleRuleY, not boxTop —
-                          "LOT AREAS" spans the full table width like a
+                          "Lot Areas" spans the full table width like a
                           colspan header, so no vertical line should cross
                           through it (same convention as the Block Corner
                           Table's own SYSTEM row below). */}
@@ -2835,9 +2835,9 @@ export function GeneralPlanView() {
               // rows ur columns ki ur kuch nahi karna" — matches the Lot
               // Areas table's own outer-rect + column-divider + header-rule
               // convention just above, not a new style of its own).
-              // "BLOCK CORNER TABLE" is itself a table heading, not a
+              // "Block Corner Table" is itself a table heading, not a
               // caption above the table (client req 2026-09-06, screenshot
-              // circling both this and "LOT AREAS" as floating outside
+              // circling both this and "Lot Areas" as floating outside
               // their own boxes: "ye dono table se bahar ku hain ye bi
               // table headings hi hain") — the box top now sits ABOVE the
               // title instead of just below it, so the title becomes the
@@ -2907,7 +2907,7 @@ export function GeneralPlanView() {
               });
               return panelResizable("blockCorner", { x: bcHitX, y: bcHitY, w: bcHitW, h: bcHitH }, (
                 <>
-                  <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">BLOCK CORNER TABLE</text>
+                  <text x={panelX} y={bcTop} fontSize={bcHeadingFS} fontWeight={700} fill="#0f172a">Block Corner Table</text>
                   <rect x={tblL} y={bcBoxTop} width={bcTblR - tblL} height={bcBottom - bcBoxTop} fill="none" stroke="#0f172a" strokeWidth={0.7} />
                   <line x1={tblL} y1={bcTitleRuleY} x2={bcTblR} y2={bcTitleRuleY} stroke="#0f172a" strokeWidth={0.7} />
                   {/* SYSTEM row spans all columns, no vertical divider through
@@ -2920,7 +2920,7 @@ export function GeneralPlanView() {
                       box's own top). */}
                   <line x1={tblL} y1={bcSystemRowBottom} x2={bcTblR} y2={bcSystemRowBottom} stroke="#0f172a" strokeWidth={0.5} />
                   <line x1={tblL} y1={bcHeaderRuleY} x2={bcTblR} y2={bcHeaderRuleY} stroke="#0f172a" strokeWidth={0.7} />
-                  <text x={panelX} y={bcSystemY} textAnchor="start" fontSize={bcFS} fontWeight={600}>SYSTEM {fmtSystem(config.coordinateSystem)} CO-ORDINATES (metres)</text>
+                  <text x={panelX} y={bcSystemY} textAnchor="start" fontSize={bcFS} fontWeight={600}>System {fmtSystem(config.coordinateSystem)} Co-ordinates (metres)</text>
                   {/* Row dividers removed again (client req 2026-09-06: "dono
                       tables main se row devider delete kardo" — reversing
                       the 2026-09-05 addition above this comment). Column
@@ -2932,7 +2932,7 @@ export function GeneralPlanView() {
                       <line x1={g.col2} y1={bcSystemRowBottom} x2={g.col2} y2={bcBottom} stroke="#0f172a" strokeWidth={0.7} />
                       <text x={g.col1 + bcPad} y={bcYXY} textAnchor="start" fontSize={bcFS} fontWeight={600} fill="#475569">Y</text>
                       <text x={g.col2 + bcPad} y={bcYXY} textAnchor="start" fontSize={bcFS} fontWeight={600} fill="#475569">X</text>
-                      <text x={g.col0 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">CONSTANTS</text>
+                      <text x={g.col0 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">Constants</text>
                       <text x={g.col1 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">+0,00</text>
                       <text x={g.col2 + bcPad} y={bcConstY} textAnchor="start" fontSize={bcFS} fill="#475569">+0,00</text>
                       {bcShown.slice(gi * bcRowsPerCol, (gi + 1) * bcRowsPerCol).map((b, k) => {
@@ -3007,7 +3007,7 @@ export function GeneralPlanView() {
                 // guess.
                 const fitFS = (text: string, avail: number, cap: number, charW: number, min = 5) =>
                   Math.max(min, Math.min(cap, (avail - 2) / (text.length * charW)));
-                const obTitleText = "OUTER BOUNDARY — SIDES / DIRECTIONS / CO-ORDINATES";
+                const obTitleText = "Outer Boundary — Sides / Directions / Co-ordinates";
                 const obTableW = obTblR - cPoint;
                 const obHeadingFS = fitFS(obTitleText, obTableW, 9, 0.78);
                 const obTotalText = `TOTAL AREA = ${outerBoundaryAreaHa.toFixed(4)} Ha`;
@@ -3092,7 +3092,7 @@ export function GeneralPlanView() {
           return (
             <>
               <rect x={insetBox.x} y={insetBox.y} width={insetBox.w} height={insetBox.h} fill="white" stroke="#16a34a" strokeWidth={1.2} />
-              <text x={insetBox.x + insetBox.w / 2} y={insetBox.y - 4} textAnchor="middle" fontSize={8.5} fill="#16a34a">INSET NOT TO SCALE</text>
+              <text x={insetBox.x + insetBox.w / 2} y={insetBox.y - 4} textAnchor="middle" fontSize={8.5} fill="#16a34a">Inset Not to Scale</text>
               {insetPolygons.map((poly, i) => (
                 <polygon key={i} points={poly} fill="none" stroke="#0f172a" strokeWidth={1} strokeLinejoin="round" />
               ))}
