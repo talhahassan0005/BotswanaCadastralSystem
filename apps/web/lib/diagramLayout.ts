@@ -475,13 +475,16 @@ export function computeDiagramLayout(
 
   // ===================== deeds/annexure (bottom registration) table
   // (client req 2026-08-22/2026-08-24) — same shrink-to-fit/wrap rules. ===
+  // All right-column values share ONE x position — the longest label's right
+  // edge — so they form a clean aligned column (client req 2026-10-xx).
   const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.62 + 16;
-  const gpNoX = valueX("General Plan No.");
-  const srNoX = valueX("S.R No.");
-  const dsmFileX = valueX("D.S.M File:");
-  const compX = valueX("Comp.");
-  const degreeSquareX = valueX("Degree Square:");
-  const lirNoX = valueX("LIR No:");
+  const _valueXAligned = valueX("General Plan No."); // longest label sets the column
+  const gpNoX = _valueXAligned;
+  const srNoX = _valueXAligned;
+  const dsmFileX = _valueXAligned;
+  const compX = _valueXAligned;
+  const degreeSquareX = _valueXAligned;
+  const lirNoX = _valueXAligned;
   const gpNo = clampWords(dash(meta.gpNo), tableRight - gpNoX - 10, FS_BEACON_HEAD);
   const srNo = clampWords(dash(meta.srNo), tableRight - srNoX - 10, FS_BEACON_HEAD);
   const dsmFile = clampWords(dash(meta.dsmFile), tableRight - dsmFileX - 10, FS_BEACON_HEAD);
