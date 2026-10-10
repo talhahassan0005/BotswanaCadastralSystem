@@ -722,8 +722,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
                 title read. */}
-            <text x={VB_W - 700} y={certY1} fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
-            <text x={VB_W - 700} y={deductionsY} fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
+            <text x={tableRight - 10} y={certY1} textAnchor="end" fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
+            <text x={tableRight - 10} y={deductionsY} textAnchor="end" fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
           </>
         );
       })()}
