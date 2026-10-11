@@ -719,8 +719,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
                 title read. */}
-            <text x={tableRight - 10} y={certY1} textAnchor="end" fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
-            <text x={tableRight - 10} y={deductionsY} textAnchor="end" fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
+            <text x={tableRight - 48} y={certY1} textAnchor="end" fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
+            <text x={tableRight - 48} y={deductionsY} textAnchor="end" fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
           </>
         );
       })()}
@@ -740,7 +740,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // the label even with a perfectly ordinary value (client req
         // 2026-08-24). Each row's value now starts right after its own
         // label's actual (estimated) width instead of a shared fixed x.
-        const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.55 + 8;
+        const valueX = (label: string) => annC2 + 0 + label.length * FS_BEACON_HEAD * 0.55 + 8;
         const _valueXAligned = valueX("General Plan No.");
         const gpNoX = _valueXAligned;
         const srNoX = _valueXAligned;

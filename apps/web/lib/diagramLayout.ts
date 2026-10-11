@@ -319,7 +319,7 @@ export function computeDiagramLayout(
   const figureLetters =
     points.map((p) => p.name ?? "?").join(" ") + (meta.closed ? ` ${points[0]?.name ?? ""}` : "");
   const figureLines = wrapSvgWords(
-    ["The", "figure", ...figureLetters.split(/\s+/).filter(Boolean), "represents", ...areaText(meta.areaHa).split(" "), "of", "land", "called"],
+    ["The", "figure", ...figureLetters.split(/\s+/).filter(Boolean), "represents", ...areaText(meta.areaHa).split(" "), "of", "land", "called"],  // areaText already lowercase
 
     tw - 80,
     FS_LEGAL
@@ -353,8 +353,9 @@ export function computeDiagramLayout(
       withParens[withParens.length - 1] = `${withParens[withParens.length - 1]})`;
       return withParens;
     });
+  const toTitleCase = (s: string) => s.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   const situateLines = wrapSvgWords(
-    ["Situate", "at", ...meta.location.split(/\s+/).filter(Boolean), "in", "the", ...meta.tribalArea.split(/\s+/).filter(Boolean)],
+    ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)],
     tw - 80,
     FS_BEACON_HEAD
   );
