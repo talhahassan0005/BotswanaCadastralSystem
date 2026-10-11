@@ -740,7 +740,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // the label even with a perfectly ordinary value (client req
         // 2026-08-24). Each row's value now starts right after its own
         // label's actual (estimated) width instead of a shared fixed x.
-        const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.62 + 16;
+        const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.55 + 8;
         const _valueXAligned = valueX("General Plan No.");
         const gpNoX = _valueXAligned;
         const srNoX = _valueXAligned;

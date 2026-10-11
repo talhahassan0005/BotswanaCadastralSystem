@@ -478,7 +478,7 @@ export function computeDiagramLayout(
   // (client req 2026-08-22/2026-08-24) — same shrink-to-fit/wrap rules. ===
   // All right-column values share ONE x position — the longest label's right
   // edge — so they form a clean aligned column (client req 2026-10-xx).
-  const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.62 + 16;
+  const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.55 + 8;
   const _valueXAligned = valueX("General Plan No."); // longest label sets the column
   const gpNoX = _valueXAligned;
   const srNoX = _valueXAligned;
