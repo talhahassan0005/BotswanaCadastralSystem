@@ -920,7 +920,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={cert.x + 70} y={cert.y + 72}>{meta.dateOfSurvey || ""}</text>
         <line x1={cert.x + 70} y1={cert.y + 74} x2={cert.x + cert.w - 12} y2={cert.y + 74} stroke="black" strokeWidth={0.4} />
         <text x={cert.x + 8} y={cert.y + 92}>Land Surveyor:</text>
-        <text x={cert.x + cert.w - 12} y={cert.y + 92} textAnchor="end" fontWeight="bold">{meta.surveyor || ""}</text>
+        <text x={cert.x + cert.w - 100} y={cert.y + 92} textAnchor="end" fontWeight="bold">{meta.surveyor || ""}</text>
         {/* Underlined signature line (client req 2026-08-26, Part 33f), same
             treatment as the "Date of survey" line above. */}
         <line x1={cert.x + 70} y1={cert.y + 94} x2={cert.x + cert.w - 12} y2={cert.y + 94} stroke="black" strokeWidth={0.4} />
