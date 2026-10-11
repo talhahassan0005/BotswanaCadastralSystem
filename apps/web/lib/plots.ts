@@ -270,6 +270,45 @@ const MAX_LOT_ASPECT_RATIO = 6; // longest side / shortest side
 // Plan sheet.
 const MAX_LOT_SIDE = 60; // metres
 
+/** Returns a signed area (positive = counter-clockwise, negative = clockwise
+ *  in standard math coords; north-up screen coords flip the sign convention
+ *  so negative = clockwise on screen). Used to enforce strict clockwise
+ *  winding on every detected lot ring. */
+function signedArea2(ring: { east: number; north: number }[]): number {
+  let s = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    s += (a.east * b.north - b.east * a.north);
+  }
+  return s;
+}
+
+/** Removes statistical outliers from a point cloud before detection.
+ *  Any point whose distance to its nearest neighbour exceeds
+ *  `outlierFactor` times the median nearest-neighbour distance is
+ *  considered "far" and excluded. */
+function removeOutliers<T extends PlotPoint>(pts: T[], outlierFactor = 5): T[] {
+  if (pts.length < 4) return pts;
+  interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: T }
+  const tree = new RBush<PtBox>();
+  tree.load(pts.map((p) => ({ minX: p.east, minY: p.north, maxX: p.east, maxY: p.north, p })));
+  const nnDists: number[] = [];
+  for (const p of pts) {
+    const box = { minX: p.east - 500, minY: p.north - 500, maxX: p.east + 500, maxY: p.north + 500 };
+    let best = Infinity;
+    for (const c of tree.search(box)) {
+      if (c.p === p) continue;
+      const d = Math.hypot(c.p.east - p.east, c.p.north - p.north);
+      if (d < best) best = d;
+    }
+    nnDists.push(best);
+  }
+  const sorted = [...nnDists].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const threshold = median * outlierFactor;
+  return pts.filter((_, i) => nnDists[i] <= threshold);
+}
+
 /** One axis-aligned detection pass — the exact original algorithm, just
  *  generic over any point shape so a rotated (temporary) copy can carry a
  *  back-reference to its real-world original alongside it. */
@@ -317,7 +356,44 @@ function detectAxisAlignedPass<T extends PlotPoint>(pts: T[], tol: number): { lo
     const longSide = Math.max(sideEast, sideNorth);
     if (shortSide < MIN_LOT_SIDE || longSide > MAX_LOT_SIDE || longSide / shortSide > MAX_LOT_ASPECT_RATIO) continue;
 
-    lots.push([p, right, corner, up]);
+    // Build the ring in order: bottom-left, bottom-right, top-right, top-left
+    const ring: T[] = [p, right, corner, up];
+
+    // Reject self-intersecting quads (crossing lines) — a valid rectangle
+    // has no crossing diagonals when wound correctly, but a degenerate
+    // ordering can produce an hourglass shape. Check that the two diagonals
+    // (p->corner and right->up) actually intersect INSIDE the quad.
+    const [p0, p1, p2, p3] = ring;
+    function segsCross(
+      ax: number, ay: number, bx: number, by: number,
+      cx: number, cy: number, dx: number, dy: number
+    ): boolean {
+      const d1x = bx - ax, d1y = by - ay, d2x = dx - cx, d2y = dy - cy;
+      const denom = d1x * d2y - d1y * d2x;
+      if (Math.abs(denom) < 1e-10) return false;
+      const t = ((cx - ax) * d2y - (cy - ay) * d2x) / denom;
+      const u = ((cx - ax) * d1y - (cy - ay) * d1x) / denom;
+      return t > 0 && t < 1 && u > 0 && u < 1;
+    }
+    // Check all pairs of non-adjacent edges for crossing
+    const edges4 = [[0,1],[1,2],[2,3],[3,0]] as const;
+    let hasCrossing = false;
+    for (let i = 0; i < 4 && !hasCrossing; i++) {
+      for (let j = i + 2; j < 4 && !hasCrossing; j++) {
+        if (i === 0 && j === 3) continue; // adjacent
+        const [a, b] = edges4[i], [c, d] = edges4[j];
+        if (segsCross(ring[a].east, ring[a].north, ring[b].east, ring[b].north,
+                      ring[c].east, ring[c].north, ring[d].east, ring[d].north)) {
+          hasCrossing = true;
+        }
+      }
+    }
+    if (hasCrossing) continue;
+
+    // Enforce strictly clockwise winding (negative signed area in north-up coords)
+    if (signedArea2(ring) > 0) ring.reverse();
+
+    lots.push(ring);
     used.add(p); used.add(right); used.add(corner); used.add(up);
   }
 
@@ -369,6 +445,11 @@ export function detectRectangularLots(points: PlotPoint[], tol = 0.05): { lots: 
   let remaining: Working[] = points
     .filter((p) => Number.isFinite(p.east) && Number.isFinite(p.north))
     .map((p) => ({ ...p, __orig: p }));
+
+  // Remove statistical outliers (points far from all neighbours) before
+  // any detection pass — they can never form a valid rectangle with nearby
+  // points and only skew the tilt estimator and spatial index queries.
+  remaining = removeOutliers(remaining) as Working[];
 
   const lots: DetectedLot[] = [];
   const usedOriginal = new Set<PlotPoint>();
