@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { CogoResult } from "@/lib/types";
@@ -85,20 +85,15 @@ export function CogoEngine() {
   // Auto-run coordinate-only computation when data is freshly imported
   // (client req: "when i want to work on the data there is nothing" —
   // coordinate-only imports from SHP/CSV need no manual button click).
-  const autoRanRef = useMemo(() => ({ done: false }), [importResult]);
-  useMemo(() => {
-    if (!coordinateOnly || cogoResult || autoRanRef.done) return;
-    if (coordPoints.length < 3 || coordPoints.length > 60) return; // let user confirm for large sets
-    autoRanRef.done = true;
-    // Fire after render so state is settled
-    setTimeout(() => {
-      apiJson<CogoResult>("/cogo/coordinates", {
-        points: coordPoints,
-        type: config.traverseType,
-      }).then(setCogoResult).catch(() => {/* silent — user can click manually */});
-    }, 0);
+  useEffect(() => {
+    if (!coordinateOnly || cogoResult) return;
+    if (coordPoints.length < 3 || coordPoints.length > 60) return;
+    apiJson<CogoResult>("/cogo/coordinates", {
+      points: coordPoints,
+      type: config.traverseType,
+    }).then(setCogoResult).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coordinateOnly, coordPoints, cogoResult]);
+  }, [importResult]);
 
   // The computed boundary, handed to the work station canvas so "Run COGO
   // Computation" actually draws it there — not just in the results tables

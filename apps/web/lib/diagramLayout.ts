@@ -147,8 +147,8 @@ export function boundaryLetter(i: number): string {
 /** Area line: small plots in SQUARE METRES, larger in HECTARES (SG convention). */
 export function areaText(areaHa: number): string {
   return areaHa < 1
-    ? `${Math.round(areaHa * 10000).toLocaleString("en-US")} SQUARE METRES`
-    : `${areaHa.toFixed(4)} HECTARES`;
+    ? `${Math.round(areaHa * 10000).toLocaleString("en-US")} square metres`
+    : `${areaHa.toFixed(4)} hectares`;
 }
 /** Coordinate-system label in SG form: "Lo 29" -> "LO. 29°". */
 export function fmtSystem(cs: string): string {
@@ -319,7 +319,8 @@ export function computeDiagramLayout(
   const figureLetters =
     points.map((p) => p.name ?? "?").join(" ") + (meta.closed ? ` ${points[0]?.name ?? ""}` : "");
   const figureLines = wrapSvgWords(
-    ["THE", "FIGURE", ...figureLetters.split(/\s+/).filter(Boolean), "REPRESENTS", ...areaText(meta.areaHa).split(" "), "OF", "LAND", "CALLED"],
+    ["The", "figure", ...figureLetters.split(/\s+/).filter(Boolean), "represents", ...areaText(meta.areaHa).split(" "), "of", "land", "called"],
+
     tw - 80,
     FS_LEGAL
   );
@@ -353,7 +354,7 @@ export function computeDiagramLayout(
       return withParens;
     });
   const situateLines = wrapSvgWords(
-    ["SITUATE", "AT", ...meta.location.split(/\s+/).filter(Boolean), "IN", "THE", ...meta.tribalArea.split(/\s+/).filter(Boolean)],
+    ["Situate", "at", ...meta.location.split(/\s+/).filter(Boolean), "in", "the", ...meta.tribalArea.split(/\s+/).filter(Boolean)],
     tw - 80,
     FS_BEACON_HEAD
   );

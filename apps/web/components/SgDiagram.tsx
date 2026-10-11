@@ -359,25 +359,22 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={1.2} />
 
         {/* header row 1 */}
-        <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>SIDES</text>
-        <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>DIRECTIONS</text>
-        <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>CO-ORDINATES</text>
-        <text x={(xDsm + tableRight) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
+        <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Sides</text>
+        <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Directions</text>
+        <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Co-ordinates</text>
+        <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
+        <text x={xDsm + 16} y={hRow2} fontSize={FS_TABLE_HEAD}>
+          {clampWords(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}
+        </text>
         {/* header row 2 */}
-        <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>METRES</text>
+        <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>Metres</text>
         <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">Y</text>
         <text x={(xY + xXR) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB}>
           {clampWords(`System ${fmtSystem(meta.coordinateSystem)}`, xXR - xY - 12, FS_TABLE_SUB)}
         </text>
-        {/* Nudged right off centre (client req 2026-08-27) — dead-centre in the
-            X column sat against the tail of the "System LO. N°" label next to
-            it, which spans into this column too, so the two collided. */}
         <text x={xX + (xXR - xX) / 2 + 20} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">X</text>
-        <text x={(xDsm + tableRight) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_HEAD}>
-          {clampWords(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}
-        </text>
         {/* header row 3 — constants */}
-        <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="medium" fontSize={FS_CONSTANTS}>CONSTANTS</text>
+        <text x={(xDir + xDirR) / 2} y={hRow3} textAnchor="middle" fontWeight="medium" fontSize={FS_CONSTANTS}>Constants</text>
         <text x={xY + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
         <text x={xX + 8} y={hRow3} fontSize={FS_CONSTANTS}>+    0,00</text>
 
@@ -410,7 +407,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
       <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
-        BEACON DESCRIPTION
+        Beacon description
       </text>
       {beaconLines.map((ln, i) => (
         <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
@@ -481,7 +478,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           (client req 2026-08-22) — no longer under the north arrow. */}
       {meta.scale > 0 && (
         <text x={VB_W / 2} y={legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
-          SCALE 1:{meta.scale.toLocaleString()}
+          Scale 1:{meta.scale.toLocaleString()}
         </text>
       )}
 
@@ -716,8 +713,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             </g>
 
             {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
-            <text x={tx + 4} y={certY1} fontSize={FS_BEACON_HEAD}>{cert}</text>
-            <text x={tx + 4} y={deductionsY} fontSize={FS_BEACON_HEAD}>DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF</text>
+            <text x={tx + 20} y={certY1} fontSize={FS_BEACON_HEAD}>{cert}</text>
+            <text x={tx + 20} y={deductionsY} fontSize={FS_BEACON_HEAD}>Deductions on this diagram are made on the back hereof</text>
             {/* Plain/simple styling (client req 2026-08-22) — no bold, no
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
