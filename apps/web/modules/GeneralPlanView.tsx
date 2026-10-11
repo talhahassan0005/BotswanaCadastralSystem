@@ -3250,22 +3250,6 @@ export function GeneralPlanView() {
 
   return (
     <>
-    {/* Sidebar layout (client req 2026-09-05, screenshots circling the
-    // "General Plan details"/"Sheet reference panel" cards: "move to the
-    // side just like sidebar" — these two form cards used to stack above
-    // the actual sheet preview; now they sit in a left column next to it
-    // instead, same as the reference screenshots' own left-hand panel).
-    // Stacks back to a single column on narrow screens (lg: breakpoint)
-    // rather than squeezing a sidebar into a phone-width layout.
-    //
-    // Narrowed + shifted left, sheet preview grown to fill the freed space
-    // (client req 2026-09-05 follow-up: "sidebar ko left per thora shift
-    // karo ur right wali jo general plan wala section hai uski width ur
-    // height increase kardo takay page pe fit ho sake") — w-96 -> w-80 and
-    // the gap tightened (gap-4 -> gap-3) leaves the sidebar hugging the
-    // left edge more closely; the sheet's own max-w-5xl -> max-w-7xl and
-    // the scroll box's 82vh -> 90vh let it actually use that extra room
-    // instead of staying capped at its old width/height regardless.
     {(() => {
       const doc = (cogoWorkspaceDoc ?? {}) as {
         polygons?: { id: string }[];
