@@ -287,20 +287,25 @@ function signedArea2(ring: { east: number; north: number }[]): number {
  *  Any point whose distance to its nearest neighbour exceeds
  *  `outlierFactor` times the median nearest-neighbour distance is
  *  considered "far" and excluded. */
-function removeOutliers<T extends PlotPoint>(pts: T[], outlierFactor = 5): T[] {
+function removeOutliers<T extends PlotPoint>(pts: T[], outlierFactor = 3): T[] {
   if (pts.length < 4) return pts;
   interface PtBox { minX: number; minY: number; maxX: number; maxY: number; p: T }
   const tree = new RBush<PtBox>();
   tree.load(pts.map((p) => ({ minX: p.east, minY: p.north, maxX: p.east, maxY: p.north, p })));
+  // Search radius = 2× MAX_LOT_SIDE so we always find a neighbour for any
+  // point that genuinely belongs to the grid, but don't waste time scanning
+  // the whole dataset for a truly isolated outlier.
+  const searchR = MAX_LOT_SIDE * 2;
   const nnDists: number[] = [];
   for (const p of pts) {
-    const box = { minX: p.east - 500, minY: p.north - 500, maxX: p.east + 500, maxY: p.north + 500 };
+    const box = { minX: p.east - searchR, minY: p.north - searchR, maxX: p.east + searchR, maxY: p.north + searchR };
     let best = Infinity;
     for (const c of tree.search(box)) {
       if (c.p === p) continue;
       const d = Math.hypot(c.p.east - p.east, c.p.north - p.north);
       if (d < best) best = d;
     }
+    // A point with no neighbour within searchR is already an outlier
     nnDists.push(best);
   }
   const sorted = [...nnDists].sort((a, b) => a - b);
