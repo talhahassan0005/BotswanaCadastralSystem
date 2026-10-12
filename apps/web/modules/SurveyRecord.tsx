@@ -137,10 +137,10 @@ export function SurveyRecord() {
     }
     const title = DOCS.find((d) => d.id === doc)?.label ?? "Survey Record";
     w.document.write(
-      `<html><head><title>${title} — ${lotName}</title>` +
+      `<html><head><title></title>` +
         `<style>` +
-        `@page{size:A4;margin:20mm}` +
-        `body{font-family:Georgia,'Times New Roman',serif;color:#1e293b;font-size:12pt;line-height:1.6;margin:0}` +
+        `@page{size:A4;margin:0}` +
+        `body{font-family:Georgia,'Times New Roman',serif;color:#1e293b;font-size:12pt;line-height:1.6;margin:0;padding:20mm}` +
         `h1{font-size:16pt;margin:0 0 4px}h2{font-size:13pt;margin:18px 0 6px}` +
         `p{margin:0 0 10px}table{border-collapse:collapse;width:100%;font-size:10pt;margin:10px 0}` +
         `th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}` +
