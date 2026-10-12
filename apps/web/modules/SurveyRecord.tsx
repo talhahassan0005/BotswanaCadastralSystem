@@ -111,7 +111,7 @@ export function SurveyRecord() {
   // LOT ..." and the "in respect of Lot ..." sentence together (client req
   // 2026-08-27: editing it in one place must update both).
   const [lotNumber, setLotNumber] = useState(ri.lotNumber ?? lotName.replace(/^lot\s+/i, ""));
-  const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? "");
+  const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? surveyor);
   const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey ?? dMeta?.surveyedDate ?? "");
   const [purpose, setPurpose] = useState(ri.purpose ?? "");
   const [authority, setAuthority] = useState(ri.authority ?? "");
