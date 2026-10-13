@@ -492,15 +492,32 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     const c = polygonCentroid(pts);
     return { number: plot.number, poly: pts.map((q) => `${q.x},${q.y}`).join(" "), labelX: c.x, labelY: c.y };
   });
-  // Real reference-mark points (client req 2026-08-20, Part 12b) — clamped to
-  // stay inside the inset box since it's an explicitly "not to scale" locality
-  // diagram and a ref mark's true coordinates are usually outside the tight
-  // parcel bounding box the inset is fitted to.
+  // Real reference-mark points (client req 2026-08-20, Part 12b) — placed
+  // using the same iX/iY transform as the lot polygons but with a smaller
+  // fit so ref marks outside the tight parcel bounding box stay visible
+  // inside the inset instead of being clamped to its edge.
+  const allInsetPts = [
+    ...activePlots.flatMap((plot) => plot.points),
+    ...(refMarks ?? []),
+  ];
+  const allInsetLocal = allInsetPts.map((p) => insetLocal(p.east, p.north));
+  const aMinU = Math.min(...allInsetLocal.map((q) => q.u)), aMaxU = Math.max(...allInsetLocal.map((q) => q.u));
+  const aMinV = Math.min(...allInsetLocal.map((q) => q.v)), aMaxV = Math.max(...allInsetLocal.map((q) => q.v));
+  const aSpanU = Math.max(aMaxU - aMinU, 1e-6), aSpanV = Math.max(aMaxV - aMinV, 1e-6);
+  const aFit = Math.min((inset.w - 2 * insetPad) / aSpanU, (inset.h - 2 * insetPad) / aSpanV);
+  const raX = (e: number, n: number) => insetCx + (insetLocal(e, n).u - (aMinU + aMaxU) / 2) * aFit;
+  const raY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (aMinV + aMaxV) / 2) * aFit;
   const refDots = (refMarks ?? []).map((r) => ({
-    x: Math.min(inset.x + inset.w - 8, Math.max(inset.x + 8, iX(r.east, r.north))),
-    y: Math.min(inset.y + inset.h - 8, Math.max(inset.y + 8, iY(r.east, r.north))),
+    x: raX(r.east, r.north),
+    y: raY(r.east, r.north),
     label: r.name || "RM",
   }));
+  // Recompute inset polygons using the expanded fit so lot + ref marks share the same transform
+  const insetPolygonsAll = activePlots.map((plot) => {
+    const pts = plot.points.map((p) => ({ x: raX(p.east, p.north), y: raY(p.east, p.north) }));
+    const c = polygonCentroid(pts);
+    return { number: plot.number, poly: pts.map((q) => `${q.x},${q.y}`).join(" "), labelX: c.x, labelY: c.y };
+  });
 
   // ---- Bottom description blocks ----
   // Nudged up 5px from VB_H-200 to fit the new FOUND BEACONS subsection
@@ -891,20 +908,20 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={inset.x + inset.w / 2} y={inset.y - 4} textAnchor="middle" fontSize={7.5} fill={INSET_GREEN}>
           INSET NOT TO SCALE
         </text>
-        {insetPolygons.map((pg, i) => (
+        {insetPolygonsAll.map((pg, i) => (
           <polygon key={`ip${i}`} points={pg.poly} fill="none" stroke="black" strokeWidth={1} strokeLinejoin="round" />
         ))}
         {/* Lot numbers inside the inset (client req 2026-09-21: "Also add lot
             numbers") — same area-weighted centroid the main figure labels
             with. Skipped past 20 lots, where they'd just smear together in
             a box this small. */}
-        {activePlots.length <= 20 && insetPolygons.map((pg, i) => pg.number ? (
+        {activePlots.length <= 20 && insetPolygonsAll.map((pg, i) => pg.number ? (
           <text key={`il${i}`} x={pg.labelX} y={pg.labelY} textAnchor="middle" dominantBaseline="middle" fontSize={6} fontWeight="bold" fill="black">{pg.number}</text>
         ) : null)}
         {refDots.map((d, i) => (
           <g key={`rm${i}`}>
-            <circle cx={d.x} cy={d.y} r={2.2} fill={REF_RED} />
-            <text x={d.x + 5} y={d.y + 3} fontSize={7} fill={REF_RED}>{d.label}</text>
+            <circle cx={d.x} cy={d.y} r={3.5} fill={REF_RED} />
+            <text x={d.x + 6} y={d.y + 3} fontSize={8} fontWeight="bold" fill={REF_RED}>{d.label}</text>
           </g>
         ))}
       </g>
