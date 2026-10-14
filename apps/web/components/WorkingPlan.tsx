@@ -489,34 +489,45 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const iMinV = Math.min(...insetLocalPts.map((q) => q.v)), iMaxV = Math.max(...insetLocalPts.map((q) => q.v));
   const iSpanU = Math.max(iMaxU - iMinU, 1e-6), iSpanV = Math.max(iMaxV - iMinV, 1e-6);
   const iFit = Math.min((inset.w - 2 * insetPad) / iSpanU, (inset.h - 2 * insetPad) / iSpanV);
-  const iX = (e: number, n: number) => insetCx + (insetLocal(e, n).u - (iMinU + iMaxU) / 2) * iFit;
-  const iY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (iMinV + iMaxV) / 2) * iFit;
-  const insetPolygons = activePlots.map((plot) => {
-    const pts = plot.points.map((p) => ({ x: iX(p.east, p.north), y: iY(p.east, p.north) }));
-    const c = polygonCentroid(pts);
-    return { number: plot.number, poly: pts.map((q) => `${q.x},${q.y}`).join(" "), labelX: c.x, labelY: c.y };
+  // Reference marks (client req 2026-10-14: "make sure all the ref marks
+  // are visible and appear clearly in the box. this is not drawn to
+  // scale"). A true-scale fit pushed far marks (and their labels) onto the
+  // border, so the inset is schematic: lot fitted in the centre, each mark
+  // on a ring just inside the border in its real direction from the lot,
+  // spread apart so none overlap.
+  const hasRefs = (refMarks ?? []).length > 0;
+  const lotFit = hasRefs
+    ? Math.min((inset.w * 0.4) / iSpanU, (inset.h * 0.38) / iSpanV)
+    : iFit;
+  const raX = (e: number, n: number) => insetCx + (insetLocal(e, n).u - (iMinU + iMaxU) / 2) * lotFit;
+  const raY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (iMinV + iMaxV) / 2) * lotFit;
+  const lotCU = (iMinU + iMaxU) / 2, lotCV = (iMinV + iMaxV) / 2;
+  const ringRx = inset.w / 2 - 16, ringRy = inset.h / 2 - 14;
+  const refAngles = (refMarks ?? []).map((r, i) => {
+    const q = insetLocal(r.east, r.north);
+    const du = q.u - lotCU, dv = q.v - lotCV;
+    return { i, a: Math.hypot(du, dv) < 1e-6 ? -Math.PI / 2 : Math.atan2(dv / ringRy, du / ringRx) };
+  }).sort((p, q) => p.a - q.a);
+  const minGap = Math.min(0.55, (2 * Math.PI) / Math.max(refAngles.length, 1));
+  for (let pass = 0; pass < 20; pass++) {
+    let moved = false;
+    for (let k = 0; k < refAngles.length && refAngles.length > 1; k++) {
+      const cur = refAngles[k], next = refAngles[(k + 1) % refAngles.length];
+      const gap = (next.a - cur.a + (k === refAngles.length - 1 ? 2 * Math.PI : 0));
+      if (gap < minGap) {
+        const push = (minGap - gap) / 2;
+        cur.a -= push;
+        next.a += push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  const refDots = (refMarks ?? []).map((r, i) => {
+    const a = refAngles.find((p) => p.i === i)!.a;
+    const x = insetCx + Math.cos(a) * ringRx, y = insetCy + Math.sin(a) * ringRy;
+    return { x, y, label: r.name || "RM", id: `rm:${r.name || i}` };
   });
-  // Real reference-mark points (client req 2026-08-20, Part 12b) — placed
-  // using the same iX/iY transform as the lot polygons but with a smaller
-  // fit so ref marks outside the tight parcel bounding box stay visible
-  // inside the inset instead of being clamped to its edge.
-  const allInsetPts = [
-    ...activePlots.flatMap((plot) => plot.points),
-    ...(refMarks ?? []),
-  ];
-  const allInsetLocal = allInsetPts.map((p) => insetLocal(p.east, p.north));
-  const aMinU = Math.min(...allInsetLocal.map((q) => q.u)), aMaxU = Math.max(...allInsetLocal.map((q) => q.u));
-  const aMinV = Math.min(...allInsetLocal.map((q) => q.v)), aMaxV = Math.max(...allInsetLocal.map((q) => q.v));
-  const aSpanU = Math.max(aMaxU - aMinU, 1e-6), aSpanV = Math.max(aMaxV - aMinV, 1e-6);
-  const aFit = Math.min((inset.w - 2 * insetPad) / aSpanU, (inset.h - 2 * insetPad) / aSpanV);
-  const raX = (e: number, n: number) => insetCx + (insetLocal(e, n).u - (aMinU + aMaxU) / 2) * aFit;
-  const raY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (aMinV + aMaxV) / 2) * aFit;
-  const refDots = (refMarks ?? []).map((r) => ({
-    x: raX(r.east, r.north),
-    y: raY(r.east, r.north),
-    label: r.name || "RM",
-  }));
-  // Recompute inset polygons using the expanded fit so lot + ref marks share the same transform
   const insetPolygonsAll = activePlots.map((plot) => {
     const pts = plot.points.map((p) => ({ x: raX(p.east, p.north), y: raY(p.east, p.north) }));
     const c = polygonCentroid(pts);
@@ -922,12 +933,40 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         {activePlots.length <= 20 && insetPolygonsAll.map((pg, i) => pg.number ? (
           <text key={`il${i}`} x={pg.labelX} y={pg.labelY} textAnchor="middle" dominantBaseline="middle" fontSize={6} fontWeight="bold" fill="black">{pg.number}</text>
         ) : null)}
-        {refDots.map((d, i) => (
-          <g key={`rm${i}`}>
-            <circle cx={d.x} cy={d.y} r={3.5} fill={REF_RED} />
-            <text x={d.x + 6} y={d.y + 3} fontSize={8} fontWeight="bold" fill={REF_RED}>{d.label}</text>
-          </g>
-        ))}
+        {/* Labels sit on the inward side of their dot so they never cross
+            the border; click to select, then drag (shares textOffsets). */}
+        {refDots.map((d) => {
+          const off = textOffsets?.[d.id] || { dx: 0, dy: 0, scale: 1 };
+          const fs = 7 * (off.scale ?? 1);
+          const right = d.x > insetCx;
+          const lx = d.x + (right ? -5 : 5) + off.dx, ly = d.y + 2.5 + off.dy;
+          const isSel = selectedTextId === d.id;
+          const boxW = d.label.length * fs * 0.62 + 4;
+          return (
+            <g key={d.id}>
+              <circle cx={d.x} cy={d.y} r={2.6} fill={REF_RED} />
+              <text
+                x={lx} y={ly}
+                fontSize={fs} fontWeight="bold" fill={REF_RED}
+                textAnchor={right ? "end" : "start"}
+                style={{ cursor: isSel ? "move" : "pointer" }}
+                onClick={(e) => { e.stopPropagation(); onTextClick?.(d.id, e); }}
+                onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(d.id, e); } }}
+                onPointerMove={(e) => onTextPointerMove?.(d.id, e)}
+                onPointerUp={(e) => onTextPointerUp?.(d.id, e)}
+              >
+                {d.label}
+              </text>
+              {isSel && (
+                <rect
+                  x={right ? lx - boxW + 2 : lx - 2} y={ly - fs} width={boxW} height={fs + 3}
+                  fill="none" stroke={REF_RED} strokeWidth={0.6} strokeDasharray="2 2"
+                  style={{ pointerEvents: "none" }}
+                />
+              )}
+            </g>
+          );
+        })}
       </g>
 
       {/* ---------- Certification box (bottom-right) ---------- */}

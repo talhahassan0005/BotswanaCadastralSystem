@@ -348,20 +348,13 @@ export function CogoWorkspace({
   interface PolRow { name: string; cumulative: number }
   const [polRows, setPolRows] = useState<PolRow[]>([]);
   const [polSelected, setPolSelected] = useState<number | null>(null);
-  // "Automatic Calculation" (client req: inferred from context, not fully
-  // shown in the reference recording) — when on (default), the canvas
-  // preview recomputes on every change to From/To/rows/mode; when off, the
-  // preview freezes at whatever Calc last computed, so a user typing
-  // several rows in a row doesn't have the canvas redraw on every
-  // keystroke. Calc always forces one recompute regardless of this toggle.
-  const [polAutoCalc, setPolAutoCalc] = useState(true);
-  // "Add Lines" (client req: inferred — most likely also draws connecting
-  // segments between the newly added points, per the task note) — when on
-  // (default), Draw also adds a line from From through each queued point
-  // in order, matching how every other multi-point COGO tool in this app
-  // (traverse legs, polylines) always pairs a new point with the segment
-  // that reached it.
-  const [polAddLines, setPolAddLines] = useState(true);
+  // "Automatic Calculation": when on, the canvas preview recomputes on every
+  // change; when off, it freezes at whatever Calc last computed. "Add
+  // Lines": when on, Draw also adds connecting segments through the new
+  // points. Client req 2026-10-14: both must always start unchecked —
+  // reset each time the panel opens.
+  const [polAutoCalc, setPolAutoCalc] = useState(false);
+  const [polAddLines, setPolAddLines] = useState(false);
   const [polFrozenPreview, setPolFrozenPreview] = useState<{ name: string; east: number; north: number; segDist: number } | null>(null);
   const polIdRef = useRef(1);
   // Last name handed to a queued point, so the next automatic name can follow
@@ -1317,6 +1310,8 @@ export function CogoWorkspace({
     setFormTool(null);
     setTravOpen(false);
     setPolOpen(true);
+    setPolAutoCalc(false);
+    setPolAddLines(false);
     setSplayOpen(false);
   }
   const polDirDist = polFrom && polTo ? inverse({ east: polFrom.east, north: polFrom.north }, { east: polTo.east, north: polTo.north }) : null;
