@@ -32,6 +32,7 @@ export function CogoPointsOnLinePanel({
   addLines,
   pickingFrom,
   pickingTo,
+  pickError,
   onPickFrom,
   onPickTo,
   onNewName,
@@ -64,6 +65,7 @@ export function CogoPointsOnLinePanel({
   addLines: boolean;
   pickingFrom: boolean;
   pickingTo: boolean;
+  pickError?: string | null;
   onPickFrom: () => void;
   onPickTo: () => void;
   onNewName: (v: string) => void;
@@ -105,6 +107,7 @@ export function CogoPointsOnLinePanel({
           </button>
         </Field>
       </div>
+      {pickError && <p className="mx-2.5 mt-1 text-[10px] text-red-600">{pickError}</p>}
       <div className="grid grid-cols-2 gap-2 px-2.5 pt-2">
         <Field label="Direction">
           <input value={direction} readOnly className="w-full rounded border border-slate-200 bg-slate-50 px-1.5 py-1 text-slate-500" />
@@ -200,7 +203,7 @@ export function CogoPointsOnLinePanel({
       {/* Calc / Clear / Draw */}
       <div className="grid grid-cols-3 gap-1.5 px-2.5 pb-2.5">
         <PBtn onClick={onCalc} disabled={autoCalc}>Calc</PBtn>
-        <PBtn onClick={onClear} disabled={rows.length === 0}>Clear</PBtn>
+        <PBtn onClick={onClear} disabled={rows.length === 0 && !fromName && !toName}>Clear</PBtn>
         <PBtn onClick={onDraw} primary disabled={rows.length === 0}>Draw</PBtn>
       </div>
     </div>

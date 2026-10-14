@@ -203,6 +203,7 @@ export function WorkingPlanView() {
     dateOfSurvey: "",
     parentLotNumber: initialParentLotNumber,
     locality: initialLocality,
+    gridSpacingM: 50,
     ...(saved ?? {}),
   });
 
@@ -679,6 +680,21 @@ export function WorkingPlanView() {
             <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
           </Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+          <div>
+            <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
+            <div className="flex gap-1">
+              {[50, 100, 200].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
+                  className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
           <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
           <Field label="Checked from"><Input value={meta.checkedFrom} onChange={set("checkedFrom")} /></Field>
           <Field label={gpCoordinateSystem ? "Coordinate system (from General Plan)" : "Coordinate system"}>

@@ -43,6 +43,7 @@ export function CogoTablesPanel({
   onSetPolygonMeta,
   onRenamePoint,
   onEditPointCoords,
+  onFlipSign,
   onDeleteSelection,
   onClearSelection,
   onOpenPolygonAttrs,
@@ -66,6 +67,7 @@ export function CogoTablesPanel({
   /** Client req 2026-09-19: "I should also be able to edit the coordinates
    *  in the point table" — Y and X were plain read-only text. */
   onEditPointCoords: (id: string, east: number, north: number) => void;
+  onFlipSign: (axis: "y" | "x") => void;
   onDeleteSelection: () => void;
   onClearSelection: () => void;
   onOpenPolygonAttrs: (id: string) => void;
@@ -97,6 +99,24 @@ export function CogoTablesPanel({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {tab === "points" && points.length > 0 && (
+            <div
+              className="flex items-center gap-1"
+              title={selected.size > 0 ? "Switch the sign (+/-) of the selected points only" : "Switch the sign (+/-) of every point, line, polygon and label"}
+            >
+              <span className="text-slate-500">Switch sign{selected.size > 0 ? " (selected)" : ""}:</span>
+              {(["y", "x"] as const).map((axis) => (
+                <button
+                  key={axis}
+                  type="button"
+                  onClick={() => onFlipSign(axis)}
+                  className="rounded border border-slate-200 px-2 py-0.5 font-mono font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  ±{axis.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
           {selected.size > 0 && (
             <>
               <span className="text-slate-400">{selected.size} selected</span>

@@ -59,6 +59,9 @@ export interface WorkingPlanMeta {
   /** "[LOCALITY]" in both the "LOTS ..." and "PORTIONS OF LOT ..." lines —
    *  mirrors the Diagrams module's "Situate at (location)" field. */
   locality?: string;
+  /** Grid-mark spacing in real metres — 50, 100, or 200 (same choices as
+   *  General Plan). Defaults to niceStep(span) when absent/invalid. */
+  gridSpacingM?: number;
 }
 
 interface Props {
@@ -445,8 +448,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const beaconPlacementById = new Map(beaconPlacements.map((pl) => [pl.id, pl]));
 
   // ---- Coordinate grid (blue, nice intervals across the figure bounds) ----
-  const stepE = niceStep(spanE);
-  const stepN = niceStep(spanN);
+  const validSpacings = [50, 100, 200];
+  const stepE = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanE);
+  const stepN = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanN);
   // expand a little beyond the strict bounds so the figure sits inside the grid
   const eLines = gridValues(minE - stepE, maxE + stepE, stepE).filter(
     (v) => toX(v) >= draw.x - 2 && toX(v) <= draw.x + draw.w + 2

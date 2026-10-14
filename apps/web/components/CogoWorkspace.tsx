@@ -593,6 +593,48 @@ export function CogoWorkspace({
     setExtra((e) => e.map((p) => (p.id === id ? { ...p, east, north } : p)));
     return id;
   }
+  /** Negates one coordinate axis ("y" = east column, "x" = north column).
+   *  With point rows selected in the table only those points flip; with no
+   *  selection the whole drawing (points, lines, arcs, polygons, texts) is
+   *  mirrored so everything stays consistent. */
+  function flipCoordSign(axis: "y" | "x") {
+    const selPointIds = new Set([...tableSelected].filter((id) => visible.some((p) => p.id === id)));
+    const all = selPointIds.size === 0;
+    if (!all && !window.confirm(`Switch the ${axis.toUpperCase()} sign of ${selPointIds.size} selected point(s)?`)) return;
+    if (all && !window.confirm(`Switch the ${axis.toUpperCase()} sign of ALL points, lines, polygons and labels?`)) return;
+    const fe = (e: number) => (axis === "y" ? -e : e);
+    const fn = (n: number) => (axis === "x" ? -n : n);
+    const fb = (b: number) => (((axis === "y" ? 360 - b : 180 - b) % 360) + 360) % 360;
+    const hit = (id: string) => all || selPointIds.has(id);
+    snapshot();
+    const now = Date.now();
+    const replacedImp = basePoints.filter((p) => !hidden.has(p.id) && hit(p.id));
+    const newIds = new Map(replacedImp.map((p, i) => [p.id, `flipped-${now}-${i}`]));
+    if (replacedImp.length) {
+      setHidden((h) => { const n = new Set(h); replacedImp.forEach((p) => n.add(p.id)); return n; });
+      setPointMeta((m) => {
+        const n = { ...m };
+        newIds.forEach((nid, oid) => { if (m[oid]) n[nid] = m[oid]; });
+        return n;
+      });
+    }
+    setExtra((e) => [
+      ...e.map((p) => (hit(p.id) ? { ...p, east: fe(p.east), north: fn(p.north) } : p)),
+      ...replacedImp.map((p) => ({ id: newIds.get(p.id)!, name: p.name, east: fe(p.east), north: fn(p.north) })),
+    ]);
+    if (all) {
+      setLines((ls) => ls.map((l) => ({ ...l, aE: fe(l.aE), aN: fn(l.aN), bE: fe(l.bE), bN: fn(l.bN) })));
+      setArcs((as) => as.map((a) => ({
+        ...a, cE: fe(a.cE), cN: fn(a.cN), startBearing: fb(a.startBearing), endBearing: fb(a.endBearing), sweep: (a.sweep ? 0 : 1) as 0 | 1,
+      })));
+      setPolygons((ps) => ps.map((p) => ({ ...p, points: p.points.map((v) => ({ ...v, east: fe(v.east), north: fn(v.north) })) })));
+      setTexts((ts) => ts.map((t) => ({ ...t, east: fe(t.east), north: fn(t.north), angle: t.angle != null ? -t.angle : t.angle })));
+      setView((v) => ({ ...v, cx: fe(v.cx), cy: fn(v.cy) }));
+    }
+    setTableSelected(new Set());
+    setTableAnchor(null);
+    setSelected(null);
+  }
   function applyPointRename() {
     if (!pointQueryId) return;
     const newId = renamePointById(pointQueryId, pointQueryName);
@@ -1331,19 +1373,18 @@ export function CogoWorkspace({
     return { name: polNewName.trim() || polAutoName(), east: pt.east, north: pt.north, segDist: cumulative - prevCum };
   }
   const polPendingPreviewShown = polAutoCalc ? polPendingPreview() : polFrozenPreview;
+  const [polPickError, setPolPickError] = useState<string | null>(null);
   function polSetFrom(v: { east: number; north: number; existingId?: string }) {
-    if (!v.existingId) return;
+    if (!v.existingId) { setPolPickError("No point there — click closer to an existing point."); return; }
+    setPolPickError(null);
     const p = visible.find((pp) => pp.id === v.existingId)!;
     setPolFrom(p);
-    setPolTo(null);
-    setPolRows([]);
-    setPolSelected(null);
-    setPolFrozenPreview(null);
     setPolPickingFrom(false);
   }
   function polSetTo(v: { east: number; north: number; existingId?: string }) {
-    if (!v.existingId) { window.alert("Click an existing point for To."); return; }
-    if (!polFrom) { window.alert("Pick a From point first."); return; }
+    if (!v.existingId) { setPolPickError("No point there — click closer to an existing point."); return; }
+    if (!polFrom) { setPolPickError("Pick a From point first."); return; }
+    setPolPickError(null);
     const p = visible.find((pp) => pp.id === v.existingId)!;
     setPolTo(p);
     setPolPickingTo(false);
@@ -1434,6 +1475,7 @@ export function CogoWorkspace({
     setPolNewName("");
     setPolNewDistance("");
     setPolFrozenPreview(null);
+    setPolPickError(null);
     polIdRef.current = 1;
     polLastNameRef.current = null;
   }
@@ -1484,6 +1526,7 @@ export function CogoWorkspace({
     setPolPickingTo(false);
     setPolSelected(null);
     setPolFrozenPreview(null);
+    setPolPickError(null);
   }
 
   // ---- Splay Calculation panel ----
@@ -4095,8 +4138,8 @@ export function CogoWorkspace({
               addLines={polAddLines}
               pickingFrom={polPickingFrom}
               pickingTo={polPickingTo}
-              onPickFrom={() => { setPolPickingFrom(true); setPolPickingTo(false); }}
-              onPickTo={() => { setPolPickingTo(true); setPolPickingFrom(false); }}
+              onPickFrom={() => { setPolPickError(null); setPolPickingFrom(true); setPolPickingTo(false); }}
+              onPickTo={() => { setPolPickError(null); setPolPickingTo(true); setPolPickingFrom(false); }}
               onNewName={setPolNewName}
               onNewDistance={setPolNewDistance}
               onMode={setPolMode}
@@ -4112,6 +4155,7 @@ export function CogoWorkspace({
               onSelectRow={polSelectRow}
               onDraw={polDraw}
               onClose={polClose}
+              pickError={polPickError}
             />
           )}
 
@@ -4413,6 +4457,7 @@ export function CogoWorkspace({
               onSetPolygonMeta={(id, patch) => setPolygonMeta((m) => ({ ...m, [id]: { ...m[id], ...patch } }))}
               onRenamePoint={renamePointById}
               onEditPointCoords={editPointCoordsById}
+              onFlipSign={flipCoordSign}
               onDeleteSelection={deleteTableSelection}
               onClearSelection={() => { setTableSelected(new Set()); setTableAnchor(null); }}
               onOpenPolygonAttrs={openPolygonAttrs}
