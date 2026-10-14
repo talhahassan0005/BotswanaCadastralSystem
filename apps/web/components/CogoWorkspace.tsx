@@ -145,7 +145,8 @@ export function CogoWorkspace({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The canvas box only exists once the work station is opened (`active`).
+  }, [active]);
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
   const [autoDetectStart, setAutoDetectStart] = useState("");
   const [view, setView] = useState({ cx: 0, cy: 0, zoom: 1 });
