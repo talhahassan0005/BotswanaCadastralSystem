@@ -61,7 +61,10 @@ type DraftTool =
   | "select" | "select-box" | "select-lasso" | "select-points" | "select-lines" | "select-polygons"
   | "zoom-window" | "pan" | "addpoint" | "move"
   | "line" | "polyline" | "curve" | "polygon" | "offset"
-  | "query-point" | "query-line" | "query-parcel" | "delete-point" | "delete-line" | "delete-parcel";
+  | "query-point" | "query-line" | "query-parcel" | "delete-point" | "delete-line" | "delete-parcel"
+  // No edit tool active — while a working-tool panel/command bar is open
+  // (client req 2026-10-15: "all editing tools must be deactivated").
+  | "none";
 /** Rectangle-drag select tools that only pick up ONE kind (client req
  *  2026-09-24) — "select-box" itself stays unrestricted (all kinds). */
 const SINGLE_TYPE_SELECT_TOOLS: DraftTool[] = ["select-points", "select-lines", "select-polygons"];
@@ -1037,8 +1040,12 @@ export function CogoWorkspace({
   }
   /** Open the command bar for a numeric-input tool, discarding any
    *  in-progress click-to-draw shape first (only one mode at a time). */
+  // Once every working-tool panel/command bar is closed, fall back to Select.
+  useEffect(() => {
+    if (draftTool === "none" && !formTool && !travOpen && !polOpen && !splayOpen) setDraftTool("select");
+  }, [draftTool, formTool, travOpen, polOpen, splayOpen]);
   function openFormTool(tool: ToolDef) {
-    activateDrawTool("select");
+    activateDrawTool("none");
     setFormTool(tool);
     setTravOpen(false);
     setPolOpen(false);
@@ -1047,7 +1054,7 @@ export function CogoWorkspace({
 
   // ---- traverse leg-entry panel (Part 6b) ----
   function openTraversePanel() {
-    activateDrawTool("select");
+    activateDrawTool("none");
     setFormTool(null);
     setTravOpen(true);
     setPolOpen(false);
@@ -1306,7 +1313,7 @@ export function CogoWorkspace({
 
   // ---- Points on Line panel ----
   function openPointsOnLinePanel() {
-    activateDrawTool("select");
+    activateDrawTool("none");
     setFormTool(null);
     setTravOpen(false);
     setPolOpen(true);
@@ -1526,7 +1533,7 @@ export function CogoWorkspace({
 
   // ---- Splay Calculation panel ----
   function openSplayPanel() {
-    activateDrawTool("select");
+    activateDrawTool("none");
     setFormTool(null);
     setTravOpen(false);
     setPolOpen(false);
@@ -2822,7 +2829,7 @@ export function CogoWorkspace({
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
         setTableAnchor(hit?.id ?? null);
         setTableSelected(hit ? new Set([hit.id]) : new Set());
-      } else {
+      } else if (draftTool !== "none") {
         // Click-to-add multi-select (Part 10a/10c/10d): a point or line click
         // adds to the current selection; a polygon click toggles membership.
         // Each kind is only tried when its type-filter toggle is on (client
