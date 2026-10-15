@@ -18,6 +18,7 @@ import { CogoPointsOnLinePanel } from "@/components/CogoPointsOnLinePanel";
 import { CogoPolygonDrawPanel } from "@/components/CogoPolygonDrawPanel";
 import { CogoSplayPanel } from "@/components/CogoSplayPanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
+import { clientToSvg, svgFit } from "@/lib/svgPointer";
 import { useStore, type CogoPlot } from "@/lib/store";
 import { detectRectangularLots, sameWorldPoint } from "@/lib/plots";
 import type { CogoLeg, CogoResult } from "@/lib/types";
@@ -176,6 +177,8 @@ export function CogoWorkspace({
   const rotation = BASE_ORIENTATION_DEG;
   const flip = false;
   const [cursor, setCursor] = useState<{ e: number; n: number } | null>(null);
+  // Dev aid: ?debugPointer=1 draws a dot at the computed pointer position.
+  const [debugPointer] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debugPointer"));
   const pan = useRef<{ vbx: number; vby: number; cx: number; cy: number; moved: number } | null>(null);
   /** Middle-mouse-button press-and-hold pan (client req 2026-08-26, Part
    *  36) — deliberately a SEPARATE ref from `pan` above: `pan` doubles as
@@ -2268,9 +2271,11 @@ export function CogoWorkspace({
     scrollDrag.current = null;
     try { (ev.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId); } catch { /* already released */ }
   }
+  // Single pointer -> viewBox conversion for every canvas event; inverts the
+  // viewBox letterboxing so a box aspect != W:H can't skew hits away from
+  // the centre (the old plain rect stretch did exactly that).
   function eventToVb(ev: RPointerEvent | RWheelEvent): [number, number] {
-    const r = svgRef.current!.getBoundingClientRect();
-    return [((ev.clientX - r.left) / r.width) * W, ((ev.clientY - r.top) / r.height) * H];
+    return clientToSvg(svgRef.current!.getBoundingClientRect(), ev.clientX, ev.clientY, W, H);
   }
   /** Bearing + distance text for a segment, matching the traverse panel's
    *  on-line label convention (client req 2026-08-20, Part 11). */
@@ -2300,9 +2305,16 @@ export function CogoWorkspace({
     if (deg < -90) deg += 180;
     return deg;
   }
+  /** viewBox units per on-screen CSS pixel, so hit radii stay a fixed
+   *  screen-pixel size whatever the window size / browser zoom. */
+  function vbPerPx(): number {
+    const r = svgRef.current?.getBoundingClientRect();
+    const s = r ? svgFit(r.width, r.height, W, H).s : 0;
+    return s > 0 ? 1 / s : 1;
+  }
   function nearestVisible(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
-    let bestD = 12 * 12;
+    let bestD = (12 * vbPerPx()) ** 2;
     for (const p of visible) {
       const [x, y] = toScreen(p.east, p.north);
       const d = (x - sx) ** 2 + (y - sy) ** 2;
@@ -2332,13 +2344,16 @@ export function CogoWorkspace({
   // Line/Polyline/Polygon now refuse to invent a new point on a miss
   // (Part 22a), an accidental near-miss must still reliably land on the
   // intended point rather than falling through and doing nothing.
-  const POINT_SNAP_PX = 22;
+  // On-screen CSS px (converted to viewBox units at use). Was 22 viewBox
+  // units, sized to mask the pointer offset; with exact pointer mapping a
+  // tighter radius snaps only when the crosshair is actually on the point.
+  const POINT_SNAP_PX = 12;
   /** Nearest existing point within snap radius (screen space), if any. Point
    *  snapping is always on while drawing — needed to close traverses/
    *  polygons cleanly onto an existing vertex. */
   function snapPoint(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
-    let bestD = POINT_SNAP_PX * POINT_SNAP_PX;
+    let bestD = (POINT_SNAP_PX * vbPerPx()) ** 2;
     for (const p of visible) {
       const [x, y] = toScreen(p.east, p.north);
       const d = (x - sx) ** 2 + (y - sy) ** 2;
@@ -2363,7 +2378,7 @@ export function CogoWorkspace({
       let t = len2 > 0 ? ((sx - x1) * dx + (sy - y1) * dy) / len2 : 0;
       t = Math.max(0, Math.min(1, t));
       const px = x1 + t * dx, py = y1 + t * dy;
-      if ((px - sx) ** 2 + (py - sy) ** 2 <= SNAP_PX * SNAP_PX) {
+      if ((px - sx) ** 2 + (py - sy) ** 2 <= (SNAP_PX * vbPerPx()) ** 2) {
         const [gwx, gwy] = toWorld(px, py);
         return { east: gwx, north: gwy };
       }
@@ -2381,7 +2396,7 @@ export function CogoWorkspace({
    *  used by the Offset tool to pick its source line by clicking it. */
   function nearestLineHit(sx: number, sy: number): WLine | null {
     let best: WLine | null = null;
-    let bestD = SNAP_PX * SNAP_PX;
+    let bestD = (SNAP_PX * vbPerPx()) ** 2;
     for (const l of lines) {
       const [x1, y1] = toScreen(l.aE, l.aN);
       const [x2, y2] = toScreen(l.bE, l.bN);
@@ -3615,12 +3630,15 @@ export function CogoWorkspace({
             {DRAW_TOOLS.includes(draftTool) && draftTool !== "offset" && draft.length > 0 && cursor && (() => {
               const last = draft[draft.length - 1];
               const [x1, y1] = toScreen(last.east, last.north);
-              const [x2, y2] = toScreen(cursor.e, cursor.n);
-              const [mx, my] = toScreen((last.east + cursor.e) / 2, (last.north + cursor.n) / 2);
+              // End on the vertex a click would snap to, else under the cursor.
+              const snapHit = snapPoint(...toScreen(cursor.e, cursor.n));
+              const end = snapHit ? { e: snapHit.east, n: snapHit.north } : cursor;
+              const [x2, y2] = toScreen(end.e, end.n);
+              const [mx, my] = toScreen((last.east + end.e) / 2, (last.north + end.n) / 2);
               return (
                 <>
                   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#059669" strokeWidth={1.4} strokeDasharray="5 4" />
-                  <text x={mx} y={my - 5} textAnchor="middle" fontSize={10} className="fill-emerald-700 font-medium">{segLabel(last, { east: cursor.e, north: cursor.n })}</text>
+                  <text x={mx} y={my - 5} textAnchor="middle" fontSize={10} className="fill-emerald-700 font-medium">{segLabel(last, { east: end.e, north: end.n })}</text>
                   {draftTool === "polygon" && draft.length >= 2 && (() => {
                     const [x0, y0] = toScreen(draft[0].east, draft[0].north);
                     return <line x1={x2} y1={y2} x2={x0} y2={y0} stroke="#059669" strokeWidth={1} strokeDasharray="2 4" opacity={0.5} />;
@@ -3681,6 +3699,10 @@ export function CogoWorkspace({
                 strokeDasharray="4 3"
               />
             )}
+            {debugPointer && cursor && (() => {
+              const [x, y] = toScreen(cursor.e, cursor.n);
+              return <circle data-debug-pointer cx={x} cy={y} r={2} fill="#d946ef" style={{ pointerEvents: "none" }} />;
+            })()}
             {/* Snap highlight: ring around the existing point the cursor would snap to. */}
             {(draftTool === "addpoint" || draftTool === "move" || DRAW_TOOLS.includes(draftTool)) && cursor && (() => {
               const [sx, sy] = toScreen(cursor.e, cursor.n);
