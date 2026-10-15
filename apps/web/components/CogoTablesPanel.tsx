@@ -254,7 +254,7 @@ export function CogoTablesPanel({
               ) : polygons.map((p) => {
                 const m = polygonMeta[p.id] ?? {};
                 const isSel = selected.has(p.id);
-                const areaM2 = polygonArea(p.points.map((v) => ({ east: v.east, north: v.north })));
+                const areaM2 = Math.abs(polygonArea(p.points.map((v) => ({ east: v.east, north: v.north }))));
                 return (
                   <tr
                     key={p.id}

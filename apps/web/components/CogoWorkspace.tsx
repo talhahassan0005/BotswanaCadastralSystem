@@ -920,7 +920,7 @@ export function CogoWorkspace({
     const poly = polygons.find((p) => p.id === id);
     if (!poly) return;
     const m = polygonMeta[id] ?? {};
-    const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
+    const areaM2 = Math.abs(polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north }))));
     const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
     setPolygonAttrDialog({ id, position: m.position ?? suggested, area: formatArea(areaM2), mainFigure: !!m.mainFigure });
   }
@@ -943,8 +943,7 @@ export function CogoWorkspace({
     const cornerCount = pendingPolygonPts ? pendingPolygonPts.length : polygons.find((p) => p.id === id)?.points.length;
     // CW-only check for pending (click-drawn) polygon in savePolygonAttrs.
     if (pendingPolygonPts) {
-      const pendingArea = polygonArea(pendingPolygonPts.map((p) => ({ east: p.east, north: p.north })));
-      if (pendingArea <= 0) {
+      if (!isScreenClockwise(pendingPolygonPts)) {
         window.alert("Refused: this polygon is anticlockwise. Cadastral polygons must be joined clockwise.");
         return;
       }
@@ -1247,8 +1246,7 @@ export function CogoWorkspace({
       if (!ok) return; // leave the dialog exactly as it is — nothing committed
     }
     // CW-only check for traverse polygon.
-    const travArea = polygonArea(boundary.map((p) => ({ east: p.east, north: p.north })));
-    if (travArea <= 0) {
+    if (!isScreenClockwise(boundary)) {
       window.alert("Refused: this traverse runs anticlockwise. Cadastral polygons must be clockwise — enter the legs in clockwise order.");
       return;
     }
@@ -1986,10 +1984,9 @@ export function CogoWorkspace({
         return; // stays in draw mode — the vertices placed so far are untouched
       }
       const ring = pts.slice(0, -1); // drop the duplicate closing vertex; the segment loop below reconnects the last point to the first on its own
-      // CW-only check: with BASE_ORIENTATION_DEG=180, screen-CW = polygonArea > 0.
-      // Client req 2026-10-15: refuse outright, no auto-reverse.
-      const ringArea = polygonArea(ring.map((p) => ({ east: p.east, north: p.north })));
-      if (ringArea <= 0) {
+      // Clockwise as seen on screen only (client req 2026-10-15: refuse
+      // anticlockwise outright, no auto-reverse).
+      if (!isScreenClockwise(ring)) {
         window.alert("Refused: this polygon was joined anticlockwise. Cadastral polygons must be joined clockwise.\n\nThe shape has been cleared — please join the points again in clockwise order.");
         cancelDraft();
         return;
@@ -2003,7 +2000,7 @@ export function CogoWorkspace({
       // instead. `draft` is kept showing exactly these (deduped) vertices
       // so the on-canvas outline and the Draw Polygon panel stay visible,
       // unchanged, while the dialog is open.
-      const areaM2 = polygonArea(ring.map((p) => ({ east: p.east, north: p.north })));
+      const areaM2 = Math.abs(polygonArea(ring.map((p) => ({ east: p.east, north: p.north }))));
       const suggested = lastPlotNumber ? bumpPlotNumber(lastPlotNumber) : "";
       setDraft(ring);
       setPendingPolygonPts(ring);
@@ -2189,7 +2186,19 @@ export function CogoWorkspace({
     const dx = x - W / 2, dy = y - H / 2;
     return [W / 2 + dx * cosR - dy * sinR, H / 2 + dx * sinR + dy * cosR];
   };
-  const toWorld = (sx: number, sy: number): [number, number] => {
+  /** Clockwise exactly as the user sees it on the canvas (screen y grows
+   *  downward, so a visually clockwise ring has a positive shoelace sum).
+   *  Measured through toScreen so the display rotation/flip can't invert it. */
+  const isScreenClockwise = (pts: { east: number; north: number }[]): boolean => {
+    let sum = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = toScreen(pts[i].east, pts[i].north);
+      const [x2, y2] = toScreen(pts[(i + 1) % pts.length].east, pts[(i + 1) % pts.length].north);
+      sum += x1 * y2 - x2 * y1;
+    }
+    return sum > 0;
+  };
+  const toWorld =(sx: number, sy: number): [number, number] => {
     let x = sx, y = sy;
     if (rotation) {
       const dx = sx - W / 2, dy = sy - H / 2;
@@ -4090,7 +4099,7 @@ export function CogoWorkspace({
             const poly = polygons.find((pp) => pp.id === parcelQueryId);
             if (!poly) return null;
             const m = polygonMeta[poly.id] ?? {};
-            const areaM2 = polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })));
+            const areaM2 = Math.abs(polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north }))));
             return (
               <div className="absolute right-2 top-2 z-10 w-56 rounded border border-brand bg-white p-2 text-xs shadow-md">
                 <div className="mb-1.5 flex items-center justify-between">
