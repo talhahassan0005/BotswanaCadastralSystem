@@ -200,6 +200,10 @@ export function CogoWorkspace({
 
   // ---- drafting state: points/lines added/removed in the workspace only ----
   const [draftTool, setDraftTool] = useState<DraftTool>("select");
+  // Add Point exists in both Edit Tools and Point Tools; highlight only the
+  // toolbar it was picked from (client req: picking a working tool must
+  // switch the edit tools off).
+  const [addPointFromWorkingTools, setAddPointFromWorkingTools] = useState(false);
   // Client req 2026-09-24: "Add selection tools. Separately for points,
   // Lines and Polygons" — which kinds Select/Box Select/Lasso Select/the
   // three dedicated select-points/-lines/-polygons tools are each allowed
@@ -3083,9 +3087,9 @@ export function CogoWorkspace({
               icon={iconSelect}
             />
             <DraftButton
-              active={draftTool === "addpoint"}
+              active={draftTool === "addpoint" && !addPointFromWorkingTools}
               label="Add point"
-              onClick={() => activateDrawTool("addpoint")}
+              onClick={() => { activateDrawTool("addpoint"); setAddPointFromWorkingTools(false); }}
               icon={iconAddPoint}
             />
             <DraftButton
@@ -3291,8 +3295,8 @@ export function CogoWorkspace({
             <CogoDrawingToolbar
               category="point"
               onOpenTool={openFormTool}
-              interceptIds={{ "add-point": () => activateDrawTool("addpoint"), "point-on-line": () => openPointsOnLinePanel() }}
-              activeId={draftTool === "addpoint" ? "add-point" : polOpen ? "point-on-line" : null}
+              interceptIds={{ "add-point": () => { activateDrawTool("addpoint"); setAddPointFromWorkingTools(true); }, "point-on-line": () => openPointsOnLinePanel() }}
+              activeId={draftTool === "addpoint" && addPointFromWorkingTools ? "add-point" : polOpen ? "point-on-line" : null}
             />
           )}
           {/* Line and Offset are click-to-draw. Line by Bearing&Distance and
