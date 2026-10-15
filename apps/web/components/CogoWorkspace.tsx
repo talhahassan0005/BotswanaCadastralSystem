@@ -4478,6 +4478,7 @@ export function CogoWorkspace({
               onFlipSign={flipCoordSign}
               onDeleteSelection={deleteTableSelection}
               onClearSelection={() => { setTableSelected(new Set()); setTableAnchor(null); }}
+              onSelectAll={() => { const ids = currentTableIds(); setTableSelected(new Set(ids)); setTableAnchor(ids[0] ?? null); }}
               onOpenPolygonAttrs={openPolygonAttrs}
               onClose={() => { setTablesOpen(false); setTableSelected(new Set()); setTableAnchor(null); }}
             />

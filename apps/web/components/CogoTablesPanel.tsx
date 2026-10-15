@@ -46,6 +46,7 @@ export function CogoTablesPanel({
   onFlipSign,
   onDeleteSelection,
   onClearSelection,
+  onSelectAll,
   onOpenPolygonAttrs,
   onClose,
 }: {
@@ -70,6 +71,7 @@ export function CogoTablesPanel({
   onFlipSign: (axis: "y" | "x") => void;
   onDeleteSelection: () => void;
   onClearSelection: () => void;
+  onSelectAll: () => void;
   onOpenPolygonAttrs: (id: string) => void;
   onClose: () => void;
 }) {
@@ -116,6 +118,11 @@ export function CogoTablesPanel({
                 </button>
               ))}
             </div>
+          )}
+          {(tab === "points" ? points.length : tab === "lines" ? lines.length : polygons.length) > 0 && (
+            <button type="button" onClick={onSelectAll} className="rounded border border-slate-200 px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50">
+              Select all
+            </button>
           )}
           {selected.size > 0 && (
             <>
