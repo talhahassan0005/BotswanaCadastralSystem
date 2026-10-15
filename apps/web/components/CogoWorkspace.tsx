@@ -1389,6 +1389,14 @@ export function CogoWorkspace({
     setPolTo(p);
     setPolPickingTo(false);
   }
+  /** Typed point name for From/To (client req 2026-10-15), same rules as a canvas pick. */
+  function polSetByName(role: "from" | "to", rawName: string) {
+    const name = rawName.trim();
+    const p = visible.find((pp) => pp.name.toLowerCase() === name.toLowerCase());
+    if (!p) { setPolPickError(`No point named "${name}".`); return; }
+    if (role === "from") polSetFrom({ east: p.east, north: p.north, existingId: p.id });
+    else polSetTo({ east: p.east, north: p.north, existingId: p.id });
+  }
   function polAdd() {
     if (!polFrom || !polTo || !polDirDist) { window.alert("Pick a From and To point first."); return; }
     const typed = Number(polNewDistance);
@@ -4158,6 +4166,8 @@ export function CogoWorkspace({
               pickingTo={polPickingTo}
               onPickFrom={() => { setPolPickError(null); setPolPickingFrom(true); setPolPickingTo(false); }}
               onPickTo={() => { setPolPickError(null); setPolPickingTo(true); setPolPickingFrom(false); }}
+              onTypeFrom={(n) => polSetByName("from", n)}
+              onTypeTo={(n) => polSetByName("to", n)}
               onNewName={setPolNewName}
               onNewDistance={setPolNewDistance}
               onMode={setPolMode}

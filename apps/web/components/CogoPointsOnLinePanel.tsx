@@ -1,6 +1,29 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+/** From/To field: focusing it arms canvas picking; typing a name and
+ *  pressing Enter (or leaving the field) resolves that point by name. */
+function PointField({ value, active, onFocus, onTyped }: { value: string | null; active: boolean; onFocus: () => void; onTyped: (name: string) => void }) {
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => setDraft(value ?? ""), [value]);
+  const commit = () => {
+    const t = draft.trim();
+    if (t && t !== (value ?? "")) onTyped(t);
+  };
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={onFocus}
+      onClick={() => { if (!active) onFocus(); }}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+      placeholder="Click on canvas or type"
+      className={`w-full rounded border px-1.5 py-1 focus:outline-none ${active ? "border-brand bg-brand-light/40 text-brand-dark" : "border-slate-200 bg-white text-slate-600"}`}
+    />
+  );
+}
 
 // Side-docked "Points on Line" panel (client req 2026-09-10/13) — mirrors
 // the reference legacy desktop tool's "Points on Line Calculation" dialog:
@@ -35,6 +58,8 @@ export function CogoPointsOnLinePanel({
   pickError,
   onPickFrom,
   onPickTo,
+  onTypeFrom,
+  onTypeTo,
   onNewName,
   onNewDistance,
   onMode,
@@ -68,6 +93,8 @@ export function CogoPointsOnLinePanel({
   pickError?: string | null;
   onPickFrom: () => void;
   onPickTo: () => void;
+  onTypeFrom: (name: string) => void;
+  onTypeTo: (name: string) => void;
   onNewName: (v: string) => void;
   onNewDistance: (v: string) => void;
   onMode: (v: "individual" | "accumulative") => void;
@@ -96,15 +123,13 @@ export function CogoPointsOnLinePanel({
           for the next canvas click — green while armed, matching the
           reference tool's own radio-style indicator. */}
       <div className="grid grid-cols-2 gap-2 px-2.5 pt-2">
+        {/* Click the canvas OR type a point name + Enter (client req
+            2026-10-15: "allow the user to type the point manual"). */}
         <Field label="From" dotActive={pickingFrom}>
-          <button type="button" onClick={onPickFrom} className={`w-full truncate rounded border px-1.5 py-1 text-left ${pickingFrom ? "border-brand bg-brand-light/40 text-brand-dark" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
-            {fromName ?? "Click on canvas…"}
-          </button>
+          <PointField value={fromName} active={pickingFrom} onFocus={onPickFrom} onTyped={onTypeFrom} />
         </Field>
         <Field label="To" dotActive={pickingTo}>
-          <button type="button" onClick={onPickTo} className={`w-full truncate rounded border px-1.5 py-1 text-left ${pickingTo ? "border-brand bg-brand-light/40 text-brand-dark" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
-            {toName ?? "Click on canvas…"}
-          </button>
+          <PointField value={toName} active={pickingTo} onFocus={onPickTo} onTyped={onTypeTo} />
         </Field>
       </div>
       {pickError && <p className="mx-2.5 mt-1 text-[10px] text-red-600">{pickError}</p>}
