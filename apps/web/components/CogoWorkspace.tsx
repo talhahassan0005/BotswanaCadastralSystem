@@ -942,11 +942,8 @@ export function CogoWorkspace({
     if (pendingPolygonPts) {
       const pendingArea = polygonArea(pendingPolygonPts.map((p) => ({ east: p.east, north: p.north })));
       if (pendingArea <= 0) {
-        const doReverse = window.confirm(
-          "This polygon is counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse it, or Cancel to go back."
-        );
-        if (!doReverse) return;
-        pendingPolygonPts.reverse();
+        window.alert("Refused: this polygon is anticlockwise. Cadastral polygons must be joined clockwise.");
+        return;
       }
     }
     // Duplicate plot number check
@@ -1249,11 +1246,8 @@ export function CogoWorkspace({
     // CW-only check for traverse polygon.
     const travArea = polygonArea(boundary.map((p) => ({ east: p.east, north: p.north })));
     if (travArea <= 0) {
-      const doReverse = window.confirm(
-        "This traverse polygon is counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse the boundary, or Cancel to go back."
-      );
-      if (!doReverse) return;
-      boundary.reverse();
+      window.alert("Refused: this traverse runs anticlockwise. Cadastral polygons must be clockwise — enter the legs in clockwise order.");
+      return;
     }
     // Duplicate plot number check
     if (plotNumber) {
@@ -1982,13 +1976,12 @@ export function CogoWorkspace({
       }
       const ring = pts.slice(0, -1); // drop the duplicate closing vertex; the segment loop below reconnects the last point to the first on its own
       // CW-only check: with BASE_ORIENTATION_DEG=180, screen-CW = polygonArea > 0.
+      // Client req 2026-10-15: refuse outright, no auto-reverse.
       const ringArea = polygonArea(ring.map((p) => ({ east: p.east, north: p.north })));
       if (ringArea <= 0) {
-        const doReverse = window.confirm(
-          "This polygon was drawn counter-clockwise. Cadastral polygons must be clockwise.\n\nClick OK to auto-reverse it, or Cancel to go back and redraw."
-        );
-        if (!doReverse) return;
-        ring.reverse();
+        window.alert("Refused: this polygon was joined anticlockwise. Cadastral polygons must be joined clockwise.\n\nThe shape has been cleared — please join the points again in clockwise order.");
+        cancelDraft();
+        return;
       }
       //
       // Client req 2026-09-24: "if i dont press ok or if i cancel, the
