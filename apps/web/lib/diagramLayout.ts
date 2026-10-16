@@ -115,11 +115,12 @@ export function fmtDist(n: number): string {
   return `${groupThousands(i)},${f}`;
 }
 
-// Coordinate-table formats matching the official SG template exactly: PERIOD
-// decimal, NO thousands grouping (e.g. "+58737.55", "36.15"). Only the CONSTANTS
-// row shows the comma form "0,00".
+// Coordinate-table formats: PERIOD decimal; coordinates get space-grouped
+// thousands (client req 2026-10-16: "-81 624.88, +2 546 496.02"); distances
+// stay ungrouped ("36.15"). Only the CONSTANTS row shows the comma form "0,00".
 export function tCoord(n: number): string {
-  return `${n < 0 ? "-" : "+"}${Math.abs(n).toFixed(2)}`;
+  const [i, f] = Math.abs(n).toFixed(2).split(".");
+  return `${n < 0 ? "-" : "+"}${groupThousands(i)}.${f}`;
 }
 export function tDist(n: number): string {
   return n.toFixed(2);
