@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, useId } from "react";
 import { areaText, fmtCoord, fmtDist, toDotted, type DiagramPoint, type DiagramSide } from "./SgDiagram";
 import { wrapSvgWords } from "@/lib/wrapSvgText";
 
@@ -76,6 +76,14 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
   const cE = avg(es), cN = avg(ns);
   const poly = points.map((p) => `${toX(p.east)},${toY(p.north)}`).join(" ");
 
+  // ---- Locality sketch: subject lot fitted small inside its box ----
+  // Was a fixed 0.5 units/metre, so a large lot (hundreds of ha) spilled
+  // across the whole sheet. Fit to ~35% x 45% of the box instead.
+  const lb = { x: 40, y: 224, w: W - 80, h: 300 };
+  const lbCx = lb.x + lb.w / 2, lbCy = lb.y + 146;
+  const lsc = Math.min((lb.w * 0.35) / spanE, (lb.h * 0.45) / spanN);
+  const clipId = `locality-clip-${useId().replace(/:/g, "")}`;
+
   // ---- Beacon-description table (bottom-left) ----
   const tbl = { x: 40, y: 740, w: 480 };
   const rowH = 22;
@@ -115,15 +123,20 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
       <text x={W - 60} y={196} textAnchor="end" fontSize={16} fontWeight="bold">Locality Sketch</text>
       <NorthArrow x={W - 40} y={210} />
       <text x={40} y={214} fontSize={11} fontWeight="bold">SCALE 1 : {meta.localityScale.toLocaleString()}</text>
-      <rect x={40} y={224} width={W - 80} height={300} fill="#fbfbfb" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="5 4" />
-      {/* subject plot sketched small + dependency note */}
-      <polygon
-        points={points.map((p) => `${500 + (p.east - cE) * 0.5},${380 - (p.north - cN) * 0.5}`).join(" ")}
-        fill="#d1fae5"
-        stroke="#065f46"
-        strokeWidth={1.5}
-      />
-      <text x={500} y={388} textAnchor="middle" fontSize={11} fontWeight="bold">{meta.tribalLot}</text>
+      <rect x={lb.x} y={lb.y} width={lb.w} height={lb.h} fill="#fbfbfb" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="5 4" />
+      <clipPath id={clipId}>
+        <rect x={lb.x} y={lb.y} width={lb.w} height={lb.h} />
+      </clipPath>
+      {/* subject plot sketched small (fitted to the box, any lot size) + dependency note */}
+      <g clipPath={`url(#${clipId})`}>
+        <polygon
+          points={points.map((p) => `${lbCx + (p.east - cE) * lsc},${lbCy - (p.north - cN) * lsc}`).join(" ")}
+          fill="#d1fae5"
+          stroke="#065f46"
+          strokeWidth={1.5}
+        />
+        <text x={lbCx} y={lbCy + 4} textAnchor="middle" fontSize={11} fontWeight="bold">{meta.tribalLot}</text>
+      </g>
       <text x={W / 2} y={500} textAnchor="middle" fontSize={11} fill="#64748b">
         Surrounding tribal lots are populated from the imported base map (DXF / Shapefile).
       </text>
