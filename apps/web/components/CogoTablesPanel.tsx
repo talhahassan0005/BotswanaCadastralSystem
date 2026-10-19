@@ -44,6 +44,8 @@ export function CogoTablesPanel({
   onRenamePoint,
   onEditPointCoords,
   onFlipSign,
+  decimals,
+  onDecimals,
   onDeleteSelection,
   onClearSelection,
   onSelectAll,
@@ -69,6 +71,9 @@ export function CogoTablesPanel({
    *  in the point table" — Y and X were plain read-only text. */
   onEditPointCoords: (id: string, east: number, north: number) => void;
   onFlipSign: (axis: "y" | "x") => void;
+  /** Decimal places for Y/X and line distances (client req 2026-10-19: 3 or 4). */
+  decimals: 3 | 4;
+  onDecimals: (d: 3 | 4) => void;
   onDeleteSelection: () => void;
   onClearSelection: () => void;
   onSelectAll: () => void;
@@ -101,6 +106,19 @@ export function CogoTablesPanel({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {(tab === "points" || tab === "lines") && (
+            <label className="flex items-center gap-1 text-slate-500">
+              Decimals
+              <select
+                value={decimals}
+                onChange={(e) => onDecimals(Number(e.target.value) as 3 | 4)}
+                className="rounded border border-slate-200 bg-white px-1 py-0.5 text-slate-600 focus:border-brand focus:outline-none"
+              >
+                <option value={3}>3</option>
+                <option value={4}>4</option>
+              </select>
+            </label>
+          )}
           {tab === "points" && points.length > 0 && (
             <div
               className="flex items-center gap-1"
@@ -176,10 +194,10 @@ export function CogoTablesPanel({
                       <NameCell id={p.id} name={p.name} onRename={onRenamePoint} />
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-1 py-0.5 font-mono">
-                      <CoordCell id={p.id} value={p.east} onCommit={(v) => onEditPointCoords(p.id, v, p.north)} />
+                      <CoordCell id={p.id} value={p.east} decimals={decimals} onCommit={(v) => onEditPointCoords(p.id, v, p.north)} />
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-1 py-0.5 font-mono">
-                      <CoordCell id={p.id} value={p.north} onCommit={(v) => onEditPointCoords(p.id, p.east, v)} />
+                      <CoordCell id={p.id} value={p.north} decimals={decimals} onCommit={(v) => onEditPointCoords(p.id, p.east, v)} />
                     </td>
                     {(["height", "sdNumber", "epoch", "klass", "subclass", "description"] as const).map((k) => (
                       <td key={k} className="border-b border-slate-100 px-1 py-0.5">
@@ -231,7 +249,7 @@ export function CogoTablesPanel({
                       />
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{formatDms(brg)}</td>
-                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{dist.toFixed(3)}m</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-2 py-1 font-mono">{dist.toFixed(decimals)}m</td>
                   </tr>
                 );
               })}
@@ -326,13 +344,16 @@ function NameCell({ id, name, onRename }: { id: string; name: string; onRename: 
  *  in the point table") — an invalid or unchanged value on blur is just
  *  discarded back to the real one, no error dialog, since a coordinate can
  *  legitimately be mid-edit (e.g. only the sign typed so far). */
-function CoordCell({ id, value, onCommit }: { id: string; value: number; onCommit: (v: number) => void }) {
-  const [draft, setDraft] = useState(value.toFixed(3));
-  useEffect(() => setDraft(value.toFixed(3)), [id, value]);
+function CoordCell({ id, value, decimals, onCommit }: { id: string; value: number; decimals: 3 | 4; onCommit: (v: number) => void }) {
+  const shown = value.toFixed(decimals);
+  const [draft, setDraft] = useState(shown);
+  useEffect(() => setDraft(shown), [id, shown]);
+  // Compare against the displayed text, not the raw value: just clicking in
+  // and out of a cell must never round the stored coordinate to the display.
   const commit = () => {
     const v = Number(draft);
-    if (Number.isFinite(v) && v !== value) onCommit(v);
-    else setDraft(value.toFixed(3));
+    if (draft.trim() !== shown && Number.isFinite(v)) onCommit(v);
+    else setDraft(shown);
   };
   return (
     <input

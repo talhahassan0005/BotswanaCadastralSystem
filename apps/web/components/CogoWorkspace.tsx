@@ -204,6 +204,7 @@ export function CogoWorkspace({
   // toolbar it was picked from (client req: picking a working tool must
   // switch the edit tools off).
   const [addPointFromWorkingTools, setAddPointFromWorkingTools] = useState(false);
+  const [tableDecimals, setTableDecimals] = useState<3 | 4>(3);
   // Client req 2026-09-24: "Add selection tools. Separately for points,
   // Lines and Polygons" — which kinds Select/Box Select/Lasso Select/the
   // three dedicated select-points/-lines/-polygons tools are each allowed
@@ -4499,6 +4500,8 @@ export function CogoWorkspace({
               onRenamePoint={renamePointById}
               onEditPointCoords={editPointCoordsById}
               onFlipSign={flipCoordSign}
+              decimals={tableDecimals}
+              onDecimals={setTableDecimals}
               onDeleteSelection={deleteTableSelection}
               onClearSelection={() => { setTableSelected(new Set()); setTableAnchor(null); }}
               onSelectAll={() => { const ids = currentTableIds(); setTableSelected(new Set(ids)); setTableAnchor(ids[0] ?? null); }}
