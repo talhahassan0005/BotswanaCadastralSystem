@@ -20,21 +20,22 @@ import type { ParsedRow, PointType } from "./types";
 export function buildConsistencyLines(
   points: { name: string | null; east: number; north: number }[],
   legs: { from: string | null; to: string | null; bearing: number; bearing_dms: string; distance: number; d_east_raw?: number; d_north_raw?: number }[],
-  /** Decimal places for the per-leg misclosure values (client req 2026-10-19: option of 3 or 4). */
+  /** Decimal places for coordinates, distances and misclosures (client req 2026-10-19: option of 3 or 4). */
   decimals: 3 | 4 = 3
 ): string[] {
   const byName = new Map(points.map((p) => [p.name, p]));
   const lines: string[] = [];
   const nameRow = (name: string, e: number, n: number) =>
-    `                ${(name || "").padEnd(21)}${e.toFixed(2)} ${n.toFixed(2)}`;
-  // Gap shrinks by the extra digit so the second column stays where it was.
-  const misRow = (de: number, dn: number) => `${" ".repeat(40)}${de.toFixed(decimals)}${" ".repeat(10 - decimals)}${dn.toFixed(decimals)}`;
+    `                ${(name || "").padEnd(21)}${e.toFixed(decimals)} ${n.toFixed(decimals)}`;
+  // Misclosures right-aligned under the coordinate row just above them.
+  const misRow = (de: number, dn: number, e: number, n: number) =>
+    `${" ".repeat(37)}${de.toFixed(decimals).padStart(e.toFixed(decimals).length)} ${dn.toFixed(decimals).padStart(n.toFixed(decimals).length)}`;
   legs.forEach((leg, i) => {
     const from = leg.from ? byName.get(leg.from) : null;
     const to = leg.to ? byName.get(leg.to) : null;
     if (!from || !to) return;
     if (i === 0) lines.push(nameRow(from.name ?? "", from.east, from.north));
-    lines.push(`${toDotted(leg.bearing_dms)}    ${leg.distance.toFixed(2)}`);
+    lines.push(`${toDotted(leg.bearing_dms)}    ${leg.distance.toFixed(decimals)}`);
     // Use raw (unadjusted) increments when available — these are the
     // observed bearing/distance forward-projected, BEFORE Bowditch/Transit
     // correction, so the difference against the recorded coordinate is the
@@ -47,7 +48,7 @@ export function buildConsistencyLines(
     const computedE = from.east + rawDE;
     const computedN = from.north + rawDN;
     lines.push(nameRow(to.name ?? "", to.east, to.north));
-    lines.push(misRow(computedE - to.east, computedN - to.north));
+    lines.push(misRow(computedE - to.east, computedN - to.north, to.east, to.north));
   });
   return lines;
 }
