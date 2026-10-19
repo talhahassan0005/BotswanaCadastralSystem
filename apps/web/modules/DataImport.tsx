@@ -22,6 +22,10 @@ export function DataImport() {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Easting/Northing display precision (client req 2026-10-19: option of 3 or 4).
+  const [decimals, setDecimals] = useState<3 | 4>(3);
+  const fmtCoordCell = (v: number | null | undefined) =>
+    v == null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   const fileRef = useRef<HTMLInputElement>(null);
   const cShpRef = useRef<HTMLInputElement>(null);
   const pShpRef = useRef<HTMLInputElement>(null);
@@ -183,12 +187,25 @@ export function DataImport() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Preview — {importResult.filename} ({importResult.rows.length} rows detected · columns: {importResult.detectedColumns.join(", ")})
             </p>
+            <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-500">
+              Decimals
+              <select
+                value={decimals}
+                onChange={(e) => setDecimals(Number(e.target.value) as 3 | 4)}
+                className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-600 focus:border-brand focus:outline-none"
+              >
+                <option value={3}>3</option>
+                <option value={4}>4</option>
+              </select>
+            </label>
             <button
               onClick={() => { setImportResult(null); setError(null); setPendingC(null); setPendingL(null); setPendingP(null); if (fileRef.current) fileRef.current.value = ""; }}
               className="whitespace-nowrap text-xs font-medium text-red-500 underline hover:text-red-700"
             >
               ✕ Remove / unload file
             </button>
+            </div>
           </div>
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full min-w-[640px] text-sm">
@@ -232,8 +249,8 @@ export function DataImport() {
                         <option value="trig">Trig Station</option>
                       </select>
                     </td>
-                    <td className="px-4 py-3">{r.east?.toLocaleString() ?? "—"}</td>
-                    <td className="px-4 py-3">{r.north?.toLocaleString() ?? "—"}</td>
+                    <td className="px-4 py-3">{fmtCoordCell(r.east)}</td>
+                    <td className="px-4 py-3">{fmtCoordCell(r.north)}</td>
                     <td className="px-4 py-3">{r.bearing ?? "—"}</td>
                     <td className="px-4 py-3">{r.distance != null ? `${r.distance} m` : "—"}</td>
                     <td className="px-4 py-3">
