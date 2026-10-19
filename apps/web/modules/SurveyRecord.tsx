@@ -100,6 +100,7 @@ export function SurveyRecord() {
     calcBasis?: string;
     method?: string;
     declaredArea?: string;
+    consistencyDecimals?: 3 | 4;
   };
 
   const [doc, setDoc] = useState<DocId>(ri.doc ?? "submission");
@@ -118,12 +119,13 @@ export function SurveyRecord() {
   const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
   const [method, setMethod] = useState(ri.method ?? DEFAULT_METHOD_TEXT);
   const [declaredArea, setDeclaredArea] = useState(ri.declaredArea ?? "");
+  const [consistencyDecimals, setConsistencyDecimals] = useState<3 | 4>(ri.consistencyDecimals ?? 3);
 
   // Persist every field so the letter/report round-trips with the project
   // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea });
-  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, consistencyDecimals });
+  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, consistencyDecimals, setRecordInput]);
 
   const docRef = useRef<HTMLDivElement>(null);
 
@@ -161,7 +163,7 @@ export function SurveyRecord() {
   }
 
   // --- Data Consistency (Part 30) ---
-  const consistencyLines = fig && fig.points.length >= 3 && fig.legs.length >= 3 ? buildConsistencyLines(fig.points, fig.legs) : null;
+  const consistencyLines = fig && fig.points.length >= 3 && fig.legs.length >= 3 ? buildConsistencyLines(fig.points, fig.legs, consistencyDecimals) : null;
   function downloadConsistency() {
     if (!consistencyLines || !fig) return;
     const areaLine = declaredArea.trim()
@@ -184,11 +186,11 @@ export function SurveyRecord() {
       cogoPlots
         .map((p) => ({
           number: p.number,
-          lines: p.fig.points.length >= 3 && p.fig.legs.length >= 3 ? buildConsistencyLines(p.fig.points, p.fig.legs) : null,
+          lines: p.fig.points.length >= 3 && p.fig.legs.length >= 3 ? buildConsistencyLines(p.fig.points, p.fig.legs, consistencyDecimals) : null,
           areaM2: p.fig.area_m2,
         }))
         .filter((r) => r.lines),
-    [cogoPlots]
+    [cogoPlots, consistencyDecimals]
   );
   function downloadAllOwnConsistency() {
     const blocks = allOwnConsistency.map((r) =>
@@ -385,6 +387,17 @@ export function SurveyRecord() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-sm font-bold text-slate-800">Every plot&apos;s own leg consistency</h2>
                     <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                        Decimal places
+                        <select
+                          value={consistencyDecimals}
+                          onChange={(e) => setConsistencyDecimals(Number(e.target.value) as 3 | 4)}
+                          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs focus:border-brand focus:outline-none"
+                        >
+                          <option value={3}>3</option>
+                          <option value={4}>4</option>
+                        </select>
+                      </label>
                       <Button variant="ghost" onClick={() => setShowAllOwnConsistency((v) => !v)}>
                         {showAllOwnConsistency ? "Hide" : `Show for all ${cogoPlots.length} plots`}
                       </Button>

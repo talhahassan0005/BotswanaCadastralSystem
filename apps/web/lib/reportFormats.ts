@@ -19,13 +19,16 @@ import type { ParsedRow, PointType } from "./types";
  *  finalized). */
 export function buildConsistencyLines(
   points: { name: string | null; east: number; north: number }[],
-  legs: { from: string | null; to: string | null; bearing: number; bearing_dms: string; distance: number; d_east_raw?: number; d_north_raw?: number }[]
+  legs: { from: string | null; to: string | null; bearing: number; bearing_dms: string; distance: number; d_east_raw?: number; d_north_raw?: number }[],
+  /** Decimal places for the per-leg misclosure values (client req 2026-10-19: option of 3 or 4). */
+  decimals: 3 | 4 = 3
 ): string[] {
   const byName = new Map(points.map((p) => [p.name, p]));
   const lines: string[] = [];
   const nameRow = (name: string, e: number, n: number) =>
     `                ${(name || "").padEnd(21)}${e.toFixed(2)} ${n.toFixed(2)}`;
-  const misRow = (de: number, dn: number) => `${" ".repeat(40)}${de.toFixed(3)}${" ".repeat(7)}${dn.toFixed(3)}`;
+  // Gap shrinks by the extra digit so the second column stays where it was.
+  const misRow = (de: number, dn: number) => `${" ".repeat(40)}${de.toFixed(decimals)}${" ".repeat(10 - decimals)}${dn.toFixed(decimals)}`;
   legs.forEach((leg, i) => {
     const from = leg.from ? byName.get(leg.from) : null;
     const to = leg.to ? byName.get(leg.to) : null;
