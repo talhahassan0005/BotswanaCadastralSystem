@@ -100,6 +100,7 @@ export function SurveyRecord() {
     authority?: string;
     calcBasis?: string;
     method?: string;
+    unusualOccurrences?: string;
     declaredArea?: string;
     consistencyDecimals?: 3 | 4;
   };
@@ -128,14 +129,17 @@ export function SurveyRecord() {
   const [authority, setAuthority] = useState(ri.authority ?? "");
   const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
   const [method, setMethod] = useState(ri.method ?? DEFAULT_METHOD_TEXT);
+  // Client req 2026-10-21: new point, editable, "N/A" until the surveyor
+  // types any unusual occurrences.
+  const [unusualOccurrences, setUnusualOccurrences] = useState(ri.unusualOccurrences ?? "N/A");
   const [declaredArea, setDeclaredArea] = useState(ri.declaredArea ?? "");
   const [consistencyDecimals, setConsistencyDecimals] = useState<3 | 4>(ri.consistencyDecimals ?? 3);
 
   // Persist every field so the letter/report round-trips with the project
   // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose: purposeShown, purposeEdited, authority, calcBasis, method, declaredArea, consistencyDecimals });
-  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purposeShown, purposeEdited, authority, calcBasis, method, declaredArea, consistencyDecimals, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose: purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals });
+  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals, setRecordInput]);
 
   // Lo central meridian: Calculation Basis is where the surveyor states it,
   // and it drives the ONE shared project value (config.coordinateSystem) that
@@ -369,6 +373,9 @@ export function SurveyRecord() {
             <Field label="4. Method">
               <textarea value={method} onChange={(e) => setMethod(e.target.value)} rows={10} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
+            <Field label="5. Un Usual Occurrences">
+              <textarea value={unusualOccurrences} onChange={(e) => setUnusualOccurrences(e.target.value)} rows={2} placeholder="N/A" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+            </Field>
           </div>
         </Card>
       )}
@@ -407,6 +414,7 @@ export function SurveyRecord() {
               authority={authority}
               calcBasis={calcBasis}
               method={method}
+              unusualOccurrences={unusualOccurrences}
             />
           )}
           {doc === "consistency" && (
@@ -626,6 +634,7 @@ function ReportOnSurvey({
   authority,
   calcBasis,
   method,
+  unusualOccurrences,
 }: {
   surveyor: string;
   assistedBy: string;
@@ -634,6 +643,7 @@ function ReportOnSurvey({
   authority: string;
   calcBasis: string;
   method: string;
+  unusualOccurrences: string;
 }) {
   return (
     <div className="space-y-3">
@@ -653,8 +663,9 @@ function ReportOnSurvey({
       <p><strong>2. Authority:</strong> {authority || "—"}</p>
       <p><strong>3. Calculation Basis:</strong> {calcBasis || "—"}</p>
       <div style={{ whiteSpace: "pre-wrap" }}><strong>4. Method:</strong> {method || "—"}</div>
+      <div style={{ whiteSpace: "pre-wrap" }}><strong>5. Un Usual Occurrences:</strong> {unusualOccurrences.trim() || "N/A"}</div>
       <p>
-        <strong>5. Certificate:</strong> I certify that the checks enumerated under prescribed checks Para 3.1 have been completed
+        <strong>6. Certificate:</strong> I certify that the checks enumerated under prescribed checks Para 3.1 have been completed
         and that the relevant check sheets are attached to the survey record.
       </p>
 
