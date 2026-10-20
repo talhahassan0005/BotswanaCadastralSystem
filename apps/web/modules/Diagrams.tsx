@@ -457,6 +457,8 @@ export function Diagrams() {
   // (what's on the printed sheet), not real ground metres, since these are
   // freehand annotations, not measured survey data.
   const ANN_MM = 10;
+  /** Sheet units a copied note lands below its original (~3 text lines). */
+  const FS_COPY_OFFSET = 40;
   function annLengthAngle(x1: number, y1: number, x2: number, y2: number): { lengthMm: number; angleDeg: number } {
     const dx = x2 - x1, dy = y2 - y1;
     const lengthMm = Math.hypot(dx, dy) / ANN_MM;
@@ -644,6 +646,7 @@ export function Diagrams() {
   }
   function handleCanvasMouseMove(e: ReactPointerEvent<SVGSVGElement>) {
     const t = transformRef.current;
+    lastPointerSvgRef.current = toSvgPoint(e);
     if (rotatingText) {
       dragMovedRef.current = true;
       let a = rotatingText.origAngle + pointerDeg(rotatingText.anchor, toSvgPoint(e)) - rotatingText.startPointerDeg;
@@ -779,6 +782,47 @@ export function Diagrams() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTextId, selectedAnnotationId]);
+
+  // Copy text (client req 2026-10-21: "add copy text to avoid repeating of
+  // texting") — duplicates a note's wording + angle. Pasted where the mouse
+  // last was over the diagram, else just below the original; the copy is
+  // selected so it can be dragged straight into place.
+  const lastPointerSvgRef = useRef<{ x: number; y: number } | null>(null);
+  const copiedTextRef = useRef<ManualText | null>(null);
+  function placeTextCopy(src: ManualText, at: { x: number; y: number } | null) {
+    const t = transformRef.current;
+    if (!t) return;
+    const s0 = liveScreen(t, src.east, src.north);
+    const pos = at ?? { x: s0.x, y: s0.y + FS_COPY_OFFSET };
+    const w = liveWorld(t, pos.x, pos.y);
+    const id = `txt-${Date.now()}`;
+    setTexts((arr) => [...arr, { id, east: w.east, north: w.north, text: src.text, angle: src.angle, upright: src.upright }]);
+    setSelectedAnnotationId(null);
+    setSelectedTextId(id);
+  }
+  function copySelectedText() {
+    const src = texts.find((x) => x.id === selectedTextId);
+    if (src) placeTextCopy(src, null);
+  }
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== "c" && e.key !== "v" && e.key !== "C" && e.key !== "V")) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (e.key.toLowerCase() === "c") {
+        const src = texts.find((x) => x.id === selectedTextId);
+        if (!src) return;
+        copiedTextRef.current = src;
+        e.preventDefault();
+      } else if (copiedTextRef.current) {
+        e.preventDefault();
+        placeTextCopy(copiedTextRef.current, lastPointerSvgRef.current);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texts, selectedTextId]);
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -1560,7 +1604,8 @@ export function Diagrams() {
                     corner (client req 2026-08-24). Click "Add Text" below, then click where it should sit on
                     the preview and type it. Click an existing note to select it, then drag to move it,
                     drag its round handle to rotate it (Shift snaps to 15°), double-click to edit its wording
-                    and angle, or Delete to remove it.
+                    and angle, or Delete to remove it. "Copy Selected Text" (or Ctrl+C, then Ctrl+V where the
+                    mouse is) duplicates it, so the same wording doesn't need typing again.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1569,6 +1614,9 @@ export function Diagrams() {
                     >
                       {addingText ? "Click where it should go…" : "Add Text"}
                     </Button>
+                    {selectedTextId && texts.some((x) => x.id === selectedTextId) && (
+                      <Button variant="ghost" onClick={copySelectedText}>Copy Selected Text</Button>
+                    )}
                     {selectedTextId && (
                       <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
                     )}
