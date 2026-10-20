@@ -1111,7 +1111,7 @@ export function Diagrams() {
       text(xDsm + 16, dsmApprovedY, "Approved", FS_BEACON_HEAD);
       text(xDsm + 16, dosY1, "Director of Surveys", FS_BEACON_HEAD);
       text(xDsm + 16, dosY2, "and Mapping", FS_BEACON_HEAD);
-      line(xDsm + 16, dosLineY, tableRight - 16, dosLineY);
+      line(xDsm, dosLineY, tableRight - 16, dosLineY);
 
       // ===================== North arrow (same outline style/size as the SVG) =====================
       line(arrowX, arrowY - 170, arrowX, arrowY + 54);
