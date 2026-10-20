@@ -23,6 +23,7 @@ import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
+import { fitFontSize } from "@/lib/wrapSvgText";
 
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
@@ -410,6 +411,9 @@ export function Diagrams() {
   // UI the free-text tool already has, positioned at the line's own end
   // point, rather than building a second prompt component.
   const [pendingAnnotationLine, setPendingAnnotationLine] = useState<{ e1: number; n1: number; e2: number; n2: number } | null>(null);
+  // Interactive text rotation via the selected text's rotate handle (client
+  // req 2026-10-20): angle follows the pointer around the text's anchor.
+  const [rotatingText, setRotatingText] = useState<{ id: string; anchor: { x: number; y: number }; startPointerDeg: number; origAngle: number } | null>(null);
   const [draggingText, setDraggingText] = useState<{
     id: string;
     startSvg: { x: number; y: number };
@@ -445,6 +449,14 @@ export function Diagrams() {
   // as a fresh click and toggle the selection back off right after a drag.
   const dragMovedRef = useRef(false);
 
+  // Pointer input must use the SAME (rotation-aware) transform the figure is
+  // drawn with — see DiagramTransform.toWorldLive (client req 2026-10-20).
+  function liveWorld(t: DiagramTransform, x: number, y: number) {
+    return t.toWorldLive ? t.toWorldLive(x, y) : t.toWorld(x, y);
+  }
+  function liveScreen(t: DiagramTransform, east: number, north: number) {
+    return t.toScreenLive ? t.toScreenLive(east, north) : t.toScreen(east, north);
+  }
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
     const ctm = svg?.getScreenCTM();
@@ -476,8 +488,8 @@ export function Diagrams() {
     // Stored as real survey coordinates, not the raw pixel click (client
     // req 2026-08-25) — see transformRef's comment above.
     const t = transformRef.current;
-    const start = t ? t.toWorld(pendingPoint.x, pendingPoint.y) : { east: 0, north: 0 };
-    const end = t ? t.toWorld(p.x, p.y) : { east: 0, north: 0 };
+    const start = t ? liveWorld(t, pendingPoint.x, pendingPoint.y) : { east: 0, north: 0 };
+    const end = t ? liveWorld(t, p.x, p.y) : { east: 0, north: 0 };
     if (drawingBoundaryMarker) {
       // Commits immediately — no prompt at all (client req 2026-09-19: "no
       // other input required"), unlike Draw Extension Line just below.
@@ -514,7 +526,9 @@ export function Diagrams() {
   function handleTextDoubleClick(id: string) {
     const tt = texts.find((x) => x.id === id);
     if (!tt) return;
-    const p = transformRef.current?.toScreen(tt.east, tt.north) ?? { x: 0, y: 0 };
+    const tr = transformRef.current;
+    const p = tr ? liveScreen(tr, tt.east, tt.north) : { x: 0, y: 0 };
+    setSelectedTextId(id);
     setTextPrompt({ id, x: p.x, y: p.y, value: tt.text, angle: tt.angle ?? 0 });
   }
   function commitTextPrompt() {
@@ -534,13 +548,14 @@ export function Diagrams() {
       // upside-down); a manually-typed neighbour number is the same kind
       // of short reference label, not a free-text note meant to track
       // the figure's own presentation rotation.
-      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value, upright: true }]);
+      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value, upright: true, from: { east: e1, north: n1 } }]);
       setPendingAnnotationLine(null);
       setTextPrompt(null);
       return;
     }
     if (value) {
-      const w = transformRef.current?.toWorld(textPrompt.x, textPrompt.y) ?? { east: 0, north: 0 };
+      const tr = transformRef.current;
+      const w = tr ? liveWorld(tr, textPrompt.x, textPrompt.y) : { east: 0, north: 0 };
       const angle = normalizeDeg(textPrompt.angle) || undefined;
       if (textPrompt.id) {
         setTexts((arr) => arr.map((tt) => (tt.id === textPrompt.id ? { ...tt, text: value, angle } : tt)));
@@ -556,7 +571,19 @@ export function Diagrams() {
   // annotation has no paired label (setTexts' map just finds nothing).
   function syncPairedLabel(annotationId: string, east: number, north: number) {
     const labelId = `${annotationId}-label`;
-    setTexts((arr) => arr.map((tt) => (tt.id === labelId ? { ...tt, east, north } : tt)));
+    const a = annotations.find((x) => x.id === annotationId);
+    setTexts((arr) => arr.map((tt) => (tt.id === labelId ? { ...tt, east, north, ...(tt.from && a ? { from: { east: a.e1, north: a.n1 } } : {}) } : tt)));
+  }
+  /** Neighbouring-lot number is optional: Esc / ✕ / an empty Enter all keep
+   *  the just-drawn line, just without a number (client req 2026-10-20). */
+  function dismissTextPrompt() {
+    if (pendingAnnotationLine) {
+      const id = `adj-${Date.now()}`;
+      const { e1, n1, e2, n2 } = pendingAnnotationLine;
+      setAnnotations((arr) => [...arr, { id, e1, n1, e2, n2 }]);
+      setPendingAnnotationLine(null);
+    }
+    setTextPrompt(null);
   }
   function deleteSelectedText() {
     if (!selectedTextId) return;
@@ -574,11 +601,27 @@ export function Diagrams() {
   function handleTextHandleDown(id: string, e: ReactPointerEvent<SVGElement>) {
     const tt = texts.find((x) => x.id === id);
     const t = transformRef.current;
+    // No pointer capture here (unlike the line grips): capturing made the
+    // browser deliver the following dblclick to the <svg> instead of the
+    // text, so double-click-to-edit silently did nothing on a selected text.
+    // The canvas's own pointermove handler already tracks the drag.
+    if (!tt || !t || e.detail >= 2) return;
+    dragMovedRef.current = false;
+    const p = liveScreen(t, tt.east, tt.north);
+    setDraggingText({ id, startSvg: toSvgPoint(e), orig: p, origWorld: { east: tt.east, north: tt.north } });
+  }
+  function pointerDeg(anchor: { x: number; y: number }, p: { x: number; y: number }) {
+    // Screen y grows downward, so atan2 increases CLOCKWISE — same sense as SVG rotate().
+    return (Math.atan2(p.y - anchor.y, p.x - anchor.x) * 180) / Math.PI;
+  }
+  function handleTextRotateDown(id: string, e: ReactPointerEvent<SVGElement>) {
+    const tt = texts.find((x) => x.id === id);
+    const t = transformRef.current;
     if (!tt || !t) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragMovedRef.current = false;
-    const p = t.toScreen(tt.east, tt.north);
-    setDraggingText({ id, startSvg: toSvgPoint(e), orig: p, origWorld: { east: tt.east, north: tt.north } });
+    const anchor = liveScreen(t, tt.east, tt.north);
+    setRotatingText({ id, anchor, startPointerDeg: pointerDeg(anchor, toSvgPoint(e)), origAngle: tt.angle ?? 0 });
   }
   function deleteSelectedAnnotation() {
     if (!selectedAnnotationId) return;
@@ -596,8 +639,8 @@ export function Diagrams() {
     // diagram entirely, stops delivering move events partway through.
     e.currentTarget.setPointerCapture(e.pointerId);
     dragMovedRef.current = false;
-    const p1 = t.toScreen(a.e1, a.n1);
-    const p2 = t.toScreen(a.e2, a.n2);
+    const p1 = liveScreen(t, a.e1, a.n1);
+    const p2 = liveScreen(t, a.e2, a.n2);
     const { lengthMm, angleDeg } = annLengthAngle(p1.x, p1.y, p2.x, p2.y);
     setDraggingAnnotation({
       id,
@@ -612,12 +655,20 @@ export function Diagrams() {
   }
   function handleCanvasMouseMove(e: ReactPointerEvent<SVGSVGElement>) {
     const t = transformRef.current;
+    if (rotatingText) {
+      dragMovedRef.current = true;
+      let a = rotatingText.origAngle + pointerDeg(rotatingText.anchor, toSvgPoint(e)) - rotatingText.startPointerDeg;
+      if (e.shiftKey) a = Math.round(a / 15) * 15;
+      a = normalizeDeg(a);
+      setTexts((arr) => arr.map((tt) => (tt.id === rotatingText.id ? { ...tt, angle: a || undefined } : tt)));
+      return;
+    }
     if (draggingText && t) {
       const p = toSvgPoint(e);
       const dx = p.x - draggingText.startSvg.x, dy = p.y - draggingText.startSvg.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
       const { orig, id } = draggingText;
-      const w = t.toWorld(orig.x + dx, orig.y + dy);
+      const w = liveWorld(t, orig.x + dx, orig.y + dy);
       setTexts((arr) => arr.map((tt) => (tt.id === id ? { ...tt, east: w.east, north: w.north } : tt)));
       return;
     }
@@ -628,8 +679,8 @@ export function Diagrams() {
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMovedRef.current = true;
     const { orig, handle, id, rotate } = draggingAnnotation;
     if (handle === "move") {
-      const w1 = t.toWorld(orig.x1 + dx, orig.y1 + dy);
-      const w2 = t.toWorld(orig.x2 + dx, orig.y2 + dy);
+      const w1 = liveWorld(t, orig.x1 + dx, orig.y1 + dy);
+      const w2 = liveWorld(t, orig.x2 + dx, orig.y2 + dy);
       setAnnotations((arr) => arr.map((a) => (a.id === id ? { ...a, e1: w1.east, n1: w1.north, e2: w2.east, n2: w2.north } : a)));
       syncPairedLabel(id, w2.east, w2.north);
       return;
@@ -654,14 +705,18 @@ export function Diagrams() {
       ny = orig[isStart ? "y1" : "y2"] + dy;
       ({ lengthMm, angleDeg } = annLengthAngle(pivot.x, pivot.y, nx, ny));
     }
-    const w = t.toWorld(nx, ny);
+    const w = liveWorld(t, nx, ny);
     setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
     if (!isStart) syncPairedLabel(id, w.east, w.north);
     setDraggingAnnotation((g) => (g ? { ...g, lengthText: lengthMm.toFixed(1), angleText: formatDms(angleDeg) } : g));
   }
   function handleCanvasMouseUp() {
+    // The flag only needs to swallow the click that trails THIS drag; left
+    // set, it ate the user's next real click on any text/line.
+    if (dragMovedRef.current) setTimeout(() => { dragMovedRef.current = false; }, 0);
     // Already committed live on every mousemove above — release just ends
     // the drag session (client req 2026-08-24: "confirm on release").
+    if (rotatingText) { setRotatingText(null); return; }
     if (draggingText) { setDraggingText(null); return; }
     setDraggingAnnotation(null);
   }
@@ -685,7 +740,7 @@ export function Diagrams() {
     const rad = (angleDeg * Math.PI) / 180;
     const nx = pivot.x + lengthMm * ANN_MM * Math.sin(rad);
     const ny = pivot.y - lengthMm * ANN_MM * Math.cos(rad);
-    const w = t.toWorld(nx, ny);
+    const w = liveWorld(t, nx, ny);
     setAnnotations((arr) => arr.map((a) => (a.id === id ? (isStart ? { ...a, e1: w.east, n1: w.north } : { ...a, e2: w.east, n2: w.north }) : a)));
     if (!isStart) syncPairedLabel(id, w.east, w.north);
     setDraggingAnnotation(null);
@@ -713,13 +768,28 @@ export function Diagrams() {
       e.preventDefault();
       if (draggingAnnotation) cancelAnnotationDrag();
       else if (draggingText) cancelTextDrag();
-      else if (textPrompt) { setTextPrompt(null); setPendingAnnotationLine(null); }
+      else if (textPrompt) dismissTextPrompt();
       else if (addingText) setAddingText(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingAnnotation, draggingText, textPrompt, addingText]);
+
+  useEffect(() => {
+    if (!selectedTextId && !selectedAnnotationId) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      e.preventDefault();
+      if (selectedTextId) deleteSelectedText();
+      else deleteSelectedAnnotation();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTextId, selectedAnnotationId]);
 
   const fullMeta: DiagramMeta = {
     ...meta,
@@ -1093,17 +1163,17 @@ export function Diagrams() {
       const annC2LabelW = (x: number) => x - (annC2 + 12) - 4;
       const annC2ValueW = (x: number) => tableRight - x - 10;
       text(annC2 + 12, annTop + 40, dxfLabelFit("General Plan No.", annC2LabelW(gpNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(gpNoX, annTop + 40, dxfLabelFit(gpNo, annC2ValueW(gpNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(gpNoX, annTop + 40, gpNo, fitFontSize(gpNo, annC2ValueW(gpNoX), FS_BEACON_HEAD));
       text(annC2 + 12, annTop + 90, dxfLabelFit("S.R No.", annC2LabelW(srNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(srNoX, annTop + 90, dxfLabelFit(srNo, annC2ValueW(srNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(srNoX, annTop + 90, srNo, fitFontSize(srNo, annC2ValueW(srNoX), FS_BEACON_HEAD));
       text(annC2 + 12, annTop + 140, dxfLabelFit("D.S.M File:", annC2LabelW(dsmFileX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(dsmFileX, annTop + 140, dxfLabelFit(dsmFile, annC2ValueW(dsmFileX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(dsmFileX, annTop + 140, dsmFile, fitFontSize(dsmFile, annC2ValueW(dsmFileX), FS_BEACON_HEAD));
       text(annC2 + 12, annTop + 190, dxfLabelFit("Comp.", annC2LabelW(compX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(compX, annTop + 190, dxfLabelFit(comp, annC2ValueW(compX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(compX, annTop + 190, comp, fitFontSize(comp, annC2ValueW(compX), FS_BEACON_HEAD));
       text(annC2 + 12, annTop + 240, dxfLabelFit("Degree Square:", annC2LabelW(degreeSquareX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(degreeSquareX, annTop + 240, dxfLabelFit(degreeSquare, annC2ValueW(degreeSquareX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(degreeSquareX, annTop + 240, degreeSquare, fitFontSize(degreeSquare, annC2ValueW(degreeSquareX), FS_BEACON_HEAD));
       text(annC2 + 12, annTop + 290, dxfLabelFit("LIR No:", annC2LabelW(lirNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
-      text(lirNoX, annTop + 290, dxfLabelFit(lirNo, annC2ValueW(lirNoX), FS_BEACON_HEAD), FS_BEACON_HEAD);
+      text(lirNoX, annTop + 290, lirNo, fitFontSize(lirNo, annC2ValueW(lirNoX), FS_BEACON_HEAD));
     }
 
     const drawing: ImportedDrawing = {
@@ -1483,7 +1553,7 @@ export function Diagrams() {
                     it), drag an end-handle to stretch that end (hold Shift to rotate the whole line around the
                     other end instead), type an exact length/angle while dragging, or press Delete to remove it
                     (removes its number too). Click a number directly to select and delete just that. Esc cancels
-                    a drag in progress, or a line's number prompt (discarding that line too).
+                    a drag in progress; on a line's number prompt it skips the number (the line is kept).
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1504,7 +1574,8 @@ export function Diagrams() {
                     For a note the fixed template wording doesn't cover — e.g. a remark next to a specific
                     corner (client req 2026-08-24). Click "Add Text" below, then click where it should sit on
                     the preview and type it. Click an existing note to select it, then drag to move it,
-                    double-click to edit its wording, or Delete to remove it.
+                    drag its round handle to rotate it (Shift snaps to 15°), double-click to edit its wording
+                    and angle, or Delete to remove it.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1583,6 +1654,7 @@ export function Diagrams() {
                 onTextClick={handleTextClick}
                 onTextDoubleClick={handleTextDoubleClick}
                 onTextHandleDown={handleTextHandleDown}
+                onTextRotateDown={handleTextRotateDown}
                 onTransform={(t) => { transformRef.current = t; }}
                 // No longer config.displayRotation/displayFlip (client req
                 // 2026-09-09, same reasoning as GeneralPlanView.tsx/
@@ -1612,7 +1684,7 @@ export function Diagrams() {
             if (!a || !svg || !tr) return null;
             const ctm = svg.getScreenCTM();
             if (!ctm) return null;
-            const svgPos = draggingAnnotation.handle === "start" ? tr.toScreen(a.e1, a.n1) : tr.toScreen(a.e2, a.n2);
+            const svgPos = draggingAnnotation.handle === "start" ? liveScreen(tr, a.e1, a.n1) : liveScreen(tr, a.e2, a.n2);
             const pt = svg.createSVGPoint();
             pt.x = svgPos.x;
             pt.y = svgPos.y;
@@ -1671,11 +1743,11 @@ export function Diagrams() {
               >
                 <div className="mb-1.5 flex items-center justify-between">
                   <span className="font-semibold text-brand-dark">
-                    {pendingAnnotationLine ? "Neighbouring lot no." : textPrompt.id ? "Edit Text" : "Add Text"}
+                    {pendingAnnotationLine ? "Neighbouring lot no. (optional)" : textPrompt.id ? "Edit Text" : "Add Text"}
                   </span>
                   <button
                     type="button"
-                    onClick={() => { setTextPrompt(null); setPendingAnnotationLine(null); }}
+                    onClick={dismissTextPrompt}
                     className="text-slate-400 hover:text-slate-700"
                     aria-label="Cancel"
                   >
@@ -1686,8 +1758,8 @@ export function Diagrams() {
                   autoFocus
                   value={textPrompt.value}
                   onChange={(e) => setTextPrompt((g) => (g ? { ...g, value: e.target.value } : g))}
-                  onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") { setTextPrompt(null); setPendingAnnotationLine(null); } }}
-                  placeholder={pendingAnnotationLine ? "e.g. 107 (optional)" : "Note text…"}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); }}
+                  placeholder={pendingAnnotationLine ? "e.g. 107 — Enter/Esc to skip" : "Note text…"}
                   className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1"
                 />
                 {!pendingAnnotationLine && (
@@ -1697,7 +1769,7 @@ export function Diagrams() {
                       type="number"
                       value={textPrompt.angle}
                       onChange={(e) => setTextPrompt((g) => (g ? { ...g, angle: Number(e.target.value) || 0 } : g))}
-                      onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); if (e.key === "Escape") setTextPrompt(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); }}
                       className="w-16 rounded border border-slate-200 px-1.5 py-1"
                     />
                     <span className="text-slate-400">degrees, clockwise</span>

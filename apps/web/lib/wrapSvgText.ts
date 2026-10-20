@@ -58,6 +58,16 @@ export function clampWords(text: string, maxWidth: number, fontSize: number, max
   return `${out.replace(/[.,;:\s]+$/, "")}…`;
 }
 
+/** Font size that fits `text` into `maxWidth` on one line WITHOUT cutting any
+ *  characters — the full value always shows, the font only shrinks when it
+ *  has to (client req 2026-10-20: S.R No. "5559/2029" was cut to "5559/20…").
+ *  0.58em per character: Arial digits/caps are ~0.56em, so this rarely
+ *  shrinks a value that actually fits. */
+export function fitFontSize(text: string, maxWidth: number, fontSize: number, avgCharWidthFactor = 0.58): number {
+  const w = (text || "").length * fontSize * avgCharWidthFactor;
+  return w <= maxWidth || w <= 0 ? fontSize : fontSize * (maxWidth / w);
+}
+
 /**
  * Like wrapSvgWords, but caps the result at `maxLines` — for a block that
  * genuinely has a couple of lines' worth of room (unlike the single-line

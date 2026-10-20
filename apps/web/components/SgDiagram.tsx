@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type MouseEvent, type PointerEvent } from "react";
-import { clampWords, clampToLines } from "@/lib/wrapSvgText";
+import { clampWords, clampToLines, fitFontSize } from "@/lib/wrapSvgText";
 import { declutterLabels } from "@/lib/labelLayout";
 import {
   computeDiagramLayout,
@@ -96,6 +96,12 @@ export interface DiagramTransform {
    *  a "fake" world coordinate that plots in the same place/orientation the
    *  live preview shows, without needing its own copy of the rotation math. */
   toScreenLive?: (east: number, north: number) => { x: number; y: number };
+  /** Exact inverse of `toScreenLive`. Pointer input (clicks/drags on the
+   *  preview) must go through this pair, not toScreen/toWorld: the figure is
+   *  DRAWN with the live rotation/flip, so inverting only the unrotated part
+   *  put a 180-degree-rotated sheet's clicks at the mirrored spot (client req
+   *  2026-10-20: line drawn below D appeared above it). */
+  toWorldLive?: (x: number, y: number) => { east: number; north: number };
 }
 
 interface Props {
@@ -147,6 +153,8 @@ interface Props {
    *  robustness as the extension-line grips (Part 28); a single point has
    *  no length/angle to stretch or rotate, so move is the only mode. */
   onTextHandleDown?: (id: string, e: PointerEvent<SVGElement>) => void;
+  /** Pointer-down on a selected text's rotate handle (client req 2026-10-20). */
+  onTextRotateDown?: (id: string, e: PointerEvent<SVGElement>) => void;
   /** Fires on every render with this diagram's current pixel<->survey-
    *  coordinate conversion (client req 2026-08-25) — the caller stores it
    *  in a ref (not state — this runs during render, so setState here would
@@ -185,7 +193,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   {
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
-    manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTransform,
+    manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp,
   },
   ref
@@ -307,6 +315,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
     toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
     toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
+    toWorldLive: (x, y) => {
+      // Undo rotate (about the figure pivot), then the flip, then toX/toY.
+      const dx = x - figPivotX, dy = y - figPivotY;
+      let x0 = rotation ? figPivotX + dx * figCosR + dy * figSinR : x;
+      const y0 = rotation ? figPivotY - dx * figSinR + dy * figCosR : y;
+      if (flip) x0 = 2 * figPivotX - x0;
+      return { east: (x0 - offX) / sc + minE, north: maxN - (y0 - offY) / sc };
+    },
   });
   return (
     <svg
@@ -363,8 +379,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Directions</text>
         <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Co-ordinates</text>
         <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
-        <text x={xDsm + 16} y={hRow2} fontSize={FS_TABLE_HEAD}>
-          {clampWords(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}
+        <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
+          {meta.dsmNo || ""}
         </text>
         {/* header row 2 */}
         <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>Metres</text>
@@ -610,31 +626,54 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {(manualTexts ?? []).map((t) => {
         const isSel = selectedTextId === t.id;
         const x = fx(t.east, t.north), y = fy(t.east, t.north);
-        const textAngle = t.upright ? 0 : (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
+        // Screen-relative: 0 = horizontal and readable, positive = clockwise
+        // (client req 2026-10-20). Adding the figure's display rotation (a
+        // 180-degree Lo-grid sign-fix) used to turn angle 0 upside down.
+        const textAngle = t.upright ? 0 : t.angle || 0;
         let anchor: "start" | "middle" | "end" | undefined;
         if (t.from) {
           const ax = x - fx(t.from.east, t.from.north), ay = y - fy(t.from.east, t.from.north);
           const al = Math.hypot(ax, ay) || 1;
           anchor = ax / al > 0.35 ? "start" : ax / al < -0.35 ? "end" : "middle";
         }
+        // Whole text box is the click target (not just the glyph strokes).
+        const boxW = Math.max(12, t.text.length * FS_BEACON_HEAD * 0.6);
+        const boxX = anchor === "middle" ? x - boxW / 2 : anchor === "end" ? x - boxW : x;
+        const boxY = y - FS_BEACON_HEAD * 0.95, boxH = FS_BEACON_HEAD * 1.25;
+        const handlers = {
+          onClick: (e: MouseEvent<SVGElement>) => { e.stopPropagation(); onTextClick?.(t.id, e); },
+          onDoubleClick: (e: MouseEvent<SVGElement>) => { e.stopPropagation(); onTextDoubleClick?.(t.id); },
+          onPointerDown: (e: PointerEvent<SVGElement>) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } },
+        };
+        const rotHandle = { x: boxX + boxW + 18, y: boxY + boxH / 2 };
         return (
           <g key={t.id} transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}>
-            <text
-              x={x} y={y}
-              fontSize={FS_BEACON_HEAD}
-              textAnchor={anchor}
-              onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
-              onDoubleClick={(e) => { e.stopPropagation(); onTextDoubleClick?.(t.id); }}
-              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } }}
-              style={{ cursor: isSel ? "move" : "pointer" }}
-            >
+            <rect x={boxX - 3} y={boxY - 2} width={boxW + 6} height={boxH + 4} fill="transparent" {...handlers} style={{ cursor: isSel ? "move" : "pointer" }} />
+            <text x={x} y={y} fontSize={FS_BEACON_HEAD} textAnchor={anchor} {...handlers} style={{ cursor: isSel ? "move" : "pointer" }}>
               {t.text}
             </text>
             {isSel && (
-              <circle
-                cx={x} cy={y - FS_BEACON_HEAD * 0.35} r={5} fill="white" stroke="black" strokeWidth={1.2}
-                style={{ pointerEvents: "none" }}
-              />
+              <>
+                <rect
+                  x={boxX - 3} y={boxY - 2} width={boxW + 6} height={boxH + 4}
+                  fill="none" stroke="#2563eb" strokeWidth={1.2} strokeDasharray="4 3"
+                  style={{ pointerEvents: "none" }}
+                />
+                {!t.upright && (
+                  <>
+                    <line x1={boxX + boxW + 3} y1={rotHandle.y} x2={rotHandle.x - 6} y2={rotHandle.y} stroke="#2563eb" strokeWidth={1} style={{ pointerEvents: "none" }} />
+                    <circle
+                      data-rotate-handle
+                      cx={rotHandle.x} cy={rotHandle.y} r={6} fill="white" stroke="#2563eb" strokeWidth={1.4}
+                      onPointerDown={(e) => { e.stopPropagation(); onTextRotateDown?.(t.id, e); }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ cursor: "grab" }}
+                    >
+                      <title>Drag to rotate (Shift snaps to 15°)</title>
+                    </circle>
+                  </>
+                )}
+              </>
             )}
           </g>
         );
@@ -748,12 +787,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const compX = _valueXAligned;
         const degreeSquareX = _valueXAligned;
         const lirNoX = _valueXAligned;
-        const gpNo = clampWords(dash(meta.gpNo), tableRight - gpNoX - 10, FS_BEACON_HEAD);
-        const srNo = clampWords(dash(meta.srNo), tableRight - srNoX - 10, FS_BEACON_HEAD);
-        const dsmFile = clampWords(dash(meta.dsmFile), tableRight - dsmFileX - 10, FS_BEACON_HEAD);
-        const comp = clampWords(dash(meta.comp), tableRight - compX - 10, FS_BEACON_HEAD);
-        const degreeSquare = clampWords(dash(meta.degreeSquare), tableRight - degreeSquareX - 10, FS_BEACON_HEAD);
-        const lirNo = clampWords(dash(meta.lirNo), tableRight - lirNoX - 10, FS_BEACON_HEAD);
+        const gpNo = dash(meta.gpNo);
+        const gpNoFS = fitFontSize(gpNo, tableRight - gpNoX - 10, FS_BEACON_HEAD);
+        const srNo = dash(meta.srNo);
+        const srNoFS = fitFontSize(srNo, tableRight - srNoX - 10, FS_BEACON_HEAD);
+        const dsmFile = dash(meta.dsmFile);
+        const dsmFileFS = fitFontSize(dsmFile, tableRight - dsmFileX - 10, FS_BEACON_HEAD);
+        const comp = dash(meta.comp);
+        const compFS = fitFontSize(comp, tableRight - compX - 10, FS_BEACON_HEAD);
+        const degreeSquare = dash(meta.degreeSquare);
+        const degreeSquareFS = fitFontSize(degreeSquare, tableRight - degreeSquareX - 10, FS_BEACON_HEAD);
+        const lirNo = dash(meta.lirNo);
+        const lirNoFS = fitFontSize(lirNo, tableRight - lirNoX - 10, FS_BEACON_HEAD);
         const annexedTo = clampWords(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
         const annexedDate = clampWords(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
         const annexedFavour = clampWords(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
@@ -806,17 +851,17 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
             {/* right — registration numbers (label + value in an aligned column, with a gap) */}
             <text x={annC2 + 12} y={annTop + 40}>General Plan No.</text>
-            <text x={gpNoX} y={annTop + 40}>{gpNo}</text>
+            <text x={gpNoX} y={annTop + 40} fontSize={gpNoFS}>{gpNo}</text>
             <text x={annC2 + 12} y={annTop + 90}>S.R No.</text>
-            <text x={srNoX} y={annTop + 90}>{srNo}</text>
+            <text x={srNoX} y={annTop + 90} fontSize={srNoFS}>{srNo}</text>
             <text x={annC2 + 12} y={annTop + 140}>D.S.M File:</text>
-            <text x={dsmFileX} y={annTop + 140}>{dsmFile}</text>
+            <text x={dsmFileX} y={annTop + 140} fontSize={dsmFileFS}>{dsmFile}</text>
             <text x={annC2 + 12} y={annTop + 190}>Comp.</text>
-            <text x={compX} y={annTop + 190}>{comp}</text>
+            <text x={compX} y={annTop + 190} fontSize={compFS}>{comp}</text>
             <text x={annC2 + 12} y={annTop + 240}>Degree Square:</text>
-            <text x={degreeSquareX} y={annTop + 240}>{degreeSquare}</text>
+            <text x={degreeSquareX} y={annTop + 240} fontSize={degreeSquareFS}>{degreeSquare}</text>
             <text x={annC2 + 12} y={annTop + 290}>LIR No:</text>
-            <text x={lirNoX} y={annTop + 290}>{lirNo}</text>
+            <text x={lirNoX} y={annTop + 290} fontSize={lirNoFS}>{lirNo}</text>
           </g>
         );
       })()}

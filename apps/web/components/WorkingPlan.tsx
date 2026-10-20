@@ -849,7 +849,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const x = fx(t.east, t.north) + off.dx, y = fy(t.east, t.north) + off.dy;
         const isSel = selectedTextId === t.id;
         const boxW = Math.max(14, t.text.length * fs * 0.3), boxH = 7 * scale;
-        const textAngle = (flip ? -(t.angle || 0) : (t.angle || 0)) + rotation;
+        // Same screen-relative angle as the Diagrams sheet these notes come
+        // from: 0 = horizontal/readable, positive = clockwise (client req 2026-10-20).
+        const textAngle = t.upright ? 0 : t.angle || 0;
         return (
           <g key={t.id}>
             <text
