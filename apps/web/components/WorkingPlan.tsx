@@ -33,6 +33,8 @@ export interface WorkingPlanPlot {
 
 export interface WorkingPlanMeta {
   lotName: string;            // "LOT 2773 TLOKWENG"
+  /** Title line when it differs from lotName (the Diagram's full "land called" name). */
+  titleName?: string;
   /** "(A PORTION OF CADASTRE 243)" — mirrors the Diagrams module's own
    *  "Parent / portion" field (client req 2026-08-26: "we want to Add
    *  that there"), printed right under the lot name like the SG diagram. */
@@ -585,7 +587,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 </>
               ) : (
                 <>
-                  <text x={VB_W / 2} y={62} fontSize={14 * ts} textDecoration="underline">{meta.lotName}</text>
+                  <text x={VB_W / 2} y={62} fontSize={14 * ts} textDecoration="underline">{meta.titleName || meta.lotName}</text>
                   {hasParent && (
                     <text x={VB_W / 2} y={82} fontSize={11 * ts} textDecoration="none">({meta.parent})</text>
                   )}

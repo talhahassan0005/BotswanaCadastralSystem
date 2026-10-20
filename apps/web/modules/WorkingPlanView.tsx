@@ -7,6 +7,7 @@ import { WorkingPlan, type WorkingPlanMeta, type WorkingPlanPlot } from "@/compo
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
+import { landCalledName } from "@/lib/diagramLayout";
 
 /**
  * Working Plan (Module D / M3) — a cadastral working plan in the WP-Model.pdf
@@ -213,6 +214,9 @@ export function WorkingPlanView() {
   // the actual lot name, e.g. "LOT 4231 GABANE" — not the generic project name).
   const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
   const diagramLotName = ((diagramInput as { meta?: { lotName?: string } } | null)?.meta?.lotName) || "";
+  // Title reads exactly like the Diagram's "land called" line (client req 2026-10-21).
+  const diagramLocation = ((diagramInput as { meta?: { location?: string } } | null)?.meta?.location) || "";
+  const diagramTitleName = diagramLotName ? landCalledName(diagramLotName, diagramLocation) : "";
   // Date of survey mirrors the Diagram's own date (client req 2026-10-21).
   const diagramSurveyDate = ((diagramInput as { meta?: { surveyedDate?: string } } | null)?.meta?.surveyedDate)?.trim() || "";
   // "Parent / portion" (client req 2026-08-26: "we want to Add that there")
@@ -259,6 +263,7 @@ export function WorkingPlanView() {
     surveyor: config.surveyor || meta.surveyor || "",
     placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
     lotName: diagramLotName || meta.lotName,
+    titleName: diagramTitleName || undefined,
     dateOfSurvey: diagramSurveyDate || meta.dateOfSurvey,
     parent: diagramParent || meta.parent,
     tribalArea: gpTribalArea || meta.tribalArea,
@@ -586,7 +591,7 @@ export function WorkingPlanView() {
     const tScale = tOff.scale ?? 1;
     const titleX = 300 + tOff.dx;
     text(titleX, 40 + tOff.dy, "WORKING PLAN OF", 14 * tScale, "middle");
-    text(titleX, 62 + tOff.dy, resolvedPlots.length > 0 ? `LOTS ${resolvedPlots.map((p) => p.number).join(", ")} ${effectiveMeta.locality || ""}` : effectiveMeta.lotName, 13 * tScale, "middle");
+    text(titleX, 62 + tOff.dy, resolvedPlots.length > 0 ? `LOTS ${resolvedPlots.map((p) => p.number).join(", ")} ${effectiveMeta.locality || ""}` : effectiveMeta.titleName || effectiveMeta.lotName, 13 * tScale, "middle");
     text(titleX, 84 + tOff.dy, effectiveMeta.tribalArea, 12 * tScale, "middle");
     text(titleX, 104 + tOff.dy, `1:${effectiveMeta.scale}`, 12 * tScale, "middle");
     text(26, 30, `REFERENCE MARKS: ${effectiveMeta.referenceMarkDescription}`, 8.5);

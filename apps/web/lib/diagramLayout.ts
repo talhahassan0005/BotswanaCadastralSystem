@@ -151,6 +151,14 @@ export function areaText(areaHa: number): string {
     ? `${Math.round(areaHa * 10000).toLocaleString("en-US")} square metres`
     : `${areaHa.toFixed(4)} hectares`;
 }
+/** The diagram's "land called" name: lot name + Situate-at location, unless
+ *  the name already contains it ("Lot 101" + "Tlokweng" -> "Lot 101 Tlokweng").
+ *  Shared so the Working Plan title reads exactly like the Diagram. */
+export function landCalledName(lotName: string, location?: string): string {
+  const loc = (location || "").trim();
+  return loc && !lotName.toUpperCase().includes(loc.toUpperCase()) ? `${lotName} ${loc}` : lotName;
+}
+
 /** Coordinate-system label in SG form: "Lo 29" -> "LO. 29°". */
 export function fmtSystem(cs: string): string {
   const m = cs.match(/Lo\s*(\d+)/i);
@@ -330,10 +338,7 @@ export function computeDiagramLayout(
   // CHARLESHILL" — wrapped like every other free-text block here (client
   // req 2026-08-24: an unusually long lot name/location used to just run
   // off the sheet as one un-wrapped line instead of dropping to a second).
-  const landCalled =
-    meta.location && !meta.lotName.toUpperCase().includes(meta.location.trim().toUpperCase())
-      ? `${meta.lotName} ${meta.location}`
-      : meta.lotName;
+  const landCalled = landCalledName(meta.lotName, meta.location);
   const landCalledLines = wrapSvgWords(landCalled.split(/\s+/).filter(Boolean), tw - 80, FS_LANDCALLED);
   // Optional "(A PORTION OF ...)" ancestry lines — client req 2026-08-23:
   // long-history plots (subdivided from a lot, itself a portion of another
