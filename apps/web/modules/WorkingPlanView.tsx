@@ -213,6 +213,8 @@ export function WorkingPlanView() {
   // the actual lot name, e.g. "LOT 4231 GABANE" — not the generic project name).
   const diagramBeaconDesc = ((diagramInput as { meta?: { beaconDescription?: string } } | null)?.meta?.beaconDescription) || "";
   const diagramLotName = ((diagramInput as { meta?: { lotName?: string } } | null)?.meta?.lotName) || "";
+  // Date of survey mirrors the Diagram's own date (client req 2026-10-21).
+  const diagramSurveyDate = ((diagramInput as { meta?: { surveyedDate?: string } } | null)?.meta?.surveyedDate)?.trim() || "";
   // "Parent / portion" (client req 2026-08-26: "we want to Add that there")
   // — reused from the Diagrams module's own field, same as lotName above,
   // not re-collected here.
@@ -257,6 +259,7 @@ export function WorkingPlanView() {
     surveyor: config.surveyor || meta.surveyor || "",
     placedBeaconDescription: diagramBeaconDesc || meta.placedBeaconDescription,
     lotName: diagramLotName || meta.lotName,
+    dateOfSurvey: diagramSurveyDate || meta.dateOfSurvey,
     parent: diagramParent || meta.parent,
     tribalArea: gpTribalArea || meta.tribalArea,
     coordinateSystem: gpCoordinateSystem || meta.coordinateSystem,
@@ -704,10 +707,12 @@ export function WorkingPlanView() {
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
           <Field label="Placed beacons (auto from Diagram if set)"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
           <Field label="Found beacons"><Input value={meta.foundBeaconDescription ?? ""} onChange={set("foundBeaconDescription")} placeholder="e.g. All Found Beacons: 20mm Iron Peg" /></Field>
-          <Field label="Date of survey"><Input value={meta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} placeholder="e.g. 15 June 2026" /></Field>
+          <Field label={diagramSurveyDate ? "Date of survey (from Diagram)" : "Date of survey"}>
+            <Input value={effectiveMeta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} readOnly={!!diagramSurveyDate} placeholder="e.g. 15 June 2026" />
+          </Field>
         </div>
         <p className="mt-2 text-xs text-slate-400">
-          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Lot name and placed-beacon description mirror what's entered under Diagrams.
+          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Lot name, placed-beacon description and date of survey mirror what's entered under Diagrams.
         </p>
 
         {/* Multi-plot sheet (client req 2026-08-26, Part 33a) — draw several
