@@ -481,6 +481,19 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const nLines = gridValues(minN - stepN, maxN + stepN, stepN).filter(
     (v) => toY(v) >= draw.y - 2 && toY(v) <= draw.y + draw.h + 2
   );
+  // Grid trimmed to a tidy window around the plot (client req 2026-10-21:
+  // "this is not neat... reduce the length of the lines") — each line only
+  // runs between the outermost lines of the other direction, instead of
+  // across the whole panel and through the title; labels sit at the line
+  // ends. Falls back to the panel edge when a direction has < 2 lines.
+  const gxs = eLines.map((v) => toX(v)), gys = nLines.map((v) => toY(v));
+  const gridLeft = gxs.length >= 2 ? Math.min(...gxs) : draw.x;
+  const gridRight = gxs.length >= 2 ? Math.max(...gxs) : draw.x + draw.w;
+  const gridTop = gys.length >= 2 ? Math.min(...gys) : draw.y;
+  const gridBottom = gys.length >= 2 ? Math.max(...gys) : draw.y + draw.h;
+  // Lines run a little past the outer box (client's reference grid) and
+  // the X labels sit just above the line inside that overshoot.
+  const GRID_OVER = 50;
   const fmtGrid = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
   // "X-2732200" / "Y+91000" (client req 2026-08-26, Part 29c) — axis letter
   // directly against the signed value, sign always shown (so a positive
@@ -660,10 +673,10 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       {/* ---------- Coordinate grid (blue) ---------- */}
       <g stroke={GRID_BLUE} strokeWidth={0.5}>
         {eLines.map((v, i) => (
-          <line key={`ev${i}`} x1={toX(v)} y1={draw.y} x2={toX(v)} y2={draw.y + draw.h} />
+          <line key={`ev${i}`} x1={toX(v)} y1={gridTop - GRID_OVER} x2={toX(v)} y2={gridBottom + GRID_OVER} />
         ))}
         {nLines.map((v, i) => (
-          <line key={`nv${i}`} x1={draw.x} y1={toY(v)} x2={draw.x + draw.w} y2={toY(v)} />
+          <line key={`nv${i}`} x1={gridLeft - GRID_OVER} y1={toY(v)} x2={gridRight + GRID_OVER} y2={toY(v)} />
         ))}
       </g>
       {/* Grid axis labels — both edges, "X"/"Y"-prefixed signed format
@@ -675,9 +688,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           <text
             key={`elt${i}`}
             x={toX(v)}
-            y={draw.y - 4}
+            y={gridTop - 4}
             textAnchor="start"
-            transform={`rotate(-90 ${toX(v)} ${draw.y - 4})`}
+            transform={`rotate(-90 ${toX(v)} ${gridTop - 4})`}
           >
             {fmtAxis("Y", v)}
           </text>
@@ -692,20 +705,20 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           <text
             key={`elb${i}`}
             x={toX(v)}
-            y={draw.y + draw.h + 4}
+            y={gridBottom + 4}
             textAnchor="end"
-            transform={`rotate(-90 ${toX(v)} ${draw.y + draw.h + 4})`}
+            transform={`rotate(-90 ${toX(v)} ${gridBottom + 4})`}
           >
             {fmtAxis("Y", v)}
           </text>
         ))}
         {nLines.map((v, i) => (
-          <text key={`nll${i}`} x={draw.x - 4} y={toY(v) + 3} textAnchor="end">
+          <text key={`nll${i}`} x={gridLeft - 3} y={toY(v) - 3} textAnchor="end">
             {fmtAxis("X", v)}
           </text>
         ))}
         {nLines.map((v, i) => (
-          <text key={`nlr${i}`} x={draw.x + draw.w + 4} y={toY(v) + 3} textAnchor="start">
+          <text key={`nlr${i}`} x={gridRight + 3} y={toY(v) - 3} textAnchor="start">
             {fmtAxis("X", v)}
           </text>
         ))}
