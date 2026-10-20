@@ -431,15 +431,6 @@ export function Diagrams() {
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
-  // Set only between an extension line's 2nd click and the number prompt
-  // that follows it being confirmed/cancelled (client req 2026-09-04:
-  // "Add as many of these per edge as needed... each with its own typed
-  // number" — Draw Extension Line already let you click anywhere on any
-  // side, unlimited times; it just never asked for the neighbour's number
-  // the way Part 37's auto-detected labels do). Reuses the same textPrompt
-  // UI the free-text tool already has, positioned at the line's own end
-  // point, rather than building a second prompt component.
-  const [pendingAnnotationLine, setPendingAnnotationLine] = useState<{ e1: number; n1: number; e2: number; n2: number } | null>(null);
   // Interactive text rotation via the selected text's rotate handle (client
   // req 2026-10-20): angle follows the pointer around the text's anchor.
   const [rotatingText, setRotatingText] = useState<{ id: string; anchor: { x: number; y: number }; startPointerDeg: number; origAngle: number } | null>(null);
@@ -527,13 +518,9 @@ export function Diagrams() {
       setDrawingBoundaryMarker(false);
       return;
     }
-    // Line first, then prompt for the neighbouring lot's number at the end
-    // point (client req 2026-09-04) — Add with the field left blank still
-    // commits a plain unlabelled boundary mark, the original behaviour this
-    // replaces (client req 2026-08-23: "these lines only mark that a side
-    // borders a neighbouring plot, they don't need to name which one").
-    setPendingAnnotationLine({ e1: start.east, n1: start.north, e2: end.east, n2: end.north });
-    setTextPrompt({ id: null, x: p.x, y: p.y, value: "", angle: 0 });
+    // Plain line, committed straight away — no neighbouring-lot number
+    // prompt and no label (client req 2026-10-21: "delete that prompt").
+    setAnnotations((arr) => [...arr, { id: `adj-${Date.now()}`, e1: start.east, n1: start.north, e2: end.east, n2: end.north }]);
     setPendingPoint(null);
     setDrawingAnnotation(false);
   }
@@ -563,25 +550,6 @@ export function Diagrams() {
   function commitTextPrompt() {
     if (!textPrompt) return;
     const value = textPrompt.value.trim();
-    if (pendingAnnotationLine) {
-      // Extension line just drawn (client req 2026-09-04) — commit it, with
-      // a paired number label only if one was typed. Matching ids
-      // (`adj-<ts>` / `adj-<ts>-label`) are how delete/drag keep the two in
-      // sync elsewhere (deleteSelectedAnnotation/deleteSelectedText,
-      // syncPairedLabel).
-      const id = `adj-${Date.now()}`;
-      const { e1, n1, e2, n2 } = pendingAnnotationLine;
-      setAnnotations((arr) => [...arr, { id, e1, n1, e2, n2 }]);
-      // upright: true — same fix as Part 37's auto-detected labels just
-      // above (client req 2026-09-18: adjoining-lot numbers rendering
-      // upside-down); a manually-typed neighbour number is the same kind
-      // of short reference label, not a free-text note meant to track
-      // the figure's own presentation rotation.
-      if (value) setTexts((arr) => [...arr, { id: `${id}-label`, east: e2, north: n2, text: value, upright: true, from: { east: e1, north: n1 } }]);
-      setPendingAnnotationLine(null);
-      setTextPrompt(null);
-      return;
-    }
     if (value) {
       const tr = transformRef.current;
       const w = tr ? liveWorld(tr, textPrompt.x, textPrompt.y) : { east: 0, north: 0 };
@@ -603,15 +571,7 @@ export function Diagrams() {
     const a = annotations.find((x) => x.id === annotationId);
     setTexts((arr) => arr.map((tt) => (tt.id === labelId ? { ...tt, east, north, ...(tt.from && a ? { from: { east: a.e1, north: a.n1 } } : {}) } : tt)));
   }
-  /** Neighbouring-lot number is optional: Esc / ✕ / an empty Enter all keep
-   *  the just-drawn line, just without a number (client req 2026-10-20). */
   function dismissTextPrompt() {
-    if (pendingAnnotationLine) {
-      const id = `adj-${Date.now()}`;
-      const { e1, n1, e2, n2 } = pendingAnnotationLine;
-      setAnnotations((arr) => [...arr, { id, e1, n1, e2, n2 }]);
-      setPendingAnnotationLine(null);
-    }
     setTextPrompt(null);
   }
   function deleteSelectedText() {
@@ -1573,16 +1533,12 @@ export function Diagrams() {
                 <Card title="Adjoining Parcels">
                   <p className="mb-2 text-xs text-slate-400">
                     These dashed extension lines are added by hand, the same way a surveyor marks them up on
-                    paper — there's no survey data to compute them from. Click "Draw Extension Line" below, then
-                    click two points directly on the preview — any side, as many as you need along one edge — and
-                    type the neighbouring lot's number when prompted (leave it blank for an unlabelled mark; an
-                    edge that already matches another plot in this project, or has no match at all, is marked
-                    automatically — this is only for a neighbour with no survey data of its own to detect).
-                    Click an existing line to select it — drag the line itself to move it (its number moves with
-                    it), drag an end-handle to stretch that end (hold Shift to rotate the whole line around the
-                    other end instead), type an exact length/angle while dragging, or press Delete to remove it
-                    (removes its number too). Click a number directly to select and delete just that. Esc cancels
-                    a drag in progress; on a line's number prompt it skips the number (the line is kept).
+                    paper. Click "Draw Extension Line" below, then click two points directly on the preview — the
+                    line is added straight away (no lot number to type). Neighbouring lots that share a side with
+                    this plot in the project are marked automatically.
+                    Click an existing line to select it — drag the line itself to move it, drag an end-handle to
+                    stretch that end (hold Shift to rotate the whole line around the other end instead), type an
+                    exact length/angle while dragging, or press Delete to remove it. Esc cancels a drag in progress.
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1772,7 +1728,7 @@ export function Diagrams() {
               >
                 <div className="mb-1.5 flex items-center justify-between">
                   <span className="font-semibold text-brand-dark">
-                    {pendingAnnotationLine ? "Neighbouring lot no. (optional)" : textPrompt.id ? "Edit Text" : "Add Text"}
+                    {textPrompt.id ? "Edit Text" : "Add Text"}
                   </span>
                   <button
                     type="button"
@@ -1788,11 +1744,10 @@ export function Diagrams() {
                   value={textPrompt.value}
                   onChange={(e) => setTextPrompt((g) => (g ? { ...g, value: e.target.value } : g))}
                   onKeyDown={(e) => { if (e.key === "Enter") commitTextPrompt(); }}
-                  placeholder={pendingAnnotationLine ? "e.g. 107 — Enter/Esc to skip" : "Note text…"}
+                  placeholder="Note text…"
                   className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1"
                 />
-                {!pendingAnnotationLine && (
-                  <label className="mb-1.5 flex items-center gap-1.5">
+                <label className="mb-1.5 flex items-center gap-1.5">
                     <span className="text-slate-500">Angle</span>
                     <input
                       type="number"
@@ -1803,9 +1758,8 @@ export function Diagrams() {
                     />
                     <span className="text-slate-400">degrees, clockwise</span>
                   </label>
-                )}
                 <button type="button" onClick={commitTextPrompt} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">
-                  {pendingAnnotationLine ? "Add" : textPrompt.id ? "Save" : "Add"}
+                  {textPrompt.id ? "Save" : "Add"}
                 </button>
               </div>
             );
