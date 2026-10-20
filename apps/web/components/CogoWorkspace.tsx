@@ -1379,6 +1379,7 @@ export function CogoWorkspace({
   const [polPickError, setPolPickError] = useState<string | null>(null);
   function polSetFrom(v: { east: number; north: number; existingId?: string }) {
     if (!v.existingId) { setPolPickError("No point there — click closer to an existing point."); return; }
+    if (polTo && v.existingId === polTo.id) { setPolPickError("From and To must be different points."); return; }
     setPolPickError(null);
     const p = visible.find((pp) => pp.id === v.existingId)!;
     setPolFrom(p);
@@ -1387,6 +1388,7 @@ export function CogoWorkspace({
   function polSetTo(v: { east: number; north: number; existingId?: string }) {
     if (!v.existingId) { setPolPickError("No point there — click closer to an existing point."); return; }
     if (!polFrom) { setPolPickError("Pick a From point first."); return; }
+    if (v.existingId === polFrom.id) { setPolPickError("From and To must be different points."); return; }
     setPolPickError(null);
     const p = visible.find((pp) => pp.id === v.existingId)!;
     setPolTo(p);
@@ -2203,7 +2205,7 @@ export function CogoWorkspace({
     }
     return sum > 0;
   };
-  const toWorld =(sx: number, sy: number): [number, number] => {
+  const toWorld = (sx: number, sy: number): [number, number] => {
     let x = sx, y = sy;
     if (rotation) {
       const dx = sx - W / 2, dy = sy - H / 2;

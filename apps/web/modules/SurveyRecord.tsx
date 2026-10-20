@@ -103,6 +103,7 @@ export function SurveyRecord() {
     unusualOccurrences?: string;
     declaredArea?: string;
     consistencyDecimals?: 3 | 4;
+    loSynced?: number;
   };
 
   const [doc, setDoc] = useState<DocId>(ri.doc ?? "submission");
@@ -134,12 +135,13 @@ export function SurveyRecord() {
   const [unusualOccurrences, setUnusualOccurrences] = useState(ri.unusualOccurrences ?? "N/A");
   const [declaredArea, setDeclaredArea] = useState(ri.declaredArea ?? "");
   const [consistencyDecimals, setConsistencyDecimals] = useState<3 | 4>(ri.consistencyDecimals ?? 3);
+  const [loSynced, setLoSynced] = useState<number | undefined>(ri.loSynced);
 
   // Persist every field so the letter/report round-trips with the project
   // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose: purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals });
-  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose: purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals, loSynced });
+  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purposeShown, purposeEdited, authority, calcBasis, method, unusualOccurrences, declaredArea, consistencyDecimals, loSynced, setRecordInput]);
 
   // Lo central meridian: Calculation Basis is where the surveyor states it,
   // and it drives the ONE shared project value (config.coordinateSystem) that
@@ -147,16 +149,29 @@ export function SurveyRecord() {
   // Typing a valid "Lo NN" updates it immediately; if the project value is
   // changed elsewhere (e.g. the Cadastral coordinate-system dropdown), the
   // Lo number inside this text is rewritten to match — never two values.
+  // `loSynced` (saved with the record) is the Lo both agreed on last time, so
+  // a mismatch can be resolved the right way round: project value changed
+  // since then -> it was changed elsewhere, rewrite the text; otherwise
+  // (incl. older projects never synced) the text is the source -> push it.
   const basisLo = parseLo(calcBasis);
   const projectLo = parseLo(config.coordinateSystem);
   function changeCalcBasis(v: string) {
     setCalcBasis(v);
     const n = parseLo(v);
-    if (n != null && n !== parseLo(config.coordinateSystem)) setConfig({ coordinateSystem: loConfigValue(n) });
+    if (n == null) return;
+    if (n !== parseLo(config.coordinateSystem)) setConfig({ coordinateSystem: loConfigValue(n) });
+    setLoSynced(n);
   }
   useEffect(() => {
-    if (projectLo == null || basisLo == null || basisLo === projectLo) return;
-    setCalcBasis((cb) => cb.replace(/\b(Lo\.?\s*)\d{1,2}(?!\d)/i, `$1${projectLo}`));
+    if (projectLo == null || basisLo == null) return;
+    if (basisLo === projectLo) { if (loSynced !== projectLo) setLoSynced(projectLo); return; }
+    if (loSynced != null && projectLo !== loSynced) {
+      setCalcBasis((cb) => cb.replace(/\b(Lo\.?\s*)\d{1,2}(?!\d)/i, `$1${projectLo}`));
+      setLoSynced(projectLo);
+    } else {
+      setConfig({ coordinateSystem: loConfigValue(basisLo) });
+      setLoSynced(basisLo);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectLo]);
 

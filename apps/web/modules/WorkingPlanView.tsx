@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { WorkingPlan, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
+import { WorkingPlan, workingPlanMinScale, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
@@ -301,6 +301,13 @@ export function WorkingPlanView() {
   // Botswana's Lo-grid (south/west-positive) convention with no conversion
   // applied at import, and empirically needs a 180 degrees correction that
   // the small-angle residual estimate below is structurally blind to.
+  const minScale = useMemo(
+    () => workingPlanMinScale(
+      resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points,
+      resolvedPlots.length > 0 || !!(diagramParent || meta.parent)?.trim() ? 20 : 0
+    ),
+    [resolvedPlots, points, diagramParent, meta.parent]
+  );
   const autoRotationDeg = useMemo(() => {
     const BASE_ORIENTATION_DEG = 180;
     const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
@@ -688,6 +695,11 @@ export function WorkingPlanView() {
             <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
           </Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+          {minScale != null && meta.scale > 0 && meta.scale < minScale && (
+            <p className="-mt-1 text-xs text-amber-600 md:col-span-2">
+              At 1:{meta.scale} the plot is larger than the sheet — use 1:{minScale} or larger.
+            </p>
+          )}
           <div>
             <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
             <div className="flex gap-1">

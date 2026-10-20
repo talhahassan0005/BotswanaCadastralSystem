@@ -221,6 +221,20 @@ function gridValues(lo: number, hi: number, step: number): number[] {
   return out;
 }
 
+/** Smallest "1:N" (rounded up to a multiple of 50) at which the figure still
+ *  fits the drawing panel — mirrors the panel/pad/VB_W numbers the sheet
+ *  itself uses below, so the form can warn instead of the plot silently
+ *  running off the sheet now that it draws at true scale. */
+export function workingPlanMinScale(points: { east: number; north: number }[], titleExtra: number): number | null {
+  if (points.length < 2) return null;
+  const es = points.map((p) => p.east), ns = points.map((p) => p.north);
+  const spanE = Math.max(...es) - Math.min(...es), spanN = Math.max(...ns) - Math.min(...ns);
+  const unitsPerMetreAt1 = (600 / 210) * 1000; // VB_W / A4 width (mm) * 1000
+  const availW = 460 - 2 * 56, availH = 390 - titleExtra - 2 * 56;
+  const n = Math.max((spanE * unitsPerMetreAt1) / availW, (spanN * unitsPerMetreAt1) / availH);
+  return n > 0 && Number.isFinite(n) ? Math.ceil(n / 50) * 50 : null;
+}
+
 const GRID_BLUE = "#2563eb";
 const INSET_GREEN = "#16a34a";
 const REF_RED = "#dc2626";
