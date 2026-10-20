@@ -90,7 +90,7 @@ function defaultBeaconDescription(pts: { name: string | null }[]): string {
 }
 
 export function Diagrams() {
-  const { cogoResult, diagramFigure, setDiagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc, cogoPlots } = useStore();
+  const { cogoResult, diagramFigure, setDiagramFigure, config, setActiveTab, diagramInput, setDiagramInput, parcelDoc, cogoPlots, cogoWorkspaceDoc } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
 
   // The surveyor picks which lot (parcel) to draw the diagram for, right here.
@@ -256,22 +256,14 @@ export function Diagrams() {
       })),
     [fig]
   );
-  // ===================== Part 37: auto-mark every boundary side =====
-  // When several plots are computed together in one COGO layout (Part 33 —
-  // e.g. a subdivision's 100/101/102... sharing boundary points) and the
-  // diagram is generated for just one of them, EVERY side of THIS plot
-  // gets an automatic plain dash — no manual marking, no number — the
-  // moment the diagram is generated (client req 2026-09-19, several rounds
-  // settling on this final shape: auto-numbering a matched side turned out
-  // to guess wrong for at least one real case — "103" showing when it
-  // shouldn't have — and auto-marking only the UNmatched sides then left
-  // that same wrong "103" number still showing while everything else was
-  // plain, which read as inconsistent. Simplest correct behaviour: this
-  // auto-detection only ever draws the plain, unlabelled mark, on every
-  // side, unconditionally; a real number for a specific side is added the
-  // one place that's actually reliable — by hand, via Part 24's manual
-  // "Draw Extension Line" tool below, where the surveyor types it
-  // themselves instead of the app guessing from shared coordinates).
+  // ===================== Part 37: automatic neighbour marks =====
+  // When several plots are computed together in one COGO layout and the
+  // diagram is generated for one of them: a subdivision lot shows each
+  // neighbouring lot that shares a side with it — the neighbour's number
+  // beside that side and short dashed stubs of the neighbour's own sides at
+  // the shared corners; the main figure shows only itself (client req
+  // 2026-10-20, hand sketches of Lots 12580 / 18312 / 18313). Extra marks
+  // can still be added by hand via "Draw Extension Line" below.
   // `loadedPlotNumber` only resolves when this diagram's lot name matches
   // an actual saved cogoPlots entry — a Parcels-tab pick or a quick canvas
   // "Generate Diagram" (neither backed by a numbered, saved plot)
@@ -281,75 +273,112 @@ export function Diagrams() {
     () => cogoPlots.find((p) => p.number.trim().toUpperCase() === meta.lotName.trim().toUpperCase())?.number ?? null,
     [cogoPlots, meta.lotName]
   );
+  // Main figure (the parent outline the subdivisions sit inside) — client
+  // req 2026-10-20: "Plot 12580 is a main figure. It only shows the plot. No
+  // neighbouring plots shown." A lot counts as the main figure when it's
+  // ticked "Main figure" in the COGO Polygon Attributes, or when it
+  // geometrically contains another lot (a parent always does; an ordinary
+  // corner lot never does, so this can't misfire on a big neighbour).
+  const mainFigureNumbers = useMemo(() => {
+    const out = new Set<string>();
+    const doc = (cogoWorkspaceDoc ?? {}) as { polygons?: { id: string }[]; polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }> };
+    for (const pg of doc.polygons ?? []) {
+      const m = doc.polygonMeta?.[pg.id];
+      if (m?.mainFigure && m.position?.trim()) out.add(m.position.trim().toUpperCase());
+    }
+    const inside = (pt: { east: number; north: number }, ring: { east: number; north: number }[]) => {
+      let hit = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        if (a.north > pt.north !== b.north > pt.north && pt.east < ((b.east - a.east) * (pt.north - a.north)) / (b.north - a.north) + a.east) hit = !hit;
+      }
+      return hit;
+    };
+    for (const p of cogoPlots) {
+      if (p.fig.points.length < 3) continue;
+      const containsAnother = cogoPlots.some((o) => {
+        if (o === p || o.fig.points.length < 3 || o.fig.area_m2 >= p.fig.area_m2) return false;
+        const c = { east: o.fig.points.reduce((s, q) => s + q.east, 0) / o.fig.points.length, north: o.fig.points.reduce((s, q) => s + q.north, 0) / o.fig.points.length };
+        return inside(c, p.fig.points);
+      });
+      if (containsAnother) out.add(p.number.trim().toUpperCase());
+    }
+    return out;
+  }, [cogoPlots, cogoWorkspaceDoc]);
   const autoShared = useMemo(() => {
     const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
-    // Client req: auto boundary marks only when this plot is part of a
-    // multi-lot layout. A single standalone plot has no lines by default —
-    // the surveyor adds them manually via Draw Extension Line.
+    // A single standalone plot, or the main figure itself, shows only the
+    // plot — no neighbour marks or numbers.
     if (!loadedPlotNumber || points.length < 3 || cogoPlots.length <= 1) return empty;
-    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber);
+    if (mainFigureNumbers.has(loadedPlotNumber.trim().toUpperCase())) return empty;
+    // Neighbours are the other SUBDIVISION lots — never the main figure,
+    // whose outline overlaps this lot's outer sides.
+    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber && !mainFigureNumbers.has(p.number.trim().toUpperCase()));
     const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
     const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
+    const span = Math.max(
+      Math.max(...points.map((p) => p.east)) - Math.min(...points.map((p) => p.east)),
+      Math.max(...points.map((p) => p.north)) - Math.min(...points.map((p) => p.north)),
+      1
+    );
     const sameWorldPoint = (a: { east: number; north: number }, b: { east: number; north: number }) =>
       Math.abs(a.east - b.east) < 0.01 && Math.abs(a.north - b.north) < 0.01; // metres — matches computeDiagramLayout's point-identity tolerance
+    const onThisPlot = (q: { east: number; north: number }) => points.some((p) => sameWorldPoint(p, q));
     const anns: ManualAnnotation[] = [];
     const labels: ManualText[] = [];
+    const drawn = new Set<string>();
     for (let i = 0; i < points.length; i++) {
       const a = points[i], b = points[(i + 1) % points.length];
       const dE = b.east - a.east, dN = b.north - a.north;
-      // Neighbouring plot number (client req 2026-09-21: "add neighboring
-      // plot numbers", reference sketch: plain "102"/"104" beside the
-      // side edges, no dash or leader) — a side that is also an edge of
-      // another plot in this same COGO layout gets that plot's number as
-      // plain text just outside the side. Independent of the dash below,
-      // which stays exactly as it was (horizontal sides only).
       const neighbor = others.find((o) =>
         o.fig.points.some((oa, j) => {
           const ob = o.fig.points[(j + 1) % o.fig.points.length];
           return (sameWorldPoint(a, oa) && sameWorldPoint(b, ob)) || (sameWorldPoint(a, ob) && sameWorldPoint(b, oa));
         })
       );
-      if (neighbor) {
-        const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
-        const len = Math.hypot(dE, dN) || 1;
-        let pE = -dN / len, pN = dE / len;
-        if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
-        const off = Math.min(15, Math.max(2, len * 0.25));
-        labels.push({
-          id: `auto-nbr-${i}-${neighbor.number}`,
-          east: mE + pE * off,
-          north: mN + pN * off,
-          text: neighbor.number,
-          upright: true,
-          from: { east: mE, north: mN },
-        });
+      if (!neighbor) continue;
+      // Neighbour's lot number just outside the shared side.
+      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+      const len = Math.hypot(dE, dN) || 1;
+      let pE = -dN / len, pN = dE / len;
+      if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+      // Close to the side (between the corner stubs), so it can't drift into
+      // the scale/legal text printed just outside the figure.
+      const off = Math.max(1, Math.min(len * 0.08, span * 0.06));
+      labels.push({
+        id: `auto-nbr-${i}-${neighbor.number}`,
+        east: mE + pE * off,
+        north: mN + pN * off,
+        text: neighbor.number,
+        upright: true,
+        from: { east: mE, north: mN },
+      });
+      // Neighbour shown "with dotted lines" (client req 2026-10-20 sketch:
+      // short dashes continuing from each end of the shared side into the
+      // neighbour) — a stub along each of the neighbour's OWN sides that
+      // leaves a shared corner, skipping sides that are also this lot's.
+      const ring = neighbor.fig.points;
+      for (const v of [a, b]) {
+        const k = ring.findIndex((q) => sameWorldPoint(q, v));
+        if (k < 0) continue;
+        for (const w of [ring[(k + 1) % ring.length], ring[(k - 1 + ring.length) % ring.length]]) {
+          if (onThisPlot(w)) continue;
+          const key = `${v.east.toFixed(2)},${v.north.toFixed(2)}>${w.east.toFixed(2)},${w.north.toFixed(2)}`;
+          if (drawn.has(key)) continue;
+          drawn.add(key);
+          const eE = w.east - v.east, eN = w.north - v.north;
+          const eLen = Math.hypot(eE, eN) || 1;
+          const stub = Math.min(eLen * 0.5, span * 0.12);
+          anns.push({
+            id: `auto-nbr-dash-${anns.length}`,
+            e1: v.east, n1: v.north,
+            e2: v.east + (eE / eLen) * stub, n2: v.north + (eN / eLen) * stub,
+          });
+        }
       }
-      // Horizontal (road-frontage-style) edges only — no vertical marks
-      // (client req 2026-09-19: "sirf horizontal lines, vertical lines
-      // nahi chahiye" — the side edges between adjoining plots don't get
-      // this auto dash at all, only the roughly east-west ones).
-      if (Math.abs(dN) >= Math.abs(dE)) continue;
-      const segLen = Math.hypot(dE, dN) || 1;
-      // One short collinear extension past each of the edge's two
-      // endpoints, in line with the edge itself — reads as "the boundary
-      // keeps going past this corner", same convention as the reference
-      // sketch's dashes at every corner.
-      const uE = dE / segLen, uN = dN / segLen;
-      const gap = Math.min(3, Math.max(0.8, segLen * 0.02));
-      const dashLen = Math.min(15, Math.max(4, segLen * 0.15));
-      anns.push({
-        id: `auto-bmk-${i}-a`,
-        e1: a.east - uE * gap, n1: a.north - uN * gap,
-        e2: a.east - uE * (gap + dashLen), n2: a.north - uN * (gap + dashLen),
-      });
-      anns.push({
-        id: `auto-bmk-${i}-b`,
-        e1: b.east + uE * gap, n1: b.north + uN * gap,
-        e2: b.east + uE * (gap + dashLen), n2: b.north + uN * (gap + dashLen),
-      });
     }
     return { annotations: anns, texts: labels };
-  }, [loadedPlotNumber, cogoPlots, points]);
+  }, [loadedPlotNumber, cogoPlots, points, mainFigureNumbers]);
 
   // Manually-drawn adjoining-parcel extension lines (client req 2026-08-22,
   // Part 24) — the client clarified these are added by hand by the
