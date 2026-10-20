@@ -5,6 +5,7 @@ import { clampWords, clampToLines, fitFontSize } from "@/lib/wrapSvgText";
 import { declutterLabels } from "@/lib/labelLayout";
 import {
   computeDiagramLayout,
+  annexNameY,
   avg,
   fmtCoord,
   fmtDist,
@@ -834,7 +835,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               <text
                 key={i}
                 x={(tx + annC1) / 2}
-                y={annBottom - 46 - (annexNameLines.length - 1 - i) * ANNEX_NAME_LH}
+                y={annexNameY(i, annexNameLines.length, annTop, annBottom, ANNEX_NAME_LH, FS_BEACON_HEAD)}
                 textAnchor="middle"
                 fontSize={FS_BEACON_HEAD}
               >

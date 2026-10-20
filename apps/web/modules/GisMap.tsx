@@ -55,7 +55,7 @@ interface LLParcel { number: string; ring: [number, number][] }
  * Google Earth. Coordinates are projected (Lo/UTM) → WGS84 via crs.transformPoint.
  */
 export function GisMap() {
-  const { cogoResult, parcelDoc, config } = useStore();
+  const { cogoResult, parcelDoc, config, cogoPlots } = useStore();
   const mapDivRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map…");
@@ -94,6 +94,23 @@ export function GisMap() {
         }
         if (ring.length >= 3) parcels.push({ number: p.number || "parcel", ring });
       }
+    } else if (cogoPlots.length) {
+      // Plots drawn/numbered in the Cadastral workstation (client req
+      // 2026-10-21: "I also want the plot to appear here") — each lot as its
+      // own polygon; beacons shared between adjoining lots are placed once.
+      const seen = new Set<string>();
+      for (const plot of cogoPlots) {
+        const ring: [number, number][] = [];
+        for (const pt of plot.fig.points) {
+          inputCount++;
+          const ll = toLL(pt.east, pt.north);
+          if (!ll) continue;
+          ring.push(ll);
+          const key = `${pt.east.toFixed(3)},${pt.north.toFixed(3)}`;
+          if (!seen.has(key)) { seen.add(key); beacons.push({ id: pt.name ?? "?", lat: ll[0], lon: ll[1] }); }
+        }
+        if (ring.length >= 3) parcels.push({ number: plot.number || "plot", ring });
+      }
     } else if (cogoResult?.points?.length) {
       inputCount = cogoResult.points.length;
       const ring: [number, number][] = [];
@@ -107,7 +124,7 @@ export function GisMap() {
       if (ring.length >= 3 && cogoResult.type === "closed") parcels.push({ number: config.name || "figure", ring });
     }
     return { beacons, parcels, inputCount };
-  }, [cogoResult, parcelDoc, config.coordinateSystem, config.name]);
+  }, [cogoResult, parcelDoc, cogoPlots, config.coordinateSystem, config.name]);
 
   const centroid = useMemo<[number, number]>(() => {
     const all = [...beacons.map((b) => [b.lat, b.lon] as [number, number]), ...parcels.flatMap((p) => p.ring)];

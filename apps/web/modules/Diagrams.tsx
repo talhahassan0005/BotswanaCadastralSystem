@@ -17,7 +17,7 @@ import {
   type ManualAnnotation,
   type ManualText,
 } from "@/components/SgDiagram";
-import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem } from "@/lib/diagramLayout";
+import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY } from "@/lib/diagramLayout";
 import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
@@ -1188,7 +1188,7 @@ export function Diagrams() {
       text(annC1 - 140, annTop + 140, dxfLabelFit("in favour", inFavourW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(tx + 10, annTop + 190, dxfLabelFit(annexedFavour, annCol1ValueW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       annexNameLines.forEach((ln, i) => {
-        const y = annBottom - 46 - (annexNameLines.length - 1 - i) * ANNEX_NAME_LH;
+        const y = annexNameY(i, annexNameLines.length, annTop, annBottom, ANNEX_NAME_LH, FS_BEACON_HEAD);
         text((tx + annC1) / 2, y, ln, FS_BEACON_HEAD, "middle");
       });
       text((tx + annC1) / 2, annBottom - 14, "Registrar of Deeds", FS_BEACON_HEAD, "middle");

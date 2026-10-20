@@ -151,6 +151,15 @@ export function areaText(areaHa: number): string {
     ? `${Math.round(areaHa * 10000).toLocaleString("en-US")} square metres`
     : `${areaHa.toFixed(4)} hectares`;
 }
+/** Baseline of line `i` of `n` of the annexure name, centred in the gap
+ *  between the "of ___" line (annTop+190) and "Registrar of Deeds"
+ *  (annBottom-14) — client req 2026-10-21: "move the text a bit up, to the
+ *  middle" (it used to sit right on top of "Registrar of Deeds"). */
+export function annexNameY(i: number, n: number, annTop: number, annBottom: number, lineH: number, fontSize: number): number {
+  const mid = (annTop + 190 + (annBottom - 14)) / 2;
+  return mid + (i - (n - 1) / 2) * lineH + fontSize * 0.35;
+}
+
 /** The diagram's "land called" name: lot name + Situate-at location, unless
  *  the name already contains it ("Lot 101" + "Tlokweng" -> "Lot 101 Tlokweng").
  *  Shared so the Working Plan title reads exactly like the Diagram. */
