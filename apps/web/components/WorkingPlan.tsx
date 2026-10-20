@@ -352,7 +352,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const minN = Math.min(...ns), maxN = Math.max(...ns);
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
-  const fit = Math.min((draw.w - 2 * pad) / spanE, (draw.h - 2 * pad) / spanN);
+  // Draw at the chosen scale, same as the Diagram (client req 2026-10-21:
+  // "when I change scale, size should also change"). The sheet prints
+  // VB_W wide across an A4 portrait page (210 mm), so 1 m at 1:N is
+  // (1000/N) mm = (VB_W/210)*(1000/N) units. Falls back to fitting the
+  // panel only when no valid scale is set.
+  const fit = meta.scale > 0
+    ? ((VB_W / 210) * 1000) / meta.scale
+    : Math.min((draw.w - 2 * pad) / spanE, (draw.h - 2 * pad) / spanN);
   const drawW = spanE * fit;
   const drawH = spanN * fit;
   const offX = draw.x + (draw.w - drawW) / 2;
