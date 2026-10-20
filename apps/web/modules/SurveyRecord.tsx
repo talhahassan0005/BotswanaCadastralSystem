@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { displayCrs } from "@/lib/crsOptions";
+import { displayCrs, loConfigValue, parseLo } from "@/lib/crsOptions";
 import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
 import type { ParsedRow, PointType } from "@/lib/types";
 
@@ -60,7 +60,7 @@ function fmt(n: number | null | undefined, dp = 3): string {
 }
 
 export function SurveyRecord() {
-  const { config, cogoResult, diagramFigure, diagramInput, importResult, setImportResult, recordInput, setRecordInput, cogoPlots } = useStore();
+  const { config, setConfig, cogoResult, diagramFigure, diagramInput, importResult, setImportResult, recordInput, setRecordInput, cogoPlots } = useStore();
   // Client req 2026-09-17: "as i run cogo calculations, the system should
   // also run consistency... when i want a consistency for a particular
   // plot i may either query the plot number" — every plot drawn/joined in
@@ -96,6 +96,7 @@ export function SurveyRecord() {
     assistedBy?: string;
     dateOfSurvey?: string;
     purpose?: string;
+    purposeEdited?: boolean;
     authority?: string;
     calcBasis?: string;
     method?: string;
@@ -114,7 +115,16 @@ export function SurveyRecord() {
   const [lotNumber, setLotNumber] = useState(ri.lotNumber ?? lotName.replace(/^lot\s+/i, ""));
   const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? surveyor);
   const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey ?? dMeta?.surveyedDate ?? "");
+  // Purpose defaults to "Survey of Lot {Diagram lot name}" and follows the
+  // lot name until the user edits it by hand (client req 2026-10-21). An
+  // older saved purpose that's just the auto pattern (e.g. the "LOt" typo)
+  // counts as not edited, so it gets regenerated correctly.
+  const autoPurpose = `Survey of Lot ${(dMeta?.lotName || lotNumber || "").replace(/^lot\s+/i, "").trim()}`;
   const [purpose, setPurpose] = useState(ri.purpose ?? "");
+  const [purposeEdited, setPurposeEdited] = useState<boolean>(
+    ri.purposeEdited ?? (!!ri.purpose?.trim() && !/^survey of lot\b/i.test(ri.purpose.trim()))
+  );
+  const purposeShown = purposeEdited ? purpose : autoPurpose;
   const [authority, setAuthority] = useState(ri.authority ?? "");
   const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
   const [method, setMethod] = useState(ri.method ?? DEFAULT_METHOD_TEXT);
@@ -124,8 +134,27 @@ export function SurveyRecord() {
   // Persist every field so the letter/report round-trips with the project
   // instead of resetting on every reopen.
   useEffect(() => {
-    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, consistencyDecimals });
-  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose, authority, calcBasis, method, declaredArea, consistencyDecimals, setRecordInput]);
+    setRecordInput({ doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purpose: purposeShown, purposeEdited, authority, calcBasis, method, declaredArea, consistencyDecimals });
+  }, [doc, date, toBlock, checklist, lotNumber, assistedBy, dateOfSurvey, purposeShown, purposeEdited, authority, calcBasis, method, declaredArea, consistencyDecimals, setRecordInput]);
+
+  // Lo central meridian: Calculation Basis is where the surveyor states it,
+  // and it drives the ONE shared project value (config.coordinateSystem) that
+  // every diagram/plan prints as "System LO. NN°" (client req 2026-10-21).
+  // Typing a valid "Lo NN" updates it immediately; if the project value is
+  // changed elsewhere (e.g. the Cadastral coordinate-system dropdown), the
+  // Lo number inside this text is rewritten to match — never two values.
+  const basisLo = parseLo(calcBasis);
+  const projectLo = parseLo(config.coordinateSystem);
+  function changeCalcBasis(v: string) {
+    setCalcBasis(v);
+    const n = parseLo(v);
+    if (n != null && n !== parseLo(config.coordinateSystem)) setConfig({ coordinateSystem: loConfigValue(n) });
+  }
+  useEffect(() => {
+    if (projectLo == null || basisLo == null || basisLo === projectLo) return;
+    setCalcBasis((cb) => cb.replace(/\b(Lo\.?\s*)\d{1,2}(?!\d)/i, `$1${projectLo}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectLo]);
 
   const docRef = useRef<HTMLDivElement>(null);
 
@@ -326,14 +355,17 @@ export function SurveyRecord() {
           </div>
           <div className="mt-3 space-y-3">
             <Field label="1. Purpose">
-              <textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={2} placeholder={`Survey of Lot ${lotNumber}`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+              <textarea value={purposeShown} onChange={(e) => { setPurpose(e.target.value); setPurposeEdited(e.target.value.trim() !== ""); }} rows={2} placeholder={autoPurpose} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
             <Field label="2. Authority">
               <textarea value={authority} onChange={(e) => setAuthority(e.target.value)} rows={2} placeholder="e.g. Land Board name" className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
             <Field label="3. Calculation Basis">
-              <textarea value={calcBasis} onChange={(e) => setCalcBasis(e.target.value)} rows={2} placeholder={`e.g. Based on ${displayCrs(config.coordinateSystem)} system using ${dMeta?.tribalArea || "local"} Reference Marks.`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
+              <textarea value={calcBasis} onChange={(e) => changeCalcBasis(e.target.value)} rows={2} placeholder={`e.g. Based on ${displayCrs(config.coordinateSystem)} system using ${dMeta?.tribalArea || "local"} Reference Marks.`} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
+            {basisLo == null && (
+              <p className="-mt-2 text-xs text-amber-600">No Lo value found in Calculation Basis — using Lo {projectLo ?? 25}</p>
+            )}
             <Field label="4. Method">
               <textarea value={method} onChange={(e) => setMethod(e.target.value)} rows={10} className="w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-brand focus:outline-none" />
             </Field>
@@ -371,7 +403,7 @@ export function SurveyRecord() {
               surveyor={surveyor}
               assistedBy={assistedBy}
               dateOfSurvey={dateOfSurvey}
-              purpose={purpose || `Survey of Lot ${lotNumber}`}
+              purpose={purposeShown}
               authority={authority}
               calcBasis={calcBasis}
               method={method}

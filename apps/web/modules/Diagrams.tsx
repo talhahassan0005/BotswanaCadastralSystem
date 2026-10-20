@@ -824,8 +824,14 @@ export function Diagrams() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [texts, selectedTextId]);
 
+  // The project's ONE coordinate system (driven by Survey Record's
+  // Calculation Basis) — read live, never the copy saved in this form when
+  // the diagram was first opened, which froze the header at e.g. Lo 25
+  // (client req 2026-10-21).
+  const liveCoordinateSystem = config.coordinateSystem.replace(" Botswana", "");
   const fullMeta: DiagramMeta = {
     ...meta,
+    coordinateSystem: liveCoordinateSystem,
     kind,
     areaHa: fig?.area_ha ?? meta.areaHa,
     closed: fig?.type === "closed",
@@ -865,11 +871,11 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta, leaseMeta, annotations, texts });
-  }, [kind, meta, leaseMeta, annotations, texts, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts });
+  }, [kind, meta, leaseMeta, annotations, texts, liveCoordinateSystem, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
-    coordinateSystem: meta.coordinateSystem,
+    coordinateSystem: liveCoordinateSystem,
     areaM2: fig?.area_m2 ?? 0,
   };
 
@@ -1069,7 +1075,7 @@ export function Diagrams() {
       text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
       text((tx + xMetR) / 2, hRow2, "METRES", FS_TABLE_SUB, "middle");
       text(xPt + (xY - xPt) / 2, hRow2, "Y", FS_TABLE_SUB, "middle");
-      text((xY + xXR) / 2, hRow2, `System ${fmtSystem(meta.coordinateSystem)}`, FS_TABLE_SUB, "middle");
+      text((xY + xXR) / 2, hRow2, `System ${fmtSystem(liveCoordinateSystem)}`, FS_TABLE_SUB, "middle");
       // Nudged right off centre (client req 2026-08-27) — dead-centre in the X
       // column sat right against the tail of the "System LO. N°" label next
       // to it, which spans into this column too, so the two collided.

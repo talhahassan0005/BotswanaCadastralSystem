@@ -22,3 +22,16 @@ export const COORDINATE_SYSTEM_OPTIONS: { value: string; label: string }[] = [
  *  (no-op for UTM / WGS84 which carry no suffix), so every deliverable
  *  prints the coordinate system the same way (e.g. "Lo 25"). */
 export const displayCrs = (c: string): string => (c || "").replace(" Botswana", "");
+
+/** Lo central meridian written anywhere in free text — "Lo 25", "LO25",
+ *  "Lo. 25", "lo 25°", "Lo25 (WGS84)" — or null. Limited to 10–36 (the range
+ *  the transformer supports) so a half-typed "Lo 2" isn't taken as Lo 2. */
+export function parseLo(text: string | null | undefined): number | null {
+  const m = (text || "").match(/\bLo\.?\s*(\d{1,2})(?!\d)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 10 && n <= 36 ? n : null;
+}
+
+/** The value stored in config.coordinateSystem for a Lo belt. */
+export const loConfigValue = (n: number): string => `Lo ${n} Botswana`;
