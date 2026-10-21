@@ -493,7 +493,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const grid180 = !flip && Math.abs(rot360 - 180) < 1e-9;
   const gX = (e: number) => (grid180 ? 2 * figPivotX - toX(e) : toX(e));
   const gY = (n: number) => (grid180 ? 2 * figPivotY - toY(n) : toY(n));
-  const validSpacings = [50, 100, 200];
+  const validSpacings = [25, 50, 100, 200];
   const stepE = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanE);
   const stepN = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanN);
   // expand a little beyond the strict bounds so the figure sits inside the grid

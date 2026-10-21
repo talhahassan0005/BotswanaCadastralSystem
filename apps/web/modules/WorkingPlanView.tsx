@@ -749,7 +749,7 @@ export function WorkingPlanView() {
           <div>
             <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
             <div className="flex gap-1">
-              {[50, 100, 200].map((n) => (
+              {[25, 50, 100, 200].map((n) => (
                 <button
                   key={n}
                   type="button"
