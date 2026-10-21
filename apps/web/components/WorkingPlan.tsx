@@ -683,45 +683,46 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           (client req 2026-08-26, Part 29c/29d: "Label both sides") — a
           coordinate near one edge of the sheet used to have no nearby
           label at all if that edge wasn't the labelled one. */}
+      {/* Each grid number can be moved by hand (client req 2026-10-21:
+          "I should be able to manually move or shift the grid numbering") —
+          click to select (turns red), then drag. Same offset store and
+          handlers as the other movable sheet text (textOffsets, keyed
+          "grid:<edge>:<value>"), so positions save with the project. */}
       <g fill={GRID_BLUE} fontSize={8}>
-        {eLines.map((v, i) => (
-          <text
-            key={`elt${i}`}
-            x={toX(v)}
-            y={gridTop - 4}
-            textAnchor="start"
-            transform={`rotate(-90 ${toX(v)} ${gridTop - 4})`}
-          >
-            {fmtAxis("Y", v)}
-          </text>
-        ))}
-        {eLines.map((v, i) => (
-          // Same rotate(-90) as the top labels (client req 2026-08-26:
-          // "rotate the Y-Axis to face the same direction with the one at
-          // the top" — rotate(90) read mirrored/upside-down against the top
-          // ones). anchor="end" (not "start") is what keeps the text
-          // extending downward, away from the drawing, under this shared
-          // rotation instead of back up into it.
-          <text
-            key={`elb${i}`}
-            x={toX(v)}
-            y={gridBottom + 4}
-            textAnchor="end"
-            transform={`rotate(-90 ${toX(v)} ${gridBottom + 4})`}
-          >
-            {fmtAxis("Y", v)}
-          </text>
-        ))}
-        {nLines.map((v, i) => (
-          <text key={`nll${i}`} x={gridLeft - 3} y={toY(v) - 3} textAnchor="end">
-            {fmtAxis("X", v)}
-          </text>
-        ))}
-        {nLines.map((v, i) => (
-          <text key={`nlr${i}`} x={gridRight + 3} y={toY(v) - 3} textAnchor="start">
-            {fmtAxis("X", v)}
-          </text>
-        ))}
+        {(() => {
+          const gridLabel = (id: string, x0: number, y0: number, anchor: "start" | "end", rotate: boolean, text: string) => {
+            const off = textOffsets?.[id] || { dx: 0, dy: 0 };
+            const x = x0 + off.dx, y = y0 + off.dy;
+            const isSel = selectedTextId === id;
+            return (
+              <text
+                key={id}
+                x={x}
+                y={y}
+                textAnchor={anchor}
+                transform={rotate ? `rotate(-90 ${x} ${y})` : undefined}
+                fill={isSel ? "#dc2626" : undefined}
+                style={{ cursor: isSel ? "move" : "pointer" }}
+                onClick={(e) => { e.stopPropagation(); onTextClick?.(id, e); }}
+                onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(id, e); } }}
+                onPointerMove={(e) => onTextPointerMove?.(id, e)}
+                onPointerUp={(e) => onTextPointerUp?.(id, e)}
+              >
+                {text}
+              </text>
+            );
+          };
+          return (
+            <>
+              {/* rotate(-90) top and bottom; anchor "end" at the bottom keeps the
+                  text running downward, away from the drawing. */}
+              {eLines.map((v) => gridLabel(`grid:yt:${v}`, toX(v), gridTop - 4, "start", true, fmtAxis("Y", v)))}
+              {eLines.map((v) => gridLabel(`grid:yb:${v}`, toX(v), gridBottom + 4, "end", true, fmtAxis("Y", v)))}
+              {nLines.map((v) => gridLabel(`grid:xl:${v}`, gridLeft - 3, toY(v) - 3, "end", false, fmtAxis("X", v)))}
+              {nLines.map((v) => gridLabel(`grid:xr:${v}`, gridRight + 3, toY(v) - 3, "start", false, fmtAxis("X", v)))}
+            </>
+          );
+        })()}
       </g>
 
       {/* ---------- Figure — one polygon per included plot ---------- */}
