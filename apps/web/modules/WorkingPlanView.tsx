@@ -709,9 +709,12 @@ export function WorkingPlanView() {
       alert("Pop-up blocked. Please allow pop-ups for this site in your browser, then click Print again.");
       return;
     }
+    // margin:0 on @page drops the browser's own header/footer (date, title,
+    // about:blank, page number) from the print (client req 2026-10-21); the
+    // 10mm body padding keeps the sheet inside the printable area instead.
     w.document.write(
       `<html><head><title>Working Plan — ${meta.lotName}</title>` +
-        `<style>@page{size:portrait}body{margin:0}svg{width:100%;height:auto}</style></head>` +
+        `<style>@page{size:A4 portrait;margin:0}body{margin:0;padding:10mm}svg{width:190mm;height:auto;display:block;margin:0 auto}</style></head>` +
         `<body onload="window.print()">${svg}</body></html>`
     );
     w.document.close();
