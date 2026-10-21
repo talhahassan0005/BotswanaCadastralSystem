@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs, loConfigValue, parseLo, withLoDegree } from "@/lib/crsOptions";
-import { currentMonthYear } from "@/lib/diagramLayout";
+import { currentMonthYear, landCalledName } from "@/lib/diagramLayout";
 import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
 import type { ParsedRow, PointType } from "@/lib/types";
 
@@ -83,7 +83,7 @@ export function SurveyRecord() {
   // directly from the Diagram module's existing fields" for lot name, tribal
   // territory, land surveyor, and default date of survey — not re-collected
   // here).
-  const dMeta = (diagramInput as { meta?: { lotName?: string; tribalArea?: string; surveyor?: string; surveyedDate?: string } } | null)?.meta;
+  const dMeta = (diagramInput as { meta?: { lotName?: string; location?: string; tribalArea?: string; surveyor?: string; surveyedDate?: string } } | null)?.meta;
   const lotName = dMeta?.lotName || config.name || "the surveyed property";
   const tribalArea = dMeta?.tribalArea || "";
   const surveyor = dMeta?.surveyor || config.surveyor || "Land Surveyor";
@@ -122,10 +122,16 @@ export function SurveyRecord() {
   // lot name until the user edits it by hand (client req 2026-10-21). An
   // older saved purpose that's just the auto pattern (e.g. the "LOt" typo)
   // counts as not edited, so it gets regenerated correctly.
-  const autoPurpose = `Survey of Lot ${(dMeta?.lotName || lotNumber || "").replace(/^lot\s+/i, "").trim()}`;
+  // The place name comes from the Diagram's "Situate at" (client req
+  // 2026-10-22), in title case like the sheet: "Survey of Lot 23 Tlokweng".
+  const situateAt = (dMeta?.location || "").trim().toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+  const autoPurpose = `Survey of Lot ${landCalledName((dMeta?.lotName || lotNumber || "").replace(/^lot\s+/i, "").trim(), situateAt)}`;
   const [purpose, setPurpose] = useState(ri.purpose ?? "");
   const [purposeEdited, setPurposeEdited] = useState<boolean>(
-    ri.purposeEdited ?? (!!ri.purpose?.trim() && !/^survey of lot\b/i.test(ri.purpose.trim()))
+    // A saved purpose that already reads exactly like the auto one is not a hand edit.
+    ri.purpose?.trim().toLowerCase() === autoPurpose.toLowerCase()
+      ? false
+      : ri.purposeEdited ?? (!!ri.purpose?.trim() && !/^survey of lot\b/i.test(ri.purpose.trim()))
   );
   const purposeShown = purposeEdited ? purpose : autoPurpose;
   const [authority, setAuthority] = useState(ri.authority ?? "");
