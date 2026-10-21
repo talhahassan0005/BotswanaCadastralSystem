@@ -84,9 +84,11 @@ export function CogoEngine() {
 
   // Auto-run coordinate-only computation when data is freshly imported
   // (client req: "when i want to work on the data there is nothing" —
-  // coordinate-only imports from SHP/CSV need no manual button click).
+  // coordinate-only imports from SHP/CSV need no manual button click) —
+  // but only after the user has clicked "Run COGO Computation" once in this
+  // project (client req 2026-10-22: it must not come up by itself at first).
   useEffect(() => {
-    if (!coordinateOnly || cogoResult) return;
+    if (!config.cogoRunOnce || !coordinateOnly || cogoResult) return;
     if (coordPoints.length < 3 || coordPoints.length > 60) return;
     apiJson<CogoResult>("/cogo/coordinates", {
       points: coordPoints,
@@ -108,6 +110,7 @@ export function CogoEngine() {
   async function run() {
     setError(null);
     setRunning(true);
+    if (!config.cogoRunOnce) setConfig({ cogoRunOnce: true });
     try {
       let result: CogoResult;
       if (startPoint && legs.length >= 2) {

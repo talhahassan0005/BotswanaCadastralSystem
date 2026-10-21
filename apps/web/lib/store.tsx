@@ -36,6 +36,9 @@ export interface ProjectConfig {
    *  so existing saved projects need no migration. */
   dsmLimitMode?: "ratio" | "absolute";
   dsmLimitAbsolute?: number; // allowable linear misclosure (m), used when dsmLimitMode === "absolute"
+  /** True once the user has clicked "Run COGO Computation" in this project —
+   *  only then do later imports auto-compute (client req 2026-10-22). */
+  cogoRunOnce?: boolean;
   /** Shared display-only rotation (degrees, 0-360; client req 2026-08-28) —
    *  a pure view rotation applied consistently across COGO, Diagrams,
    *  Working Plan and General Plan, like an image editor's rotate control.
