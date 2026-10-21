@@ -93,6 +93,15 @@ export function WorkingPlanView() {
         .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
     [importResult]
   );
+  // Working stations (Data Import type "Working pt") — shown in the inset
+  // too (client req 2026-10-21: "Where is WP1").
+  const workingStations = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null && r.pointType === "wp")
+        .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
+    [importResult]
+  );
 
   // Restore saved title-block from the project, else derive defaults from
   // config. workingPlanInput used to BE the meta object directly; it's now
@@ -579,6 +588,10 @@ export function WorkingPlanView() {
       const w = toExportWorld(r.east, r.north);
       beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "REFERENCE" });
     }
+    for (const r of workingStations) {
+      const w = toExportWorld(r.east, r.north);
+      beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "WORKING_STATION" });
+    }
     for (const ann of diagramAnnotations) {
       const w1 = toExportWorld(ann.e1, ann.n1), w2 = toExportWorld(ann.e2, ann.n2);
       polylines.push({ pts: [{ x: w1.east, y: w1.north }, { x: w2.east, y: w2.north }], closed: false, layer: "ANNOTATIONS" });
@@ -839,6 +852,7 @@ export function WorkingPlanView() {
             sides={sides}
             plots={resolvedPlots.length > 0 ? resolvedPlots : undefined}
             refMarks={refMarks}
+            workingStations={workingStations}
             manualAnnotations={diagramAnnotations}
             manualTexts={diagramTexts}
             labelOffsets={labelOffsets}

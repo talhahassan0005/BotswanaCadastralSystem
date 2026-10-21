@@ -81,6 +81,9 @@ interface Props {
    *  the Cadastral work station, but shown here in the locality inset since
    *  this is where reference marks are actually used/referenced. */
   refMarks?: WorkingPlanPoint[];
+  /** Working stations (Data Import type "Working pt") — shown in the inset
+   *  alongside the reference marks (client req 2026-10-21: "Where is WP1"). */
+  workingStations?: WorkingPlanPoint[];
   /** The same hand-drawn extension lines and text notes added under
    *  Diagrams (client req 2026-08-26: "I want to see these edits also
    *  appearing at the working plan") — read-only here, anchored in the same
@@ -248,6 +251,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     points,
     plots,
     refMarks,
+    workingStations,
     manualAnnotations,
     manualTexts,
     labelOffsets,
@@ -531,7 +535,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // border, so the inset is schematic: lot fitted in the centre, each mark
   // on a ring just inside the border in its real direction from the lot,
   // spread apart so none overlap.
-  const hasRefs = (refMarks ?? []).length > 0;
+  const insetMarks = [
+    ...(refMarks ?? []).map((m) => ({ ...m, kind: "ref" as const })),
+    ...(workingStations ?? []).map((m) => ({ ...m, kind: "wp" as const })),
+  ];
+  const hasRefs = insetMarks.length > 0;
   const lotFit = hasRefs
     ? Math.min((inset.w * 0.4) / iSpanU, (inset.h * 0.38) / iSpanV)
     : iFit;
@@ -539,7 +547,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const raY = (e: number, n: number) => insetCy + (insetLocal(e, n).v - (iMinV + iMaxV) / 2) * lotFit;
   const lotCU = (iMinU + iMaxU) / 2, lotCV = (iMinV + iMaxV) / 2;
   const ringRx = inset.w / 2 - 16, ringRy = inset.h / 2 - 14;
-  const refAngles = (refMarks ?? []).map((r, i) => {
+  const refAngles = insetMarks.map((r, i) => {
     const q = insetLocal(r.east, r.north);
     const du = q.u - lotCU, dv = q.v - lotCV;
     return { i, a: Math.hypot(du, dv) < 1e-6 ? -Math.PI / 2 : Math.atan2(dv / ringRy, du / ringRx) };
@@ -559,10 +567,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     }
     if (!moved) break;
   }
-  const refDots = (refMarks ?? []).map((r, i) => {
+  const refDots = insetMarks.map((r, i) => {
     const a = refAngles.find((p) => p.i === i)!.a;
     const x = insetCx + Math.cos(a) * ringRx, y = insetCy + Math.sin(a) * ringRy;
-    return { x, y, label: r.name || "RM", id: `rm:${r.name || i}` };
+    const wp = r.kind === "wp";
+    return { x, y, kind: r.kind, label: r.name || (wp ? "WP" : "RM"), id: `${wp ? "wp" : "rm"}:${r.name || i}` };
   });
   const insetPolygonsAll = activePlots.map((plot) => {
     const pts = plot.points.map((p) => ({ x: raX(p.east, p.north), y: raY(p.east, p.north) }));
@@ -977,15 +986,30 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           const off = textOffsets?.[d.id] || { dx: 0, dy: 0, scale: 1 };
           const fs = 7 * (off.scale ?? 1);
           const right = d.x > insetCx;
-          const lx = d.x + (right ? -5 : 5) + off.dx, ly = d.y + 2.5 + off.dy;
+          const lx = d.x + (right ? -6 : 6) + off.dx, ly = d.y + 2.5 + off.dy;
+          const color = d.kind === "wp" ? "#000" : REF_RED;
           const isSel = selectedTextId === d.id;
           const boxW = d.label.length * fs * 0.62 + 4;
           return (
             <g key={d.id}>
-              <circle cx={d.x} cy={d.y} r={2.6} fill={REF_RED} />
+              {d.kind === "wp" ? (
+                // Working station: hollow triangle with a centre dot.
+                <>
+                  <polygon points={`${d.x},${d.y - 4} ${d.x - 3.6},${d.y + 2.6} ${d.x + 3.6},${d.y + 2.6}`} fill="white" stroke="#000" strokeWidth={0.8} />
+                  <circle cx={d.x} cy={d.y} r={0.7} fill="#000" />
+                </>
+              ) : (
+                // Reference mark: circle with a plus in the middle (client req
+                // 2026-10-21 — the standard ref-mark sign, as in their CAD).
+                <>
+                  <circle cx={d.x} cy={d.y} r={3.2} fill="white" stroke={REF_RED} strokeWidth={0.8} />
+                  <line x1={d.x - 3.2} y1={d.y} x2={d.x + 3.2} y2={d.y} stroke={REF_RED} strokeWidth={0.6} />
+                  <line x1={d.x} y1={d.y - 3.2} x2={d.x} y2={d.y + 3.2} stroke={REF_RED} strokeWidth={0.6} />
+                </>
+              )}
               <text
                 x={lx} y={ly}
-                fontSize={fs} fontWeight="bold" fill={REF_RED}
+                fontSize={fs} fontWeight="bold" fill={color}
                 textAnchor={right ? "end" : "start"}
                 style={{ cursor: isSel ? "move" : "pointer" }}
                 onClick={(e) => { e.stopPropagation(); onTextClick?.(d.id, e); }}
@@ -998,7 +1022,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
               {isSel && (
                 <rect
                   x={right ? lx - boxW + 2 : lx - 2} y={ly - fs} width={boxW} height={fs + 3}
-                  fill="none" stroke={REF_RED} strokeWidth={0.6} strokeDasharray="2 2"
+                  fill="none" stroke={color} strokeWidth={0.6} strokeDasharray="2 2"
                   style={{ pointerEvents: "none" }}
                 />
               )}
