@@ -33,5 +33,9 @@ export function parseLo(text: string | null | undefined): number | null {
   return n >= 10 && n <= 36 ? n : null;
 }
 
+/** "Lo 25" -> "Lo 25°" wherever a Lo number appears without its degree
+ *  sign (client req 2026-10-22: "the degrees sign should come automatically"). */
+export const withLoDegree = (text: string): string => text.replace(/\b(Lo\.?\s*)(\d{1,2})(?![\d°])/gi, "$1$2°");
+
 /** The value stored in config.coordinateSystem for a Lo belt. */
 export const loConfigValue = (n: number): string => `Lo ${n} Botswana`;

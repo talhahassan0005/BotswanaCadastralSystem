@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { displayCrs, loConfigValue, parseLo } from "@/lib/crsOptions";
+import { displayCrs, loConfigValue, parseLo, withLoDegree } from "@/lib/crsOptions";
 import { currentMonthYear } from "@/lib/diagramLayout";
 import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
 import type { ParsedRow, PointType } from "@/lib/types";
@@ -701,7 +701,7 @@ function ReportOnSurvey({
       <h2 className="text-sm font-semibold text-slate-800">Survey Report</h2>
       <p><strong>1. Purpose:</strong> {purpose}</p>
       <p><strong>2. Authority:</strong> {authority || "—"}</p>
-      <p><strong>3. Calculation Basis:</strong> {calcBasis || "—"}</p>
+      <p><strong>3. Calculation Basis:</strong> {calcBasis ? withLoDegree(calcBasis) : "—"}</p>
       <div style={{ whiteSpace: "pre-wrap" }}><strong>4. Method:</strong> {method || "—"}</div>
       <div style={{ whiteSpace: "pre-wrap" }}><strong>5. Un Usual Occurrences:</strong> {unusualOccurrences.trim() || "N/A"}</div>
       <p>
