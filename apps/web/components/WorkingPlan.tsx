@@ -953,7 +953,6 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={340} y={descTop + 28}>{meta.placedBeaconDescription}</text>
         <text x={340} y={descTop + 44} fontWeight="bold">FOUND BEACONS:</text>
         <text x={340} y={descTop + 56}>{meta.foundBeaconDescription || ""}</text>
-        <text x={340} y={descTop + 70} fontSize={8}>System {meta.coordinateSystem}</text>
       </g>
 
       {/* ---------- Inset locality box (green border, not to scale) ---------- */}
@@ -1015,14 +1014,17 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={cert.x + 8} y={cert.y + 26}>with the provisions of the Land</text>
         <text x={cert.x + 8} y={cert.y + 37}>Survey Act and the regulations</text>
         <text x={cert.x + 8} y={cert.y + 48}>framed thereunder.</text>
-        <text x={cert.x + 8} y={cert.y + 72}>Date of survey:</text>
-        <text x={cert.x + 70} y={cert.y + 72}>{meta.dateOfSurvey || ""}</text>
-        <line x1={cert.x + 70} y1={cert.y + 74} x2={cert.x + cert.w - 12} y2={cert.y + 74} stroke="black" strokeWidth={0.4} />
-        <text x={cert.x + 8} y={cert.y + 92}>Land Surveyor:</text>
-        <text x={cert.x + cert.w - 100} y={cert.y + 92} textAnchor="end" fontWeight="bold">{meta.surveyor || ""}</text>
+        {/* Date sits after its label (it used to start under "survey:");
+            the surveyor's name is printed UNDER the signature line so the
+            space above it is free for signing (client req 2026-10-21). */}
+        <text x={cert.x + 8} y={cert.y + 66}>Date of survey:</text>
+        <text x={cert.x + 88} y={cert.y + 66}>{meta.dateOfSurvey || ""}</text>
+        <line x1={cert.x + 84} y1={cert.y + 68} x2={cert.x + cert.w - 12} y2={cert.y + 68} stroke="black" strokeWidth={0.4} />
+        <text x={cert.x + 8} y={cert.y + 88}>Land Surveyor:</text>
+        <text x={(cert.x + 84 + cert.x + cert.w - 12) / 2} y={cert.y + 99} textAnchor="middle" fontWeight="bold">{meta.surveyor || ""}</text>
         {/* Underlined signature line (client req 2026-08-26, Part 33f), same
             treatment as the "Date of survey" line above. */}
-        <line x1={cert.x + 70} y1={cert.y + 94} x2={cert.x + cert.w - 12} y2={cert.y + 94} stroke="black" strokeWidth={0.4} />
+        <line x1={cert.x + 84} y1={cert.y + 90} x2={cert.x + cert.w - 12} y2={cert.y + 90} stroke="black" strokeWidth={0.4} />
       </g>
     </svg>
   );
