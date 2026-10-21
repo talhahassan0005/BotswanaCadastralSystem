@@ -15,7 +15,7 @@
  * translates the same values into DXF entities instead of re-deriving them
  * from a separate, simpler formula set.
  */
-import { wrapSvgWords, clampWords, clampToLines } from "./wrapSvgText";
+import { wrapSvgWords, clampWords, clampToLines, fitFontSize } from "./wrapSvgText";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -487,7 +487,14 @@ export function computeDiagramLayout(
   const certY1 = deductionsY - FS_CERT * 1.15;
   const leftColW = VB_W - 700 - (tx + 4) - 20;
   const rightColW = tableRight - (VB_W - 700) - 20;
-  const cert = clampWords(certificationLine(meta), leftColW, FS_BEACON_HEAD, 12);
+  // Every word of the certification line shows (client req 2026-10-21: "all
+  // words should fit in" — a long Framed/Compiled line was cut to "I...").
+  // The font shrinks a little first; past that the line wraps, extra lines
+  // stacking UPWARD from certY1 into the free space above it.
+  const cert = certificationLine(meta);
+  const certFsOne = fitFontSize(cert, leftColW, FS_BEACON_HEAD, 0.55);
+  const certLines = certFsOne >= FS_BEACON_HEAD * 0.8 ? [cert] : wrapSvgWords(cert.split(" ").filter(Boolean), leftColW, FS_BEACON_HEAD, 0.55);
+  const certFs = certLines.length === 1 ? certFsOne : FS_BEACON_HEAD;
   const surveyorFit = clampWords(meta.surveyor, rightColW, FS_BEACON_HEAD);
 
   // ===================== deeds/annexure (bottom registration) table
@@ -537,7 +544,7 @@ export function computeDiagramLayout(
     sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
-    landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, surveyorFit,
+    landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, certLines, certFs, surveyorFit,
     valueX, gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
     gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
     annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,

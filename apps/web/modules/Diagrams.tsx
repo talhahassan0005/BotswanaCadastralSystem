@@ -1051,7 +1051,7 @@ export function Diagrams() {
         arrowX, arrowY,
         bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY,
         figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
-        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, cert, surveyorFit, leftColW, rightColW,
+        landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, certLines, surveyorFit, leftColW, rightColW,
         annTop, annBottom, annC1, annC2,
         gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
         gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
@@ -1166,7 +1166,11 @@ export function Diagrams() {
       // unchecked "DEDUCTIONS..." line the same way (client req 2026-08-26,
       // re-confirmed via screenshot: this row was bleeding into the
       // surveyor name/"Land Surveyor" column beside it).
-      text(tx + 4, certY1, dxfLabelFit(cert, leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      // Full certification text, never cut: shrink to fit in CAD font widths.
+      certLines.forEach((ln, i) => {
+        const w = measureTextWidth(ln, FS_BEACON_HEAD);
+        text(tx + 4, certY1 - (certLines.length - 1 - i) * FS_BEACON_HEAD * 1.15, ln, w > leftColW ? FS_BEACON_HEAD * leftColW / w : FS_BEACON_HEAD);
+      });
       text(tx + 4, deductionsY, dxfLabelFit("DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(VB_W - 700, certY1, dxfLabelFit(surveyorFit, rightColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(VB_W - 700, deductionsY, "Land Surveyor", FS_BEACON_HEAD);

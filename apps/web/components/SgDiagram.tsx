@@ -262,7 +262,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     sc, dw, dh, offX, offY, toX, toY,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
-    landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, surveyorFit,
+    landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, certLines, certFs, surveyorFit,
     valueX, gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
     gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
     annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,
@@ -720,7 +720,6 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         // Compiled/Framed, which also fold in a source-document
         // reference), so the default would truncate perfectly normal text.
         // The character-width fallback still catches genuinely long input.
-        const cert = clampWords(certificationLine(meta), leftColW, FS_BEACON_HEAD, 12);
         const surveyorFit = clampWords(meta.surveyor, rightColW, FS_BEACON_HEAD);
         let parentLine = 0;
         return (
@@ -755,7 +754,9 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             </g>
 
             {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
-            <text x={tx + 20} y={certY1} fontSize={FS_BEACON_HEAD}>{cert}</text>
+            {certLines.map((line, i) => (
+              <text key={`cert${i}`} x={tx + 20} y={certY1 - (certLines.length - 1 - i) * FS_BEACON_HEAD * 1.15} fontSize={certFs}>{line}</text>
+            ))}
             <text x={tx + 20} y={deductionsY} fontSize={FS_BEACON_HEAD}>Deductions on this diagram are made on the back hereof</text>
             {/* Plain/simple styling (client req 2026-08-22) — no bold, no
                 forced caps, no signature line above; prints exactly
