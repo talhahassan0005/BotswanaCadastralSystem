@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
 import { dedupePoints, formatLotRange } from "@/lib/plots";
 import { declutterLabels } from "@/lib/labelLayout";
@@ -685,6 +685,53 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const descTop = VB_H - 205;
   // ---- Certification box (bottom-right, narrower to match the template) ----
   const cert = { x: 300, y: VB_H - 130, w: 260, h: 104 };
+  /** A bottom-section block (note, station/beacon description, inset,
+   *  certificate) the user can click to select, drag to move and resize
+   *  with +/- (client req 2026-10-21: "like you did items in the GP"). Uses
+   *  the same textOffsets store/handlers as the other sheet text, so Delete
+   *  and "Restore deleted text" work on it too. Scaled about the box's
+   *  top-left corner so resizing never also shifts its drag position. */
+  function sheetPanel(id: string, box: { x: number; y: number; w: number; h: number }, content: ReactNode) {
+    const off = textOffsets?.[id];
+    if (off?.hidden) return null;
+    const dx = off?.dx ?? 0, dy = off?.dy ?? 0, scale = off?.scale ?? 1;
+    const selected = selectedTextId === id;
+    const rightEdge = box.x + box.w * scale;
+    return (
+      <g
+        transform={`translate(${dx},${dy})`}
+        style={{ cursor: selected ? "move" : "pointer" }}
+        onClick={(e) => { e.stopPropagation(); onTextClick?.(id, e); }}
+        onPointerDown={(e) => { if (selected) { e.stopPropagation(); onTextPointerDown?.(id, e); } }}
+        onPointerMove={(e) => onTextPointerMove?.(id, e)}
+        onPointerUp={(e) => onTextPointerUp?.(id, e)}
+      >
+        <g transform={`translate(${box.x * (1 - scale)},${box.y * (1 - scale)}) scale(${scale})`}>
+          <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" />
+          {content}
+          {selected && (
+            <rect
+              x={box.x} y={box.y} width={box.w} height={box.h}
+              fill="none" stroke="#dc2626" strokeWidth={0.8 / scale} strokeDasharray={`${2 / scale} ${2 / scale}`}
+              style={{ pointerEvents: "none" }}
+            />
+          )}
+        </g>
+        {selected && (
+          <>
+            <g style={{ cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onTextResize?.(id, 0.1); }}>
+              <circle cx={rightEdge + 10} cy={box.y + 8} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+              <text x={rightEdge + 10} y={box.y + 11} textAnchor="middle" fontSize={9} fill="#dc2626">+</text>
+            </g>
+            <g style={{ cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onTextResize?.(id, -0.1); }}>
+              <circle cx={rightEdge + 10} cy={box.y + 24} r={6} fill="white" stroke="#dc2626" strokeWidth={1} />
+              <text x={rightEdge + 10} y={box.y + 27} textAnchor="middle" fontSize={9} fill="#dc2626">−</text>
+            </g>
+          </>
+        )}
+      </g>
+    );
+  }
 
   return (
     <svg
@@ -1013,11 +1060,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       })}
 
       {/* ---------- Note under figure ---------- */}
+      {sheetPanel("panel:note", { x: VB_W / 2 - 160, y: draw.y + draw.h + 40, w: 320, h: 14 }, (
       <text x={VB_W / 2} y={draw.y + draw.h + 50} textAnchor="middle" fontSize={9.5} fill="#111">
         All beacons observed from {meta.observedFrom} and checked from {meta.checkedFrom}
       </text>
+      ))}
 
       {/* ---------- Bottom-left: station description + inset ---------- */}
+      {sheetPanel("panel:station", { x: 22, y: descTop - 11, w: 250, h: 72 }, (
       <g fontSize={8.5}>
         <text x={26} y={descTop} fontSize={10} fontWeight="bold" textDecoration="underline">
           STATION DESCRIPTION
@@ -1027,11 +1077,13 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={26} y={descTop + 44} fontWeight="bold">WORKING STATION</text>
         <text x={26} y={descTop + 56}>{meta.workingStationDescription}</text>
       </g>
+      ))}
 
       {/* ---------- Right column: beacon description (left-aligned, like the template) ----------
           "PLACED BEACONS:" / "FOUND BEACONS:" split (client req 2026-08-26,
           Part 33e) — a subdivision survey typically has both newly-placed
           and pre-existing found beacons, each needing its own description. */}
+      {sheetPanel("panel:beacon", { x: 336, y: descTop - 11, w: 230, h: 72 }, (
       <g fontSize={8.5}>
         <text x={340} y={descTop} fontSize={10} fontWeight="bold" textDecoration="underline">
           BEACON DESCRIPTION
@@ -1041,8 +1093,10 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <text x={340} y={descTop + 44} fontWeight="bold">FOUND BEACONS:</text>
         <text x={340} y={descTop + 56}>{meta.foundBeaconDescription || ""}</text>
       </g>
+      ))}
 
       {/* ---------- Inset locality box (green border, not to scale) ---------- */}
+      {sheetPanel("panel:inset", { x: inset.x - 2, y: inset.y - 12, w: inset.w + 4, h: inset.h + 14 }, (
       <g>
         <rect x={inset.x} y={inset.y} width={inset.w} height={inset.h} fill="white" stroke={INSET_GREEN} strokeWidth={1.2} />
         <text x={inset.x + inset.w / 2} y={inset.y - 4} textAnchor="middle" fontSize={7.5} fill={INSET_GREEN}>
@@ -1092,7 +1146,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 textAnchor={right ? "end" : "start"}
                 style={{ cursor: isSel ? "move" : "pointer" }}
                 onClick={(e) => { e.stopPropagation(); onTextClick?.(d.id, e); }}
-                onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(d.id, e); } }}
+                onPointerDown={(e) => { e.stopPropagation(); if (isSel) onTextPointerDown?.(d.id, e); }}
                 onPointerMove={(e) => onTextPointerMove?.(d.id, e)}
                 onPointerUp={(e) => onTextPointerUp?.(d.id, e)}
               >
@@ -1109,8 +1163,10 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           );
         })}
       </g>
+      ))}
 
       {/* ---------- Certification box (bottom-right) ---------- */}
+      {sheetPanel("panel:cert", cert, (
       <g fontSize={8} fill="#000">
         <rect x={cert.x} y={cert.y} width={cert.w} height={cert.h} fill="white" stroke="black" strokeWidth={0.7} />
         <text x={cert.x + 8} y={cert.y + 15}>Surveyed by me in accordance</text>
@@ -1129,6 +1185,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
             treatment as the "Date of survey" line above. */}
         <line x1={cert.x + 84} y1={cert.y + 90} x2={cert.x + cert.w - 12} y2={cert.y + 90} stroke="black" strokeWidth={0.4} />
       </g>
+      ))}
     </svg>
   );
 });

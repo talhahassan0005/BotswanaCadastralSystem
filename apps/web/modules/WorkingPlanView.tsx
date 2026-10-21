@@ -428,6 +428,7 @@ export function WorkingPlanView() {
   }
   function handleLabelPointerUp() {
     setDraggingLabel(null);
+    setTimeout(() => { dragMovedRef.current = false; }, 0);
   }
   function cancelLabelDrag() {
     if (!draggingLabel) return;
@@ -473,6 +474,10 @@ export function WorkingPlanView() {
   }
   function handleTextPointerUp() {
     setDraggingText(null);
+    // The click that trails a drag fires right after this; when it lands on a
+    // different element it never reaches handleTextClick, so clear the flag
+    // here too or the NEXT real click gets swallowed.
+    setTimeout(() => { dragTextMovedRef.current = false; }, 0);
   }
   function cancelTextDrag() {
     if (!draggingText) return;
