@@ -111,8 +111,8 @@ export function WorkingPlanView() {
   const savedRaw = workingPlanInput as
     | {
         meta?: Partial<WorkingPlanMeta>;
-        labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
-        textOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
+        labelOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
+        textOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
         titleOffset?: { dx: number; dy: number; scale?: number };
         plotNumbers?: string[];
       }
@@ -120,8 +120,8 @@ export function WorkingPlanView() {
     | null;
   const isWrappedSave = !!savedRaw && typeof savedRaw === "object" && "meta" in savedRaw;
   const saved = (isWrappedSave ? (savedRaw as { meta?: Partial<WorkingPlanMeta> }).meta : (savedRaw as Partial<WorkingPlanMeta> | null)) ?? null;
-  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number; scale?: number }>>(
-    (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }> }).labelOffsets : null) ?? {}
+  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>>(
+    (isWrappedSave ? (savedRaw as { labelOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }> }).labelOffsets : null) ?? {}
   );
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   // Beacons marked as block corners, drawn as a double circle instead of
@@ -145,8 +145,8 @@ export function WorkingPlanView() {
   // req 2026-08-28) — its own offset store keyed by note id, kept separate
   // from `labelOffsets` (which is keyed by point name) and from the
   // Diagrams module's own copy of the note (see WorkingPlan.tsx's prop doc).
-  const [textOffsets, setTextOffsets] = useState<Record<string, { dx: number; dy: number; scale?: number }>>(
-    (isWrappedSave ? (savedRaw as { textOffsets?: Record<string, { dx: number; dy: number; scale?: number }> }).textOffsets : null) ?? {}
+  const [textOffsets, setTextOffsets] = useState<Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>>(
+    (isWrappedSave ? (savedRaw as { textOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }> }).textOffsets : null) ?? {}
   );
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   // Same select/move/resize treatment for the title block itself (client req
@@ -479,6 +479,36 @@ export function WorkingPlanView() {
     setTextOffsets((m) => ({ ...m, [draggingText.id]: { ...m[draggingText.id], dx: draggingText.origDx, dy: draggingText.origDy } }));
     setDraggingText(null);
   }
+  // Delete key removes the selected sheet text — a grid number, beacon
+  // label, text note or inset label (client req 2026-10-21). It is only
+  // hidden (kept in the offset store), so "Restore deleted text" brings it back.
+  useEffect(() => {
+    if (!selectedTextId && !selectedLabel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      e.preventDefault();
+      if (selectedTextId) {
+        const id = selectedTextId;
+        setTextOffsets((m) => ({ ...m, [id]: { ...(m[id] ?? { dx: 0, dy: 0 }), hidden: true } }));
+        setSelectedTextId(null);
+      } else if (selectedLabel) {
+        const name = selectedLabel;
+        setLabelOffsets((m) => ({ ...m, [name]: { ...(m[name] ?? { dx: 0, dy: 0 }), hidden: true } }));
+        setSelectedLabel(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedTextId, selectedLabel]);
+  const deletedTextCount = Object.values(textOffsets).filter((o) => o.hidden).length + Object.values(labelOffsets).filter((o) => o.hidden).length;
+  function restoreDeletedText() {
+    const unhide = (m: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>) =>
+      Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.hidden ? { ...v, hidden: false } : v]));
+    setTextOffsets(unhide);
+    setLabelOffsets(unhide);
+  }
   function handleTextResize(id: string, delta: number) {
     setTextOffsets((m) => {
       const cur = m[id] ?? { dx: 0, dy: 0, scale: 1 };
@@ -600,7 +630,7 @@ export function WorkingPlanView() {
     for (const p of allBeacons) {
       if (!p.name) continue;
       const w = toExportWorld(p.east, p.north);
-      beaconPoints.push({ x: w.east, y: w.north, label: p.name, layer: "BEACONS" });
+      beaconPoints.push({ x: w.east, y: w.north, label: labelOffsets[p.name]?.hidden ? undefined : p.name, layer: "BEACONS" });
     }
     for (const r of refMarks) {
       const w = toExportWorld(r.east, r.north);
@@ -631,6 +661,7 @@ export function WorkingPlanView() {
     }
     for (const tt of diagramTexts) {
       const off = textOffsets[tt.id];
+      if (off?.hidden) continue;
       const base = t.toScreenLive ? t.toScreenLive(tt.east, tt.north) : t.toScreen(tt.east, tt.north);
       const p = off ? t.toWorld(base.x + off.dx, base.y + off.dy) : toExportWorld(tt.east, tt.north);
       notes.push({ x: p.east, y: p.north, text: tt.text, height: 10 * (off?.scale ?? 1) * metresPerUnit, layer: "NOTES" });
@@ -847,7 +878,7 @@ export function WorkingPlanView() {
       <Card title="Working Plan">
         <p className="mb-2 text-xs text-slate-400">
           Click a beacon letter, a text note, or the title block to select it, then drag to reposition, or use the +/− buttons to
-          resize it — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress.
+          resize it — useful where labels sit close together (e.g. tightly-spaced beacons). Esc cancels a drag in progress. Delete removes the selected text (grid number, label or note).
           Click a beacon's own circle to mark/unmark it as a block corner (drawn as a double circle).
         </p>
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -855,6 +886,7 @@ export function WorkingPlanView() {
           <span className="w-12 text-center text-xs text-slate-600">{Math.round(wpZoom * 100)}%</span>
           <Button variant="ghost" onClick={() => setWpZoom((z) => Math.min(WP_ZOOM_MAX, +(z + 0.15).toFixed(2)))}>+</Button>
           {wpZoom !== 1 && <Button variant="ghost" onClick={() => setWpZoom(1)}>Reset zoom</Button>}
+          {deletedTextCount > 0 && <Button variant="ghost" onClick={restoreDeletedText}>Restore deleted text ({deletedTextCount})</Button>}
           <Button
             variant={panToolActive ? "primary" : "ghost"}
             onClick={() => setPanToolActive((v) => !v)}

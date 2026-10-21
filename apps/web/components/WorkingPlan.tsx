@@ -107,7 +107,7 @@ interface Props {
    *  the auto-computed label position, and scale on top of the base font
    *  size, so both stay small corrections rather than absolute values that
    *  could drift if the figure changes. */
-  labelOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
+  labelOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
   selectedLabel?: string | null;
   onLabelClick?: (name: string, e: ReactMouseEvent<SVGElement>) => void;
   onLabelPointerDown?: (name: string, e: ReactPointerEvent<SVGElement>) => void;
@@ -129,7 +129,7 @@ interface Props {
    *  and not written back into the Diagrams module's own copy of the note)
    *  so repositioning a note for this sheet doesn't move it on the Diagrams
    *  sheet it was originally drawn on. */
-  textOffsets?: Record<string, { dx: number; dy: number; scale?: number }>;
+  textOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
   selectedTextId?: string | null;
   onTextClick?: (id: string, e: ReactMouseEvent<SVGElement>) => void;
   onTextPointerDown?: (id: string, e: ReactPointerEvent<SVGElement>) => void;
@@ -595,7 +595,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     ...nLines.map((v) => ({ id: `grid:xl:${v}`, x: gridLeft - 3, y: gY(v) - 3, anchor: "end" as const, rotate: false, text: fmtAxis("X", v) })),
     ...nLines.map((v) => ({ id: `grid:xr:${v}`, x: gridRight + 3, y: gY(v) - 3, anchor: "start" as const, rotate: false, text: fmtAxis("X", v) })),
   ];
-  const gridLabelsOut = gridLabelsRaw.map((g) => {
+  // A label deleted with the Delete key (textOffsets hidden) is left out of
+  // both the sheet and the DXF.
+  const gridLabelsOut = gridLabelsRaw.filter((g) => !textOffsets?.[g.id]?.hidden).map((g) => {
     const off = textOffsets?.[g.id];
     return off ? { ...g, x: g.x + off.dx, y: g.y + off.dy } : g;
   });
@@ -908,7 +910,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 lables") — the label can still be dragged away from its
                 point (pl.labelX/labelY, beaconPlacementById) for overlap
                 avoidance, just without a visible connector drawn to it. */}
-            {(!pl?.hidden || isSel) && (
+            {(!pl?.hidden || isSel) && !off.hidden && (
               <text
                 x={lx} y={ly + 3}
                 textAnchor="middle"
@@ -973,6 +975,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         // Same screen-relative angle as the Diagrams sheet these notes come
         // from: 0 = horizontal/readable, positive = clockwise (client req 2026-10-20).
         const textAngle = t.upright ? 0 : t.angle || 0;
+        if (off.hidden) return null;
         return (
           <g key={t.id}>
             <text
@@ -1083,7 +1086,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                   <line x1={d.x} y1={d.y - 3.2} x2={d.x} y2={d.y + 3.2} stroke={REF_RED} strokeWidth={0.6} />
                 </>
               )}
-              <text
+              {!off.hidden && <text
                 x={lx} y={ly}
                 fontSize={fs} fontWeight="bold" fill={color}
                 textAnchor={right ? "end" : "start"}
@@ -1094,8 +1097,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 onPointerUp={(e) => onTextPointerUp?.(d.id, e)}
               >
                 {d.label}
-              </text>
-              {isSel && (
+              </text>}
+              {isSel && !off.hidden && (
                 <rect
                   x={right ? lx - boxW + 2 : lx - 2} y={ly - fs} width={boxW} height={fs + 3}
                   fill="none" stroke={color} strokeWidth={0.6} strokeDasharray="2 2"
