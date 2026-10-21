@@ -1119,7 +1119,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           const fs = 7 * (off.scale ?? 1);
           const right = d.x > insetCx;
           const lx = d.x + (right ? -6 : 6) + off.dx, ly = d.y + 2.5 + off.dy;
-          const color = d.kind === "wp" ? "#000" : REF_RED;
+          // Working stations are red like the ref marks (client req 2026-10-22).
+          const color = REF_RED;
           const isSel = selectedTextId === d.id;
           const boxW = d.label.length * fs * 0.62 + 4;
           return (
@@ -1128,8 +1129,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 // Working station: circle with a dot in the middle (client req
                 // 2026-10-21 — the triangle is the trig sign, not a working point).
                 <>
-                  <circle cx={d.x} cy={d.y} r={3.2} fill="white" stroke="#000" strokeWidth={0.8} />
-                  <circle cx={d.x} cy={d.y} r={0.9} fill="#000" />
+                  <circle cx={d.x} cy={d.y} r={3.2} fill="white" stroke={REF_RED} strokeWidth={0.8} />
+                  <circle cx={d.x} cy={d.y} r={0.9} fill={REF_RED} />
                 </>
               ) : (
                 // Reference mark: circle with a plus in the middle (client req
