@@ -217,6 +217,22 @@ export function WorkingPlanView() {
     gridSpacingM: 50,
     ...(saved ?? {}),
   });
+  // Stations default from Data Import (client req 2026-10-21: "where it
+  // needs stations or ref marks, use those from import data by default,
+  // user will edit"): Observed from = first ref mark, Checked from and the
+  // Working station description = first working point. Only replaces an
+  // empty field or one still on the old fixed default, never a user edit.
+  const firstRefName = refMarks[0]?.name || "";
+  const firstWpName = workingStations[0]?.name || "";
+  useEffect(() => {
+    setMeta((m) => {
+      const next = { ...m };
+      if (firstRefName && (!m.observedFrom?.trim() || m.observedFrom === "TLO8")) next.observedFrom = firstRefName;
+      if (firstWpName && (!m.checkedFrom?.trim() || m.checkedFrom === "WP1")) next.checkedFrom = firstWpName;
+      if (firstWpName && (!m.workingStationDescription?.trim() || m.workingStationDescription === "WP1: 12mm Iron Peg")) next.workingStationDescription = `${firstWpName}: 12mm Iron Peg`;
+      return next.observedFrom === m.observedFrom && next.checkedFrom === m.checkedFrom && next.workingStationDescription === m.workingStationDescription ? m : next;
+    });
+  }, [firstRefName, firstWpName]);
 
   // Auto-captured values: the Land Surveyor comes from the project surveyor, and
   // the placed-beacon description and lot name mirror what's entered under
