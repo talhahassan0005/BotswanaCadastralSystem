@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Botswana Cadastral System",
+  title: "GeoAxis — Surveying Software",
   description:
     "Cadastral survey data processing — COGO, traverse adjustment, parcel construction, and SG/General/Working plan generation.",
 };

@@ -30,9 +30,11 @@ export function ProjectGate() {
   return (
     <div className="min-h-screen bg-navy-900 text-white">
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10">
-        <div className="mb-6 flex items-center gap-2 text-2xl font-semibold">
-          <span className="grid h-8 w-8 place-items-center rounded bg-brand text-xs font-bold text-white">BC</span>
-          <span>Botswana</span><span className="text-brand">Cadastral</span><span>System</span>
+        <div className="mb-6 flex justify-center">
+          <div className="rounded-xl bg-white px-6 py-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/geoaxis-logo.png" alt="GeoAxis — Surveying Software" className="h-20 w-auto sm:h-28" />
+          </div>
         </div>
 
         {!ready ? (

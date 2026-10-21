@@ -67,11 +67,11 @@ export function Header({
   return (
     <div className="bg-navy-900 text-white">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 sm:px-6 sm:py-4">
-        <div className="flex items-center gap-1.5 text-base font-semibold sm:gap-2 sm:text-xl">
-          <span className="grid h-6 w-6 place-items-center rounded bg-brand text-[10px] font-bold text-white sm:h-7 sm:w-7">BC</span>
-          <span>Botswana</span>
-          <span className="text-brand">Cadastral</span>
-          <span>System</span>
+        {/* GeoAxis logo (client req 2026-10-21) on a white plate — its navy
+            lettering would disappear on the dark header otherwise. */}
+        <div className="flex items-center rounded-md bg-white px-2 py-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/geoaxis-wordmark.png" alt="GeoAxis" className="h-7 w-auto sm:h-9" />
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-300 sm:gap-4 sm:text-sm">
           {health && (
