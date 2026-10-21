@@ -1068,10 +1068,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           return (
             <g key={d.id}>
               {d.kind === "wp" ? (
-                // Working station: hollow triangle with a centre dot.
+                // Working station: circle with a dot in the middle (client req
+                // 2026-10-21 — the triangle is the trig sign, not a working point).
                 <>
-                  <polygon points={`${d.x},${d.y - 4} ${d.x - 3.6},${d.y + 2.6} ${d.x + 3.6},${d.y + 2.6}`} fill="white" stroke="#000" strokeWidth={0.8} />
-                  <circle cx={d.x} cy={d.y} r={0.7} fill="#000" />
+                  <circle cx={d.x} cy={d.y} r={3.2} fill="white" stroke="#000" strokeWidth={0.8} />
+                  <circle cx={d.x} cy={d.y} r={0.9} fill="#000" />
                 </>
               ) : (
                 // Reference mark: circle with a plus in the middle (client req
