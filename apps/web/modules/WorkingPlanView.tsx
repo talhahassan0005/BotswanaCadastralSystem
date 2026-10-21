@@ -251,8 +251,8 @@ export function WorkingPlanView() {
     tribalArea: "BATLOKWA TRIBAL TERRITORY",
     scale: 750,
     coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
-    observedFrom: "TLO8",
-    checkedFrom: "WP1",
+    observedFrom: "WP1",
+    checkedFrom: "TLO8",
     referenceMarkDescription: "All Reference Marks: 20mm Iron Peg in Concrete",
     workingStationDescription: "WP1: 12mm Iron Peg",
     placedBeaconDescription: "ALL: 12mm Iron Peg",
@@ -266,17 +266,26 @@ export function WorkingPlanView() {
   });
   // Stations default from Data Import (client req 2026-10-21: "where it
   // needs stations or ref marks, use those from import data by default,
-  // user will edit"): Observed from = 2nd ref mark (the station the base
-  // moved to, same as the Method's [station]; 1st if only one), Checked from and the
-  // Working station description = first working point. Only replaces an
+  // user will edit"): Observed from and the Working station description =
+  // first working point; Checked from = 2nd ref mark (the station the base
+  // moved to, same as the Method's [station]; 1st if only one). Only replaces an
   // empty field or one still on the old fixed default, never a user edit.
   const firstRefName = refMarks[1]?.name || refMarks[0]?.name || "";
   const firstWpName = workingStations[0]?.name || "";
   useEffect(() => {
     setMeta((m) => {
       const next = { ...m };
-      if (firstRefName && (!m.observedFrom?.trim() || m.observedFrom === "TLO8")) next.observedFrom = firstRefName;
-      if (firstWpName && (!m.checkedFrom?.trim() || m.checkedFrom === "WP1")) next.checkedFrom = firstWpName;
+      // Observed from the working point, checked from the ref mark (client
+      // req 2026-10-22: "Swap. WP1 must come first"). A pair still in the old
+      // auto order (ref mark first / TLO8-WP1 default) is swapped once.
+      const oldOrder = (!!firstRefName && !!firstWpName && m.observedFrom === firstRefName && m.checkedFrom === firstWpName) || (m.observedFrom === "TLO8" && m.checkedFrom === "WP1");
+      if (oldOrder) {
+        next.observedFrom = firstWpName || m.checkedFrom;
+        next.checkedFrom = firstRefName || m.observedFrom;
+      } else {
+        if (firstWpName && (!m.observedFrom?.trim() || m.observedFrom === "WP1")) next.observedFrom = firstWpName;
+        if (firstRefName && (!m.checkedFrom?.trim() || m.checkedFrom === "TLO8")) next.checkedFrom = firstRefName;
+      }
       if (firstWpName && (!m.workingStationDescription?.trim() || m.workingStationDescription === "WP1: 12mm Iron Peg")) next.workingStationDescription = `${firstWpName}: 12mm Iron Peg`;
       return next.observedFrom === m.observedFrom && next.checkedFrom === m.checkedFrom && next.workingStationDescription === m.workingStationDescription ? m : next;
     });
