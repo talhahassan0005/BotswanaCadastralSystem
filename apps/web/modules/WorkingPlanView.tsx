@@ -7,7 +7,7 @@ import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type Work
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { dedupePoints } from "@/lib/plots";
-import { landCalledName } from "@/lib/diagramLayout";
+import { landCalledName, currentMonthYear } from "@/lib/diagramLayout";
 
 /**
  * Working Plan (Module D / M3) — a cadastral working plan in the WP-Model.pdf
@@ -211,7 +211,7 @@ export function WorkingPlanView() {
     placedBeaconDescription: "ALL: 12mm Iron Peg",
     foundBeaconDescription: "",
     surveyor: config.surveyor || "",
-    dateOfSurvey: "",
+    dateOfSurvey: currentMonthYear(false),
     parentLotNumber: initialParentLotNumber,
     locality: initialLocality,
     gridSpacingM: 50,

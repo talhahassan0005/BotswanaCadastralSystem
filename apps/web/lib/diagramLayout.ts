@@ -545,3 +545,10 @@ export function computeDiagramLayout(
 }
 
 export type DiagramLayout = ReturnType<typeof computeDiagramLayout>;
+
+// Current month and year, e.g. "OCTOBER 2026" — the default survey date on
+// every sheet (client req 2026-10-21); the user edits it if it differs.
+export function currentMonthYear(upper = true): string {
+  const s = new Date().toLocaleString("en-GB", { month: "long", year: "numeric" });
+  return upper ? s.toUpperCase() : s;
+}

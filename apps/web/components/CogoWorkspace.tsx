@@ -19,6 +19,7 @@ import { CogoPolygonDrawPanel } from "@/components/CogoPolygonDrawPanel";
 import { CogoSplayPanel } from "@/components/CogoSplayPanel";
 import { CogoTablesPanel, type LineMeta, type PointMeta, type PolygonMeta } from "@/components/CogoTablesPanel";
 import { clientToSvg, svgFit } from "@/lib/svgPointer";
+import { currentMonthYear } from "@/lib/diagramLayout";
 import { useStore, type CogoPlot } from "@/lib/store";
 import { detectRectangularLots, sameWorldPoint } from "@/lib/plots";
 import type { CogoLeg, CogoResult } from "@/lib/types";
@@ -1929,7 +1930,7 @@ export function CogoWorkspace({
         location: "",
         tribalArea: "",
         surveyor: config.surveyor ? config.surveyor.toUpperCase() : "",
-        surveyedDate: "",
+        surveyedDate: currentMonthYear(),
         coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
         scale,
         dsmNo: "",

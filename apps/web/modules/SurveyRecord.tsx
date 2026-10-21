@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { displayCrs, loConfigValue, parseLo } from "@/lib/crsOptions";
+import { currentMonthYear } from "@/lib/diagramLayout";
 import { buildConsistencyLines, buildCoordinateListLines, comparePointNames, COORD_LIST_GROUPS, downloadText } from "@/lib/reportFormats";
 import type { ParsedRow, PointType } from "@/lib/types";
 
@@ -116,7 +117,7 @@ export function SurveyRecord() {
   // 2026-08-27: editing it in one place must update both).
   const [lotNumber, setLotNumber] = useState(ri.lotNumber ?? lotName.replace(/^lot\s+/i, ""));
   const [assistedBy, setAssistedBy] = useState(ri.assistedBy ?? surveyor);
-  const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey ?? dMeta?.surveyedDate ?? "");
+  const [dateOfSurvey, setDateOfSurvey] = useState(ri.dateOfSurvey || dMeta?.surveyedDate || currentMonthYear(false));
   // Purpose defaults to "Survey of Lot {Diagram lot name}" and follows the
   // lot name until the user edits it by hand (client req 2026-10-21). An
   // older saved purpose that's just the auto pattern (e.g. the "LOt" typo)

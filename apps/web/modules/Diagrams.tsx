@@ -17,7 +17,7 @@ import {
   type ManualAnnotation,
   type ManualText,
 } from "@/components/SgDiagram";
-import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY } from "@/lib/diagramLayout";
+import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
 import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
@@ -178,13 +178,17 @@ export function Diagrams() {
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
-  const [meta, setMeta] = useState<Omit<DiagramMeta, "closed" | "kind">>(di.meta ?? {
+  const [meta, setMeta] = useState<Omit<DiagramMeta, "closed" | "kind">>(di.meta ? {
+    ...di.meta,
+    // The old fixed default "FEBRUARY 2026" (or a blank date) becomes the current month.
+    surveyedDate: !di.meta.surveyedDate?.trim() || di.meta.surveyedDate === "FEBRUARY 2026" ? currentMonthYear() : di.meta.surveyedDate,
+  } : {
     lotName: config.name && config.name !== "Untitled Survey" ? config.name.toUpperCase() : "LOT 14182 CHARLESHILL",
     parent: "",
     location: "CHARLESHILL",
     tribalArea: "GHANZI TRIBAL AREA",
     surveyor: config.surveyor ? config.surveyor.toUpperCase() : "G. G. SESINYI",
-    surveyedDate: "FEBRUARY 2026",
+    surveyedDate: currentMonthYear(),
     coordinateSystem: config.coordinateSystem.replace(" Botswana", ""),
     scale: suggestDiagramScale(fig?.points ?? []),
     dsmNo: "",

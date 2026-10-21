@@ -6,7 +6,7 @@ import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { displayCrs } from "@/lib/crsOptions";
 import { dedupePoints, dropClosingDuplicate, estimateDominantAngle, findOuterBoundary, formatLotRange, sameWorldPoint, type Plot } from "@/lib/plots";
 import { comparePointNames } from "@/lib/reportFormats";
-import { fmtCoord, fmtSystem, toDotted } from "@/lib/diagramLayout";
+import { fmtCoord, fmtSystem, toDotted, currentMonthYear } from "@/lib/diagramLayout";
 import { inverse, polygonArea } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { type ManualText } from "@/components/SgDiagram";
@@ -363,7 +363,7 @@ export function GeneralPlanView() {
     gcNo: "",       // "GC-122" compilation/grid code, small red text top-right
     dsmNo: "",      // "DSM No: 1244/2026"
     srNo: "",       // "SR No: 966/2026", bottom-right of the sheet
-    surveyedIn: "", // "Surveyed in February 2026"
+    surveyedIn: currentMonthYear(false), // "Surveyed in October 2026" — current month by default
     // Extra title lines matching the GC-122/WP_CH reference exactly (client
     // req 2026-08-30) — each is OPTIONAL and only adds its own line when
     // filled in, so a project that never sets these keeps today's shorter
