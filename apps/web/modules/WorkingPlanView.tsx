@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { WorkingPlan, workingPlanMinScale, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
+import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
@@ -32,6 +32,7 @@ export function WorkingPlanView() {
   // for its DXF export. A ref, not state: it's set during WorkingPlan's own
   // render, so setState here would be a React anti-pattern.
   const transformRef = useRef<DiagramTransform | null>(null);
+  const gridLayoutRef = useRef<WorkingPlanGridLayout | null>(null);
 
   // Zoom + Pan (client req 2026-09-15: "Add zoom and pad in working plan")
   // — ported from GeneralPlanView.tsx's own copy of this (same reasoning:
@@ -592,6 +593,21 @@ export function WorkingPlanView() {
       const w = toExportWorld(r.east, r.north);
       beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "WORKING_STATION" });
     }
+    // Coordinate grid exactly as on the sheet (client req 2026-10-21: the
+    // DXF must open already looking like the client's hand-fixed version) —
+    // lines on GRID, labels on GRID_TEXT; the sheet's rotate(-90) labels are
+    // DXF rotation 90, and anchor "end" maps to right-justified text.
+    const grid = gridLayoutRef.current;
+    if (grid) {
+      for (const l of grid.lines) {
+        const p1 = t.toWorld(l.x1, l.y1), p2 = t.toWorld(l.x2, l.y2);
+        polylines.push({ pts: [{ x: p1.east, y: p1.north }, { x: p2.east, y: p2.north }], closed: false, layer: "GRID" });
+      }
+      for (const g of grid.labels) {
+        const q = t.toWorld(g.x, g.y);
+        notes.push({ x: q.east, y: q.north, text: g.text, height: g.fontSize * metresPerUnit, layer: "GRID_TEXT", anchor: g.anchor === "end" ? "end" : undefined, rotation: g.rotate ? 90 : undefined });
+      }
+    }
     for (const ann of diagramAnnotations) {
       const w1 = toExportWorld(ann.e1, ann.n1), w2 = toExportWorld(ann.e2, ann.n2);
       polylines.push({ pts: [{ x: w1.east, y: w1.north }, { x: w2.east, y: w2.north }], closed: false, layer: "ANNOTATIONS" });
@@ -852,6 +868,7 @@ export function WorkingPlanView() {
             sides={sides}
             plots={resolvedPlots.length > 0 ? resolvedPlots : undefined}
             refMarks={refMarks}
+            onGridLayout={(g) => { gridLayoutRef.current = g; }}
             workingStations={workingStations}
             manualAnnotations={diagramAnnotations}
             manualTexts={diagramTexts}

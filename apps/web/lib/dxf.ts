@@ -26,7 +26,7 @@ export interface ImportedDrawing {
    *  into the next column once opened in a CAD app (client req 2026-08-26,
    *  Part 34 follow-up: "font ... responsive nahi hai" — the content was
    *  all there, but overlapping). Compressing it back down compensates. */
-  texts: { x: number; y: number; text: string; height: number; layer?: string; anchor?: "middle" | "end"; widthFactor?: number }[];
+  texts: { x: number; y: number; text: string; height: number; layer?: string; anchor?: "middle" | "end"; widthFactor?: number; /** degrees CCW (DXF group 50) */ rotation?: number }[];
 }
 
 /** Sanitise a layer name for DXF (no spaces / reserved chars). */
@@ -285,6 +285,7 @@ export function writeDxf(d: ImportedDrawing): string {
   for (const t of d.texts) {
     e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(7, "Arial");
     if (t.widthFactor != null) e(41, t.widthFactor);
+    if (t.rotation) e(50, t.rotation);
     e(1, asciiSafeDxfText(t.text));
     // Horizontal justification (72: 1=center, 2=right) requires a second
     // alignment point (11/21/31) per the DXF spec — set equal to the first

@@ -66,6 +66,14 @@ export interface WorkingPlanMeta {
   gridSpacingM?: number;
 }
 
+/** The sheet's coordinate grid exactly as drawn (sheet units, labels incl.
+ *  any hand-dragged offset) — handed to the caller so the DXF export writes
+ *  the same lines/labels instead of re-deriving them. */
+export interface WorkingPlanGridLayout {
+  lines: { x1: number; y1: number; x2: number; y2: number }[];
+  labels: { x: number; y: number; text: string; anchor: "start" | "end"; rotate: boolean; fontSize: number }[];
+}
+
 interface Props {
   meta: WorkingPlanMeta;
   points: WorkingPlanPoint[];
@@ -147,6 +155,7 @@ interface Props {
    *  screen-space draw call in this sheet into DXF entities, the same way
    *  Diagrams.tsx's DXF export already does for the SG Diagram. */
   onTransform?: (t: DiagramTransform) => void;
+  onGridLayout?: (g: WorkingPlanGridLayout) => void;
   /** Shared display rotation (degrees, client req 2026-08-28) — the same
    *  project-wide value CogoWorkspace's Rotate slider and General Plan use,
    *  so this sheet's figure/beacons/labels spin the same way. Applied only
@@ -278,6 +287,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTitlePointerUp,
     onTitleResize,
     onTransform,
+    onGridLayout,
     rotation: rotationProp,
     arrowRotation: arrowRotationProp,
     flip: flipProp,
@@ -506,6 +516,86 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // gridlines) — the same convention as the printed diagram's Y/X table.
   const fmtAxis = (axis: "X" | "Y", v: number) => `${axis}${v >= 0 ? "+" : ""}${fmtGrid(v)}`;
 
+  // Top of the grid, as the client corrected it by hand in AutoCAD (client
+  // req 2026-10-21): vertical lines overshoot the top line only slightly,
+  // and the top easting labels sit INSIDE the grid — just under the top
+  // line, on the left of their vertical line. Spacing is in paper mm
+  // (VB_W spans the 210 mm A4 width), so it holds at any scale. A top label
+  // that would hit a beacon label/symbol or a plot edge slides down its
+  // line until clear. Bottom/left/right labels are unchanged.
+  const MMU = VB_W / 210;
+  const GRID_TOP_OVER = 2 * MMU;
+  const GRID_FS = 8;
+  const gridCharW = GRID_FS * 0.6; // Courier advance
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  const gridObstacles: Box[] = [];
+  for (const pl of beaconPlacements) {
+    if (pl.hidden || !pl.text) continue;
+    const w = pl.text.length * pl.fontSize * 0.6;
+    gridObstacles.push({ x0: pl.labelX - w / 2 - 2, x1: pl.labelX + w / 2 + 2, y0: pl.labelY + 3 - pl.fontSize * 1.1 - 2, y1: pl.labelY + 3 + pl.fontSize * 0.35 + 2 });
+  }
+  for (const pt of allPoints) {
+    const bx = fx(pt.east, pt.north), by = fy(pt.east, pt.north);
+    gridObstacles.push({ x0: bx - 4, x1: bx + 4, y0: by - 4, y1: by + 4 });
+  }
+  const gridSegs = activePlots.flatMap((plot) => plot.points.map((pt, i) => {
+    const q = plot.points[(i + 1) % plot.points.length];
+    return { ax: fx(pt.east, pt.north), ay: fy(pt.east, pt.north), bx: fx(q.east, q.north), by: fy(q.east, q.north) };
+  }));
+  const clearOfLabels = (b: Box) => !gridObstacles.some((o) => o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0);
+  const boxClear = (b: Box) =>
+    clearOfLabels(b) &&
+    !gridSegs.some((sg) => {
+      for (let k = 0; k <= 24; k++) {
+        const t = k / 24, px = sg.ax + (sg.bx - sg.ax) * t, py = sg.ay + (sg.by - sg.ay) * t;
+        if (px > b.x0 && px < b.x1 && py > b.y0 && py < b.y1) return true;
+      }
+      return false;
+    });
+  const overlapArea = (b: Box) =>
+    gridObstacles.reduce((sum, o) => sum + Math.max(0, Math.min(o.x1, b.x1) - Math.max(o.x0, b.x0)) * Math.max(0, Math.min(o.y1, b.y1) - Math.max(o.y0, b.y0)), 0);
+  const topLabelPos = (v: number) => {
+    const len = fmtAxis("Y", v).length * gridCharW;
+    const lineX = toX(v), gap = 0.8 * MMU;
+    // Rotated glyphs extend LEFT of the baseline; the font's descent sits on
+    // the baseline's right. Left of the line: baseline = line - gap - descent.
+    // Right of the line (fallback only): baseline = line + gap + glyph height.
+    const leftX = lineX - gap - GRID_FS * 0.3, rightX = lineX + gap + GRID_FS * 0.8;
+    const y0 = gridTop + 1 * MMU;
+    const boxAt = (x: number, y: number): Box => ({ x0: x - GRID_FS * 1.1, x1: x + GRID_FS * 0.35, y0: y - 1, y1: y + len + 1 });
+    const ys: number[] = [];
+    for (let y = y0; y + len <= gridBottom - MMU; y += 3) ys.push(y);
+    if (!ys.length) ys.push(y0);
+    // 1) left, clear of beacon labels/symbols AND plot edges; 2) left, clear
+    // of beacon labels/symbols; 3) right of the line (only when no spot on
+    // the left avoids a beacon label — overlapping one is never OK);
+    // 4) left at the least-overlapping spot.
+    for (const ok of [boxClear, clearOfLabels]) for (const y of ys) if (ok(boxAt(leftX, y))) return { x: leftX, y };
+    for (const y of ys) if (clearOfLabels(boxAt(rightX, y))) return { x: rightX, y };
+    let best = ys[0], bestA = Infinity;
+    for (const y of ys) { const ar = overlapArea(boxAt(leftX, y)); if (ar < bestA) { bestA = ar; best = y; } }
+    return { x: leftX, y: best };
+  };
+  const gridLinesOut = [
+    ...eLines.map((v) => ({ x1: toX(v), y1: gridTop - GRID_TOP_OVER, x2: toX(v), y2: gridBottom + GRID_OVER })),
+    ...nLines.map((v) => ({ x1: gridLeft - GRID_OVER, y1: toY(v), x2: gridRight + GRID_OVER, y2: toY(v) })),
+  ];
+  const gridLabelsRaw: { id: string; x: number; y: number; anchor: "start" | "end"; rotate: boolean; text: string }[] = [
+    // rotate(-90) + anchor "end": text runs DOWN from (x, y), glyphs left of x.
+    ...eLines.map((v) => { const q = topLabelPos(v); return { id: `grid:yt:${v}`, x: q.x, y: q.y, anchor: "end" as const, rotate: true, text: fmtAxis("Y", v) }; }),
+    ...eLines.map((v) => ({ id: `grid:yb:${v}`, x: toX(v), y: gridBottom + 4, anchor: "end" as const, rotate: true, text: fmtAxis("Y", v) })),
+    ...nLines.map((v) => ({ id: `grid:xl:${v}`, x: gridLeft - 3, y: toY(v) - 3, anchor: "end" as const, rotate: false, text: fmtAxis("X", v) })),
+    ...nLines.map((v) => ({ id: `grid:xr:${v}`, x: gridRight + 3, y: toY(v) - 3, anchor: "start" as const, rotate: false, text: fmtAxis("X", v) })),
+  ];
+  const gridLabelsOut = gridLabelsRaw.map((g) => {
+    const off = textOffsets?.[g.id];
+    return off ? { ...g, x: g.x + off.dx, y: g.y + off.dy } : g;
+  });
+  onGridLayout?.({
+    lines: gridLinesOut,
+    labels: gridLabelsOut.map(({ x, y, text, anchor, rotate }) => ({ x, y, text, anchor, rotate, fontSize: GRID_FS })),
+  });
+
   // ---- Inset (locality, not to scale) ----
   const inset = { x: 26, y: VB_H - 130, w: 150, h: 104 };
   const insetPad = 24;
@@ -681,57 +771,34 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
 
       {/* ---------- Coordinate grid (blue) ---------- */}
       <g stroke={GRID_BLUE} strokeWidth={0.5}>
-        {eLines.map((v, i) => (
-          <line key={`ev${i}`} x1={toX(v)} y1={gridTop - GRID_OVER} x2={toX(v)} y2={gridBottom + GRID_OVER} />
-        ))}
-        {nLines.map((v, i) => (
-          <line key={`nv${i}`} x1={gridLeft - GRID_OVER} y1={toY(v)} x2={gridRight + GRID_OVER} y2={toY(v)} />
+        {gridLinesOut.map((l, i) => (
+          <line key={`gl${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
         ))}
       </g>
-      {/* Grid axis labels — both edges, "X"/"Y"-prefixed signed format
-          (client req 2026-08-26, Part 29c/29d: "Label both sides") — a
-          coordinate near one edge of the sheet used to have no nearby
-          label at all if that edge wasn't the labelled one. */}
-      {/* Each grid number can be moved by hand (client req 2026-10-21:
-          "I should be able to manually move or shift the grid numbering") —
-          click to select (turns red), then drag. Same offset store and
-          handlers as the other movable sheet text (textOffsets, keyed
-          "grid:<edge>:<value>"), so positions save with the project. */}
-      <g fill={GRID_BLUE} fontSize={8}>
-        {(() => {
-          const gridLabel = (id: string, x0: number, y0: number, anchor: "start" | "end", rotate: boolean, text: string) => {
-            const off = textOffsets?.[id] || { dx: 0, dy: 0 };
-            const x = x0 + off.dx, y = y0 + off.dy;
-            const isSel = selectedTextId === id;
-            return (
-              <text
-                key={id}
-                x={x}
-                y={y}
-                textAnchor={anchor}
-                transform={rotate ? `rotate(-90 ${x} ${y})` : undefined}
-                fill={isSel ? "#dc2626" : undefined}
-                style={{ cursor: isSel ? "move" : "pointer" }}
-                onClick={(e) => { e.stopPropagation(); onTextClick?.(id, e); }}
-                onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(id, e); } }}
-                onPointerMove={(e) => onTextPointerMove?.(id, e)}
-                onPointerUp={(e) => onTextPointerUp?.(id, e)}
-              >
-                {text}
-              </text>
-            );
-          };
+      {/* Grid axis labels — both edges (client req 2026-08-26, Part 29c/29d);
+          each can be moved by hand (client req 2026-10-21): click to select
+          (turns red), then drag — same textOffsets store as other sheet text. */}
+      <g fill={GRID_BLUE} fontSize={GRID_FS}>
+        {gridLabelsOut.map((g) => {
+          const isSel = selectedTextId === g.id;
           return (
-            <>
-              {/* rotate(-90) top and bottom; anchor "end" at the bottom keeps the
-                  text running downward, away from the drawing. */}
-              {eLines.map((v) => gridLabel(`grid:yt:${v}`, toX(v), gridTop - 4, "start", true, fmtAxis("Y", v)))}
-              {eLines.map((v) => gridLabel(`grid:yb:${v}`, toX(v), gridBottom + 4, "end", true, fmtAxis("Y", v)))}
-              {nLines.map((v) => gridLabel(`grid:xl:${v}`, gridLeft - 3, toY(v) - 3, "end", false, fmtAxis("X", v)))}
-              {nLines.map((v) => gridLabel(`grid:xr:${v}`, gridRight + 3, toY(v) - 3, "start", false, fmtAxis("X", v)))}
-            </>
+            <text
+              key={g.id}
+              x={g.x}
+              y={g.y}
+              textAnchor={g.anchor}
+              transform={g.rotate ? `rotate(-90 ${g.x} ${g.y})` : undefined}
+              fill={isSel ? "#dc2626" : undefined}
+              style={{ cursor: isSel ? "move" : "pointer" }}
+              onClick={(e) => { e.stopPropagation(); onTextClick?.(g.id, e); }}
+              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(g.id, e); } }}
+              onPointerMove={(e) => onTextPointerMove?.(g.id, e)}
+              onPointerUp={(e) => onTextPointerUp?.(g.id, e)}
+            >
+              {g.text}
+            </text>
           );
-        })()}
+        })}
       </g>
 
       {/* ---------- Figure — one polygon per included plot ---------- */}
