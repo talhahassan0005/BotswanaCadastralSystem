@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
@@ -47,6 +47,53 @@ export function WorkingPlanView() {
   // ordinary left-button drag pans too while active; middle/right-button
   // drag always pans, tool or no tool.
   const [panToolActive, setPanToolActive] = useState(false);
+  // Wheel zoom on a native NON-passive listener (client req 2026-10-21: "it
+  // keeps freezing") — React's onWheel is passive, so its preventDefault was
+  // ignored and every wheel step zoomed AND scrolled the box/page at once.
+  // The sheet also gets a sizer sized to its zoomed size: a CSS transform
+  // alone never enlarges the scroll area, so zoomed-in parts were cut off
+  // and could not be scrolled to. Zoom keeps the point under the cursor fixed.
+  const [panBoxEl, setPanBoxEl] = useState<HTMLDivElement | null>(null);
+  const [sheetInnerEl, setSheetInnerEl] = useState<HTMLDivElement | null>(null);
+  const [sheetBase, setSheetBase] = useState({ w: 768, h: 1024 });
+  useEffect(() => {
+    if (!panBoxEl || !sheetInnerEl) return;
+    const measure = () => {
+      const w = Math.min(768, panBoxEl.clientWidth);
+      const h = sheetInnerEl.offsetHeight;
+      setSheetBase((cur) => (Math.abs(cur.w - w) < 0.5 && Math.abs(cur.h - h) < 0.5 ? cur : { w, h }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(panBoxEl);
+    ro.observe(sheetInnerEl);
+    return () => ro.disconnect();
+  }, [panBoxEl, sheetInnerEl]);
+  const zoomAnchorRef = useRef<{ cx: number; cy: number; mx: number; my: number; z0: number } | null>(null);
+  useEffect(() => {
+    if (!panBoxEl) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = panBoxEl.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const cx = panBoxEl.scrollLeft + mx, cy = panBoxEl.scrollTop + my;
+      setWpZoom((z) => {
+        const nz = Math.max(WP_ZOOM_MIN, Math.min(WP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2)));
+        if (nz !== z) zoomAnchorRef.current = { cx, cy, mx, my, z0: zoomAnchorRef.current?.z0 ?? z };
+        return nz;
+      });
+    };
+    panBoxEl.addEventListener("wheel", onWheel, { passive: false });
+    return () => panBoxEl.removeEventListener("wheel", onWheel);
+  }, [panBoxEl]);
+  useLayoutEffect(() => {
+    const a = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    if (!a || !panBoxEl) return;
+    const k = wpZoom / a.z0;
+    panBoxEl.scrollLeft = a.cx * k - a.mx;
+    panBoxEl.scrollTop = a.cy * k - a.my;
+  }, [wpZoom, panBoxEl]);
   function handleWpPanMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
     if (e.button !== 1 && e.button !== 2 && !(e.button === 0 && panToolActive)) return;
     e.preventDefault();
@@ -907,17 +954,14 @@ export function WorkingPlanView() {
           <span className="text-xs text-slate-400">Scroll over the sheet to zoom. Press and hold the scroll-wheel button (or the right mouse button), then drag, to pan.{panToolActive ? " Drag the sheet to pan it." : ""}</span>
         </div>
         <div
-          ref={panBoxRef}
+          ref={(el) => { panBoxRef.current = el; setPanBoxEl(el); }}
           className="mx-auto max-w-5xl overflow-auto rounded border border-slate-100"
           style={{ maxHeight: "85vh", cursor: isPanning ? "grabbing" : panToolActive ? "grab" : undefined }}
-          onWheel={(e) => {
-            e.preventDefault();
-            setWpZoom((z) => Math.max(WP_ZOOM_MIN, Math.min(WP_ZOOM_MAX, +(z + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
-          }}
           onMouseDown={handleWpPanMouseDown}
           onContextMenu={(e) => e.preventDefault()}
         >
-        <div className="mx-auto max-w-3xl" style={{ transform: `scale(${wpZoom})`, transformOrigin: "top center" }} onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
+        <div style={{ width: sheetBase.w * wpZoom, height: sheetBase.h * wpZoom, margin: "0 auto" }}>
+        <div ref={setSheetInnerEl} style={{ width: sheetBase.w, transform: `scale(${wpZoom})`, transformOrigin: "top left" }} onClick={() => { setSelectedLabel(null); setSelectedTextId(null); setTitleSelected(false); }}>
           <WorkingPlan
             ref={svgRef}
             meta={effectiveMeta}
@@ -964,6 +1008,7 @@ export function WorkingPlanView() {
             arrowRotation={northArrowRotationDeg}
             flip={false}
           />
+        </div>
         </div>
         </div>
       </Card>
