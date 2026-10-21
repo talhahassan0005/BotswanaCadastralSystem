@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
 import { transformPoint } from "@/lib/server/crs";
+import { inverse } from "@/lib/server/geometry";
+import { formatDms } from "@/lib/server/angles";
 import type { ParcelDoc } from "@/lib/types";
+import type { WPoint } from "@/lib/cogoTools/types";
 
 // Leaflet is loaded from a CDN at runtime (no npm dependency) — keeps the
 // build self-contained. `window.L` is the global Leaflet namespace.
@@ -55,10 +58,89 @@ interface LLParcel { number: string; ring: [number, number][] }
  * Google Earth. Coordinates are projected (Lo/UTM) → WGS84 via crs.transformPoint.
  */
 export function GisMap() {
-  const { cogoResult, parcelDoc, config, cogoPlots } = useStore();
+  const { cogoResult, parcelDoc, config, cogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
   const mapDivRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map…");
+
+  // ---- Map tools (client req 2026-10-22): live cursor coordinates, an Add
+  // Point tool (click the map or type coordinates — the point also lands in
+  // the Cadastral/COGO work station) and a ruler. ----
+  type Tool = "none" | "point" | "ruler";
+  const [tool, setTool] = useState<Tool>("none");
+  const toolRef = useRef<Tool>("none");
+  toolRef.current = tool;
+  const mapRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(0);
+  const coordBoxRef = useRef<HTMLDivElement | null>(null);
+  const manualLayerRef = useRef<any>(null);
+  const rulerLayerRef = useRef<any>(null);
+  // Manually added points live in the COGO work station's own saved doc
+  // ("extra" points), so they show up there and in its Points table.
+  const docRef = useRef<Record<string, unknown>>((cogoWorkspaceDoc ?? {}) as Record<string, unknown>);
+  const [manualPts, setManualPts] = useState<WPoint[]>(() => ((docRef.current.extra as WPoint[] | undefined) ?? []));
+  const [ruler, setRuler] = useState<{ east: number; north: number; lat: number; lon: number }[]>([]);
+  const [typed, setTyped] = useState({ name: "", y: "", x: "" });
+  const [typedErr, setTypedErr] = useState<string | null>(null);
+  const src = config.coordinateSystem;
+  const toEN = (lat: number, lon: number): [number, number] | null => {
+    try {
+      const [e, n] = transformPoint(lat, lon, "WGS84", src);
+      return isFinite(e) && isFinite(n) ? [e, n] : null;
+    } catch {
+      return null;
+    }
+  };
+  const toLatLon = (e: number, n: number): [number, number] | null => {
+    try {
+      const [lat, lon] = transformPoint(e, n, src, "WGS84");
+      return isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? [lat, lon] : null;
+    } catch {
+      return null;
+    }
+  };
+  function nextPointName(): string {
+    const used = new Set(manualPts.map((p) => p.name.toUpperCase()));
+    let i = 1;
+    while (used.has(`P${i}`)) i++;
+    return `P${i}`;
+  }
+  function addPoint(name: string, east: number, north: number) {
+    const p: WPoint = { id: `gis-${Date.now()}-${Math.round(Math.random() * 1e6)}`, name: name.trim() || nextPointName(), east, north };
+    setManualPts((cur) => {
+      const next = [...cur, p];
+      docRef.current = { ...docRef.current, extra: next };
+      setCogoWorkspaceDoc(docRef.current);
+      return next;
+    });
+  }
+  const addPointRef = useRef(addPoint);
+  addPointRef.current = addPoint;
+  const toENRef = useRef(toEN);
+  toENRef.current = toEN;
+  function addTypedPoint() {
+    const y = Number(typed.y.replace(/\s/g, "")), x = Number(typed.x.replace(/\s/g, ""));
+    if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr("Enter Y and X as numbers."); return; }
+    const ll = toLatLon(y, x);
+    if (!ll) { setTypedErr(`These coordinates don't fall on the map in ${src}.`); return; }
+    setTypedErr(null);
+    addPoint(typed.name, y, x);
+    setTyped({ name: "", y: "", x: "" });
+    mapRef.current?.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
+  }
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const box = map.getContainer() as HTMLElement;
+    if (tool === "none") box.classList.remove("leaflet-crosshair");
+    else box.classList.add("leaflet-crosshair");
+  }, [tool, mapReady]);
+  useEffect(() => {
+    if (tool === "none") return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setTool("none"); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tool]);
 
   const { beacons, parcels, inputCount } = useMemo(() => {
     const src = config.coordinateSystem;
@@ -163,6 +245,37 @@ export function GisMap() {
         }
         if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
         else map.setView(BOTSWANA_CENTER, 6);
+
+        // Live cursor coordinates, bottom-right (client req 2026-10-22).
+        const CoordBox = L.Control.extend({
+          onAdd() {
+            const div = L.DomUtil.create("div");
+            div.style.cssText = "background:rgba(255,255,255,0.9);padding:3px 8px;border-radius:4px;font:12px/1.4 ui-monospace,monospace;color:#0f172a;min-width:210px;text-align:right;box-shadow:0 1px 3px rgba(0,0,0,0.25)";
+            div.textContent = "Move the cursor over the map";
+            coordBoxRef.current = div;
+            return div;
+          },
+        });
+        new CoordBox({ position: "bottomright" }).addTo(map);
+        map.on("mousemove", (ev: any) => {
+          const div = coordBoxRef.current;
+          if (!div) return;
+          const en = toENRef.current(ev.latlng.lat, ev.latlng.lng);
+          div.innerHTML = (en ? `Y ${en[0].toFixed(3)} &nbsp; X ${en[1].toFixed(3)}<br/>` : "") +
+            `<span style="color:#64748b">${ev.latlng.lat.toFixed(6)}, ${ev.latlng.lng.toFixed(6)}</span>`;
+        });
+        map.on("click", (ev: any) => {
+          const t = toolRef.current;
+          if (t === "none") return;
+          const en = toENRef.current(ev.latlng.lat, ev.latlng.lng);
+          if (!en) return;
+          if (t === "point") addPointRef.current("", en[0], en[1]);
+          else setRuler((r) => [...r, { east: en[0], north: en[1], lat: ev.latlng.lat, lon: ev.latlng.lng }]);
+        });
+        manualLayerRef.current = L.layerGroup().addTo(map);
+        rulerLayerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
+        setMapReady((n) => n + 1);
         setStatus(
           bounds.length
             ? `${beacons.length} beacon(s), ${parcels.length} parcel(s) overlaid.`
@@ -174,9 +287,52 @@ export function GisMap() {
       .catch((e) => setErr(e.message));
     return () => {
       cancelled = true;
+      mapRef.current = null;
+      manualLayerRef.current = null;
+      rulerLayerRef.current = null;
+      coordBoxRef.current = null;
       if (map) map.remove();
     };
   }, [beacons, parcels, inputCount, config.coordinateSystem]);
+
+  // Manually added points (magenta, labelled) — redrawn in place, so adding
+  // one never re-zooms the map.
+  useEffect(() => {
+    const L = window.L, group = manualLayerRef.current;
+    if (!L || !group) return;
+    group.clearLayers();
+    for (const p of manualPts) {
+      const ll = toLatLon(p.east, p.north);
+      if (!ll) continue;
+      L.circleMarker(ll, { radius: 5, color: "#c026d3", weight: 2, fillColor: "#f0abfc", fillOpacity: 1 })
+        .bindTooltip(p.name, { permanent: true, direction: "right", offset: [6, 0] })
+        .addTo(group);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualPts, mapReady]);
+
+  // Ruler: the clicked points joined by a line, each leg labelled with its
+  // grid distance (from the projected Y/X, like the survey itself).
+  useEffect(() => {
+    const L = window.L, group = rulerLayerRef.current;
+    if (!L || !group) return;
+    group.clearLayers();
+    if (!ruler.length) return;
+    L.polyline(ruler.map((r) => [r.lat, r.lon]), { color: "#f97316", weight: 2, dashArray: "6 4" }).addTo(group);
+    ruler.forEach((r, i) => {
+      L.circleMarker([r.lat, r.lon], { radius: 4, color: "#f97316", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(group);
+      if (i > 0) {
+        const a = ruler[i - 1];
+        const [, d] = inverse(a, r);
+        L.tooltip({ permanent: true, direction: "center", className: "" })
+          .setLatLng([(a.lat + r.lat) / 2, (a.lon + r.lon) / 2])
+          .setContent(`${d.toFixed(3)} m`)
+          .addTo(group);
+      }
+    });
+  }, [ruler, mapReady]);
+  const rulerLegs = ruler.slice(1).map((r, i) => inverse(ruler[i], r));
+  const rulerTotal = rulerLegs.reduce((s, [, d]) => s + d, 0);
 
   function exportKml() {
     const marks: string[] = [];
@@ -206,8 +362,37 @@ export function GisMap() {
           <a href={earthUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="ghost">Open in Google Earth →</Button>
           </a>
+          <Button variant={tool === "point" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "point" ? "none" : "point"))}>
+            {tool === "point" ? "Click the map to add points…" : "Add Point"}
+          </Button>
+          <Button variant={tool === "ruler" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "ruler" ? "none" : "ruler"))}>
+            {tool === "ruler" ? "Click points to measure…" : "Ruler"}
+          </Button>
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
         </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span className="font-medium">Add point by coordinates ({displayLo(src)}):</span>
+          <input value={typed.name} onChange={(e) => setTyped((t) => ({ ...t, name: e.target.value }))} placeholder={`Name (${nextPointName()})`} className="w-28 rounded-md border border-slate-200 px-2 py-1 focus:border-brand focus:outline-none" />
+          <input value={typed.y} onChange={(e) => setTyped((t) => ({ ...t, y: e.target.value }))} placeholder="Y (e.g. -97468.060)" className="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
+          <input value={typed.x} onChange={(e) => setTyped((t) => ({ ...t, x: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addTypedPoint(); }} placeholder="X (e.g. 2728457.058)" className="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
+          <Button variant="ghost" onClick={addTypedPoint}>Add</Button>
+          {typedErr && <span className="text-red-600">{typedErr}</span>}
+          {manualPts.length > 0 && <span className="text-slate-400">{manualPts.length} added point(s) — also in the Cadastral work station.</span>}
+        </div>
+        {ruler.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md bg-orange-50 px-3 py-1.5 text-xs text-orange-900">
+            <span className="font-medium">Ruler:</span>
+            {rulerLegs.length > 0 ? (
+              <>
+                <span>last leg {rulerLegs[rulerLegs.length - 1][1].toFixed(3)} m, bearing {formatDms(rulerLegs[rulerLegs.length - 1][0])}</span>
+                {rulerLegs.length > 1 && <span>total {rulerTotal.toFixed(3)} m ({rulerLegs.length} legs)</span>}
+              </>
+            ) : (
+              <span>click a second point</span>
+            )}
+            <Button variant="ghost" onClick={() => setRuler([])}>Clear ruler</Button>
+          </div>
+        )}
         <div ref={mapDivRef} className="h-[480px] w-full rounded-lg border border-slate-200 bg-slate-100" />
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
@@ -217,6 +402,12 @@ export function GisMap() {
       </Card>
     </div>
   );
+}
+
+/** "Lo 25 Botswana" -> "Lo 25°" for labels. */
+function displayLo(cs: string): string {
+  const m = cs.match(/Lo\s*(\d+)/i);
+  return m ? `Lo ${m[1]}°` : cs;
 }
 
 function esc(s: string): string {
