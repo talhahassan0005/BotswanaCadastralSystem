@@ -206,6 +206,11 @@ export function SurveyRecord() {
       return;
     }
     const title = DOCS.find((d) => d.id === doc)?.label ?? "Survey Record";
+    // On-screen controls (Decimal places, Hide, Sort beacons, Download as
+    // .txt...) never belong on the printed sheet (client req 2026-10-21).
+    const printable = docRef.current.cloneNode(true) as HTMLElement;
+    printable.querySelectorAll("button, select, [data-noprint]").forEach((el) => el.remove());
+    const printableHtml = printable.innerHTML;
     w.document.write(
       `<html><head><title></title>` +
         `<style>` +
@@ -218,7 +223,7 @@ export function SurveyRecord() {
         `.sign{margin-top:48px}.sep{margin:6px 0;border:none;border-top:1px solid #cbd5e1}` +
         `pre{white-space:pre-wrap;font-family:'Courier New',monospace;font-size:10pt}` +
         `</style></head>` +
-        `<body onload="window.print()">${docRef.current.innerHTML}</body></html>`
+        `<body onload="window.print()">${printableHtml}</body></html>`
     );
     w.document.close();
   }
@@ -460,9 +465,9 @@ export function SurveyRecord() {
               {cogoPlots.length > 0 && (
                 <div className="space-y-3 border-t border-slate-200 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-sm font-bold text-slate-800">Every plot&apos;s own leg consistency</h2>
+                    <h2 data-noprint className="text-sm font-bold text-slate-800">Every plot&apos;s own leg consistency</h2>
                     <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <label data-noprint className="flex items-center gap-1.5 text-xs text-slate-600">
                         Decimal places
                         <select
                           value={consistencyDecimals}
@@ -515,7 +520,7 @@ export function SurveyRecord() {
                 </div>
                 {coordListLines && (
                   <div className="flex items-center gap-1 text-xs">
-                    <span className="mr-1 text-slate-400">Sort beacons:</span>
+                    <span data-noprint className="mr-1 text-slate-400">Sort beacons:</span>
                     {(
                       [
                         ["none", "Original"],
