@@ -1,4 +1,4 @@
-# Smoke test for the Botswana Cadastral System.
+# Smoke test for GeoAxis.
 # Checks the full stack: web proxy -> Express API -> Python engine (+ Groq AI).
 # Run:  pwsh scripts/smoke-test.ps1
 # Assumes servers are running (engine:8000, api:4000, web:3001).

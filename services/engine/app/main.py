@@ -22,7 +22,7 @@ from .models import (
     TraverseRequest,
 )
 
-app = FastAPI(title="Botswana Cadastral Compute Engine", version="0.1.0")
+app = FastAPI(title="GeoAxis Compute Engine", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

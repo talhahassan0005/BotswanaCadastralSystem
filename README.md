@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# Botswana Cadastral Survey System
+# GeoAxis — Surveying Software
 
 Web-based cadastral data-processing software for Botswana land surveyors: import survey data,
 run COGO + traverse adjustment, validate accuracy against DSM limits, construct parcels, and
@@ -76,6 +75,3 @@ npm run test:engine     # Python COGO unit tests
 Live now: COGO engine, Data Import, COGO Engine screen, AI Validate.
 Planned (see ARCHITECTURE.md): coordinate-system transforms, parcel construction,
 diagram/plan generation, exports (PDF/DXF/SHP/DWG), GIS map.
-=======
-# BotswanaCadastralSystem
->>>>>>> fd516f331afa671183459cff8ee6be0caf1098a1

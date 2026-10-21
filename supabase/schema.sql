@@ -1,5 +1,5 @@
 -- ===========================================================================
--- Botswana Cadastral System — Supabase schema
+-- GeoAxis — Supabase schema
 -- Run this ONCE in the Supabase dashboard:  SQL Editor  →  paste  →  Run.
 -- Safe to re-run (uses IF NOT EXISTS / OR REPLACE / idempotent policies).
 -- ===========================================================================

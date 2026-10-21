@@ -1,4 +1,4 @@
-# Botswana Cadastral System — Manual Testing Guide
+# GeoAxis — Manual Testing Guide
 
 A practical checklist for testing every part of the app by hand, the way a client
 would. Work top to bottom. Each module has three things to check:
