@@ -26,6 +26,29 @@ export interface PolygonMeta {
 
 type Tab = "points" | "lines" | "polygons";
 
+/** Download the Points table as CSV, same columns and decimals as on screen
+ *  (client req 2026-10-22: "export the point table as csv file"). */
+function exportPointsCsv(points: WPoint[], pointMeta: Record<string, PointMeta>, decimals: 3 | 4) {
+  const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = [
+    ["Name", "Y", "X", "Height", "SD Number", "Epoch", "Class", "Subclass", "Description"],
+    ...points.map((p) => {
+      const m = pointMeta[p.id] ?? {};
+      return [p.name, p.east.toFixed(decimals), p.north.toFixed(decimals), m.height ?? "", m.sdNumber ?? "", m.epoch ?? "", m.klass ?? "", m.subclass ?? "", m.description ?? ""];
+    }),
+  ];
+  const csv = rows.map((r) => r.map((v) => cell(String(v))).join(",")).join("\r\n") + "\r\n";
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "points.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked a moment later: revoking at once can cancel the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function CogoTablesPanel({
   tab,
   onTab,
@@ -136,6 +159,16 @@ export function CogoTablesPanel({
                 </button>
               ))}
             </div>
+          )}
+          {tab === "points" && points.length > 0 && (
+            <button
+              type="button"
+              onClick={() => exportPointsCsv(selected.size > 0 ? points.filter((p) => selected.has(p.id)) : points, pointMeta, decimals)}
+              title={selected.size > 0 ? "Export the selected points as a CSV file" : "Export every point as a CSV file"}
+              className="rounded border border-slate-200 px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Export CSV{selected.size > 0 ? " (selected)" : ""}
+            </button>
           )}
           {(tab === "points" ? points.length : tab === "lines" ? lines.length : polygons.length) > 0 && (
             <button type="button" onClick={onSelectAll} className="rounded border border-slate-200 px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-50">
