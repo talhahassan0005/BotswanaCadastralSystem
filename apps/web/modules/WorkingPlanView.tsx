@@ -219,10 +219,11 @@ export function WorkingPlanView() {
   });
   // Stations default from Data Import (client req 2026-10-21: "where it
   // needs stations or ref marks, use those from import data by default,
-  // user will edit"): Observed from = first ref mark, Checked from and the
+  // user will edit"): Observed from = 2nd ref mark (the station the base
+  // moved to, same as the Method's [station]; 1st if only one), Checked from and the
   // Working station description = first working point. Only replaces an
   // empty field or one still on the old fixed default, never a user edit.
-  const firstRefName = refMarks[0]?.name || "";
+  const firstRefName = refMarks[1]?.name || refMarks[0]?.name || "";
   const firstWpName = workingStations[0]?.name || "";
   useEffect(() => {
     setMeta((m) => {

@@ -133,13 +133,14 @@ export function SurveyRecord() {
   // 2026-10-21: "Write WP1 by default" / "where it needs stations or ref
   // marks, use those ones from import data by default, user will edit"):
   // [WP] = first working point (else WP1), [tie stations] = all ref marks,
-  // [station] = first ref mark. Only a placeholder still present is
+  // [station] = 2nd ref mark (client req 2026-10-21; 1st if only one).
+  // Only a placeholder still present is
   // replaced, so anything the user typed stays.
   const importRefs = (importResult?.rows ?? []).filter((r) => r.pointType === "ref" && r.beaconId).map((r) => String(r.beaconId));
   const importWps = (importResult?.rows ?? []).filter((r) => r.pointType === "wp" && r.beaconId).map((r) => String(r.beaconId));
   const fillStations = (text: string) => {
     let t = text.split("[WP]").join(importWps[0] || "WP1");
-    if (importRefs.length) t = t.split("[tie stations]").join(importRefs.join(", ")).split("[station]").join(importRefs[0]);
+    if (importRefs.length) t = t.split("[tie stations]").join(importRefs.join(", ")).split("[station]").join(importRefs[1] ?? importRefs[0]);
     return t;
   };
   const [method, setMethod] = useState(() => fillStations(ri.method ?? DEFAULT_METHOD_TEXT));
