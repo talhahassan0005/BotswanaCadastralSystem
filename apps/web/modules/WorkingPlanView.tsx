@@ -6,7 +6,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
-import { dedupePoints, estimateDominantAngle } from "@/lib/plots";
+import { dedupePoints } from "@/lib/plots";
 import { landCalledName } from "@/lib/diagramLayout";
 
 /**
@@ -318,12 +318,12 @@ export function WorkingPlanView() {
     ),
     [resolvedPlots, points, diagramParent, meta.parent]
   );
-  const autoRotationDeg = useMemo(() => {
-    const BASE_ORIENTATION_DEG = 180;
-    const pts = resolvedPlots.length > 0 ? resolvedPlots.flatMap((p) => p.points) : points;
-    const angle = estimateDominantAngle(pts);
-    return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
-  }, [resolvedPlots, points]);
+  // Exactly the 180-degree Lo-grid display turn, no auto-alignment residual
+  // (client req 2026-10-21, client's hand-corrected AutoCAD plan: the plot
+  // stays at its true bearing and the coordinate grid turns with it, so
+  // every beacon sits in its correct grid square — the residual tilt made a
+  // square-to-page plot disagree with an axis-aligned grid).
+  const autoRotationDeg = 180;
   // North arrow rotation (client req 2026-09-15: "North arrow should face
   // up" — see GeneralPlanView.tsx's own copy of this for the full
   // explanation). Deliberately excludes BASE_ORIENTATION_DEG: that 180

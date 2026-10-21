@@ -485,22 +485,30 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const beaconPlacementById = new Map(beaconPlacements.map((pl) => [pl.id, pl]));
 
   // ---- Coordinate grid (blue, nice intervals across the figure bounds) ----
+  // When the figure is turned exactly 180 degrees (the Lo-grid display, no
+  // flip), the grid turns with it so it agrees with the plot — labels then
+  // read like the client's own plan (smaller northing at the top, smaller
+  // |easting| on the left). Any other rotation keeps the north-up grid.
+  const rot360 = ((rotation % 360) + 360) % 360;
+  const grid180 = !flip && Math.abs(rot360 - 180) < 1e-9;
+  const gX = (e: number) => (grid180 ? 2 * figPivotX - toX(e) : toX(e));
+  const gY = (n: number) => (grid180 ? 2 * figPivotY - toY(n) : toY(n));
   const validSpacings = [50, 100, 200];
   const stepE = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanE);
   const stepN = (meta.gridSpacingM && validSpacings.includes(meta.gridSpacingM)) ? meta.gridSpacingM : niceStep(spanN);
   // expand a little beyond the strict bounds so the figure sits inside the grid
   const eLines = gridValues(minE - stepE, maxE + stepE, stepE).filter(
-    (v) => toX(v) >= draw.x - 2 && toX(v) <= draw.x + draw.w + 2
+    (v) => gX(v) >= draw.x - 2 && gX(v) <= draw.x + draw.w + 2
   );
   const nLines = gridValues(minN - stepN, maxN + stepN, stepN).filter(
-    (v) => toY(v) >= draw.y - 2 && toY(v) <= draw.y + draw.h + 2
+    (v) => gY(v) >= draw.y - 2 && gY(v) <= draw.y + draw.h + 2
   );
   // Grid trimmed to a tidy window around the plot (client req 2026-10-21:
   // "this is not neat... reduce the length of the lines") — each line only
   // runs between the outermost lines of the other direction, instead of
   // across the whole panel and through the title; labels sit at the line
   // ends. Falls back to the panel edge when a direction has < 2 lines.
-  const gxs = eLines.map((v) => toX(v)), gys = nLines.map((v) => toY(v));
+  const gxs = eLines.map((v) => gX(v)), gys = nLines.map((v) => gY(v));
   const gridLeft = gxs.length >= 2 ? Math.min(...gxs) : draw.x;
   const gridRight = gxs.length >= 2 ? Math.max(...gxs) : draw.x + draw.w;
   const gridTop = gys.length >= 2 ? Math.min(...gys) : draw.y;
@@ -556,7 +564,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     gridObstacles.reduce((sum, o) => sum + Math.max(0, Math.min(o.x1, b.x1) - Math.max(o.x0, b.x0)) * Math.max(0, Math.min(o.y1, b.y1) - Math.max(o.y0, b.y0)), 0);
   const topLabelPos = (v: number) => {
     const len = fmtAxis("Y", v).length * gridCharW;
-    const lineX = toX(v), gap = 0.8 * MMU;
+    const lineX = gX(v), gap = 0.8 * MMU;
     // Rotated glyphs extend LEFT of the baseline; the font's descent sits on
     // the baseline's right. Left of the line: baseline = line - gap - descent.
     // Right of the line (fallback only): baseline = line + gap + glyph height.
@@ -577,15 +585,15 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     return { x: leftX, y: best };
   };
   const gridLinesOut = [
-    ...eLines.map((v) => ({ x1: toX(v), y1: gridTop - GRID_TOP_OVER, x2: toX(v), y2: gridBottom + GRID_OVER })),
-    ...nLines.map((v) => ({ x1: gridLeft - GRID_OVER, y1: toY(v), x2: gridRight + GRID_OVER, y2: toY(v) })),
+    ...eLines.map((v) => ({ x1: gX(v), y1: gridTop - GRID_TOP_OVER, x2: gX(v), y2: gridBottom + GRID_OVER })),
+    ...nLines.map((v) => ({ x1: gridLeft - GRID_OVER, y1: gY(v), x2: gridRight + GRID_OVER, y2: gY(v) })),
   ];
   const gridLabelsRaw: { id: string; x: number; y: number; anchor: "start" | "end"; rotate: boolean; text: string }[] = [
     // rotate(-90) + anchor "end": text runs DOWN from (x, y), glyphs left of x.
     ...eLines.map((v) => { const q = topLabelPos(v); return { id: `grid:yt:${v}`, x: q.x, y: q.y, anchor: "end" as const, rotate: true, text: fmtAxis("Y", v) }; }),
-    ...eLines.map((v) => ({ id: `grid:yb:${v}`, x: toX(v), y: gridBottom + 4, anchor: "end" as const, rotate: true, text: fmtAxis("Y", v) })),
-    ...nLines.map((v) => ({ id: `grid:xl:${v}`, x: gridLeft - 3, y: toY(v) - 3, anchor: "end" as const, rotate: false, text: fmtAxis("X", v) })),
-    ...nLines.map((v) => ({ id: `grid:xr:${v}`, x: gridRight + 3, y: toY(v) - 3, anchor: "start" as const, rotate: false, text: fmtAxis("X", v) })),
+    ...eLines.map((v) => ({ id: `grid:yb:${v}`, x: gX(v), y: gridBottom + 4, anchor: "end" as const, rotate: true, text: fmtAxis("Y", v) })),
+    ...nLines.map((v) => ({ id: `grid:xl:${v}`, x: gridLeft - 3, y: gY(v) - 3, anchor: "end" as const, rotate: false, text: fmtAxis("X", v) })),
+    ...nLines.map((v) => ({ id: `grid:xr:${v}`, x: gridRight + 3, y: gY(v) - 3, anchor: "start" as const, rotate: false, text: fmtAxis("X", v) })),
   ];
   const gridLabelsOut = gridLabelsRaw.map((g) => {
     const off = textOffsets?.[g.id];
