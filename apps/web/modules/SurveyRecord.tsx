@@ -44,7 +44,7 @@ const DEFAULT_TO_BLOCK = "The Director\nDepartment of Surveys and Mapping\nP/Bag
 // scratch each time.
 const DEFAULT_METHOD_TEXT = `The survey was carried out by the use of [equipment, e.g. Leica GS-14] system.
 
-The survey was started on working station [WP]. This point was occupied by a HERE FIX method, observations to Stations ([tie stations]) were tied to this point (see working plan or field book). Thereafter, calibration was made using all the observed stations. The base stayed at working station [WP] for the first observation to the plot beacons. The base was then moved to Station [station], in order to carry out double polar observations to the beacons of the plots. The coordinates were computed by the use of the in-built Datum and Map software. This was obtained by matching the known local coordinates and those of WGS84.
+The survey was started on working station WP1. This point was occupied by a HERE FIX method, observations to Stations ([tie stations]) were tied to this point (see working plan or field book). Thereafter, calibration was made using all the observed stations. The base stayed at working station WP1 for the first observation to the plot beacons. The base was then moved to Station [station], in order to carry out double polar observations to the beacons of the plots. The coordinates were computed by the use of the in-built Datum and Map software. This was obtained by matching the known local coordinates and those of WGS84.
 
 The final Transformation parameters calculated using all Known Stations ([tie stations]) were then used to transform WGS84 coordinates to Local Grid. The transformation parameters are attached to the field book.
 
@@ -129,7 +129,9 @@ export function SurveyRecord() {
   const purposeShown = purposeEdited ? purpose : autoPurpose;
   const [authority, setAuthority] = useState(ri.authority ?? "");
   const [calcBasis, setCalcBasis] = useState(ri.calcBasis ?? "");
-  const [method, setMethod] = useState(ri.method ?? DEFAULT_METHOD_TEXT);
+  // "[WP]" placeholder now defaults to WP1 (client req 2026-10-21: "Write
+  // WP1 by default, user will edit") — also fills it in older saved text.
+  const [method, setMethod] = useState((ri.method ?? DEFAULT_METHOD_TEXT).split("[WP]").join("WP1"));
   // Client req 2026-10-21: new point, editable, "N/A" until the surveyor
   // types any unusual occurrences.
   const [unusualOccurrences, setUnusualOccurrences] = useState(ri.unusualOccurrences ?? "N/A");
