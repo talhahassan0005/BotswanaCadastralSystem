@@ -172,9 +172,16 @@ export function RefMarks() {
 }
 
 function Detail({ mark, user }: { mark: RefMark; user: { lat: number; lon: number } | null }) {
-  // Show the official Lo grid coordinates (nearest 2° odd belt) alongside WGS84.
+  // Show the official Lo grid coordinates (nearest 2° odd belt) and UTM
+  // alongside WGS84 (client req 2026-10-22: "We should also add coordinates
+  // conversion. WGS 84- UTM- LO") — same transformPoint() every other
+  // coordinate-system conversion in the app already goes through, so this
+  // always agrees with Diagrams/GIS Map/CogoWorkspace's own numbers for the
+  // same belt/zone.
   const cm = nearestOddMeridian(mark.lon);
+  const utmZone = nearestUtmZone(mark.lon);
   const [Y, X] = useMemo(() => transformPoint(mark.lat, mark.lon, "WGS84", `Lo${cm}`), [mark, cm]);
+  const [utmE, utmN] = useMemo(() => transformPoint(mark.lat, mark.lon, "WGS84", `UTM${utmZone}S`), [mark, utmZone]);
   const dist = user ? nearestMarks(user.lat, user.lon, 1, [mark])[0]?.km : undefined;
 
   return (
@@ -186,6 +193,8 @@ function Detail({ mark, user }: { mark: RefMark; user: { lat: number; lon: numbe
         {dist != null && <Row label="Distance from you" value={fmtKm(dist)} />}
         <Row label="Latitude (WGS84)" value={mark.lat.toFixed(6)} />
         <Row label="Longitude (WGS84)" value={mark.lon.toFixed(6)} />
+        <Row label={`UTM ${utmZone}S Easting`} value={utmE.toFixed(2)} />
+        <Row label={`UTM ${utmZone}S Northing`} value={utmN.toFixed(2)} />
         <Row label={`Lo ${cm}° Y`} value={Y.toFixed(2)} />
         <Row label={`Lo ${cm}° X`} value={X.toFixed(2)} />
       </dl>
@@ -294,6 +303,14 @@ function RefMap({
 function nearestOddMeridian(lon: number): number {
   const cm = 2 * Math.round((lon - 1) / 2) + 1; // nearest odd integer
   return Math.min(29, Math.max(13, cm)); // clamp to supported Lo13–Lo29 belts
+}
+
+/** UTM zone covering a given longitude — zone N spans [(N-1)*6-180, N*6-180).
+ *  Clamped to UTM34S/35S, the only two zones Botswana's territory needs and
+ *  the only two crs.ts registers (see its own UTM_ZONES). */
+function nearestUtmZone(lon: number): number {
+  const zone = Math.floor((lon + 180) / 6) + 1;
+  return Math.min(35, Math.max(34, zone));
 }
 
 function fmtKm(km: number): string {
