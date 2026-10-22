@@ -116,11 +116,6 @@ interface Props {
    *  the traverse — no boundary side, no coordinate-table row (e.g. a nearby
    *  reference/witness point the surveyor wants visible). */
   extraPoints?: DiagramPoint[];
-  /** Main-figure beacons drawn with a double circle (client req 2026-10-22). */
-  doubleCircleNames?: string[];
-  /** Double Circle tool on: a click on a main-figure beacon calls onBeaconClick. */
-  doubleCircleMode?: boolean;
-  onBeaconClick?: (name: string) => void;
   /** Adjoining-parcel extension lines the user has manually drawn directly
    *  on this diagram (client req 2026-08-22, Part 24 — supersedes the
    *  earlier per-side auto-computed approach for the diagram's own
@@ -197,7 +192,7 @@ const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#
 // ---------------------------------------------------------------------------
 export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   {
-    meta, points: rawPoints, sides: rawSides, parcels, extraPoints, doubleCircleNames, doubleCircleMode, onBeaconClick, manualAnnotations, pendingAnnotationPoint,
+    meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp,
@@ -555,17 +550,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           const pl = placements[i];
           return (
             <g key={`bcn${i}`}>
-              {!!p.name && doubleCircleNames?.includes(p.name) && (
-                <circle cx={bx} cy={by} r={11} fill="none" stroke="black" strokeWidth={1.2} />
-              )}
               <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
-              {doubleCircleMode && !!p.name && (
-                // Larger invisible hit area so a beacon is easy to click.
-                <circle
-                  cx={bx} cy={by} r={16} fill="transparent" style={{ cursor: "pointer" }}
-                  onClick={(e) => { e.stopPropagation(); onBeaconClick?.(p.name as string); }}
-                />
-              )}
               {pl.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#999" strokeWidth={0.5} />}
               {!pl.hidden && (
                 <text x={pl.labelX} y={pl.labelY + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>

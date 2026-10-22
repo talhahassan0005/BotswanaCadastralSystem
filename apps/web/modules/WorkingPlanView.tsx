@@ -188,6 +188,21 @@ export function WorkingPlanView() {
       return next;
     });
   }
+  // Double Circle Tool (client req 2026-10-22 — moved here from Diagrams:
+  // "this should only be at working plan window"; originally added there,
+  // client req 2026-10-22: "sometimes i will wanna put double circles on
+  // the parent/main figure beacons"). Same double-ring beacon convention
+  // as Block Corner above, but an explicit tool-on/off mode instead of
+  // always-clickable — with the tool on, clicking a beacon toggles this
+  // list instead of blockCornerIds (see WorkingPlan.tsx's own click
+  // branching). Stored by name, same JSON-serialisable array pattern.
+  const [doubleCircles, setDoubleCircles] = useState<string[]>(
+    (isWrappedSave ? (savedRaw as { doubleCircles?: string[] }).doubleCircles : null) ?? []
+  );
+  const [doubleCircleMode, setDoubleCircleMode] = useState(false);
+  function toggleDoubleCircle(name: string) {
+    setDoubleCircles((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
+  }
   // Same select/move/resize treatment, but for the manual text notes (client
   // req 2026-08-28) — its own offset store keyed by note id, kept separate
   // from `labelOffsets` (which is keyed by point name) and from the
@@ -447,8 +462,8 @@ export function WorkingPlanView() {
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
   useEffect(() => {
-    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds: Array.from(blockCornerIds) });
-  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds, setWorkingPlanInput]);
+    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds: Array.from(blockCornerIds), doubleCircles });
+  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds, doubleCircles, setWorkingPlanInput]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
@@ -697,6 +712,25 @@ export function WorkingPlanView() {
       const w = toExportWorld(p.east, p.north);
       beaconPoints.push({ x: w.east, y: w.north, label: labelOffsets[p.name]?.hidden ? undefined : p.name, layer: "BEACONS" });
     }
+    // Double Circle Tool rings (client req 2026-10-22, moved here from
+    // Diagrams — same approach as that module's own DXF export: approximate
+    // each ring as a 36-point polygon around the beacon's live screen
+    // position, radii matching the sheet's own beaconR/beaconR*2.4).
+    if (doubleCircles.length) {
+      const beaconR = allBeacons.length > 400 ? 1.4 : allBeacons.length > 150 ? 2 : 2.8;
+      for (const p of allBeacons) {
+        if (!p.name || !doubleCircles.includes(p.name)) continue;
+        const c = t!.toScreenLive ? t!.toScreenLive(p.east, p.north) : t!.toScreen(p.east, p.north);
+        for (const r of [beaconR, beaconR * 2.4]) {
+          const pts = Array.from({ length: 36 }, (_, k) => {
+            const ang = (k / 36) * 2 * Math.PI;
+            const q = t!.toWorld(c.x + r * Math.cos(ang), c.y + r * Math.sin(ang));
+            return { x: q.east, y: q.north };
+          });
+          polylines.push({ pts, closed: true, layer: "BEACONS" });
+        }
+      }
+    }
     for (const r of refMarks) {
       const w = toExportWorld(r.east, r.north);
       beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "REFERENCE" });
@@ -940,6 +974,23 @@ export function WorkingPlanView() {
           <Button variant="ghost" onClick={print}>Print / Save PDF</Button>
         </div>
       </Card>
+
+      {/* Double Circle Tool (client req 2026-10-22 — moved here from
+          Diagrams: "this should only be at working plan window"). */}
+      <Card title="Double Circles">
+        <p className="mb-2 text-xs text-slate-400">
+          Turn the tool on, then click a beacon on the preview to give it a double circle; click it again to
+          take it off.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
+            {doubleCircleMode ? "Click beacons… (click here when done)" : "Double Circle Tool"}
+          </Button>
+          {doubleCircles.length > 0 && (
+            <Button variant="ghost" onClick={() => setDoubleCircles([])}>Clear all ({doubleCircles.length})</Button>
+          )}
+        </div>
+      </Card>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -995,6 +1046,9 @@ export function WorkingPlanView() {
             onLabelResize={handleLabelResize}
             blockCornerIds={blockCornerIds}
             onToggleBlockCorner={toggleBlockCorner}
+            doubleCircles={doubleCircles}
+            doubleCircleMode={doubleCircleMode}
+            onBeaconClick={toggleDoubleCircle}
             textOffsets={textOffsets}
             selectedTextId={selectedTextId}
             onTextClick={(id) => handleTextClick(id)}

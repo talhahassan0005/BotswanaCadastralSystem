@@ -189,7 +189,6 @@ export function Diagrams() {
     leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
     annotations?: ManualAnnotation[];
     texts?: ManualText[];
-    doubleCircles?: string[];
   };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
@@ -454,13 +453,6 @@ export function Diagrams() {
   // immediately.
   const [texts, setTexts] = useState<ManualText[]>(di.texts ?? []);
   const [addingText, setAddingText] = useState(false);
-  // Beacons drawn with a double circle (client req 2026-10-22: "sometimes i
-  // will wanna put double circles on the parent/main figure beacons") —
-  // with the tool on, clicking a beacon toggles it. Saved by beacon name.
-  const [doubleCircles, setDoubleCircles] = useState<string[]>(di.doubleCircles ?? []);
-  const [doubleCircleMode, setDoubleCircleMode] = useState(false);
-  const toggleDoubleCircle = (name: string) =>
-    setDoubleCircles((cur) => (cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]));
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
   // Interactive text rotation via the selected text's rotate handle (client
@@ -903,8 +895,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, doubleCircles });
-  }, [kind, meta, leaseMeta, annotations, texts, doubleCircles, liveCoordinateSystem, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts });
+  }, [kind, meta, leaseMeta, annotations, texts, liveCoordinateSystem, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
@@ -995,15 +987,6 @@ export function Diagrams() {
       const u = t.toWorld(1, 0);
       const metresPerUnit = Math.hypot(u.east - o.east, u.north - o.north) || 1e-6;
       const w = (x: number, y: number) => t.toWorld(x, y);
-      // Double-circle beacons: both rings, same sizes as on the sheet (r 5 / 11 units).
-      for (const p of points) {
-        if (!p.name || !doubleCircles.includes(p.name)) continue;
-        const c = t.toScreenLive ? t.toScreenLive(p.east, p.north) : t.toScreen(p.east, p.north);
-        for (const r of [5, 11]) {
-          const pts = Array.from({ length: 36 }, (_, k) => { const a = (k / 36) * 2 * Math.PI; const q = w(c.x + r * Math.cos(a), c.y + r * Math.sin(a)); return { x: q.east, y: q.north }; });
-          sheetLines.push({ pts, closed: true, layer: "BEACONS" });
-        }
-      }
       const line = (x1: number, y1: number, x2: number, y2: number) => {
         const a = w(x1, y1), b = w(x2, y2);
         sheetLines.push({ pts: [{ x: a.east, y: a.north }, { x: b.east, y: b.north }], closed: false, layer: "SHEET" });
@@ -1648,22 +1631,6 @@ export function Diagrams() {
                   </div>
                 </Card>
               )}
-              {!isBorehole && !isLease && (
-                <Card title="Double Circles">
-                  <p className="mb-2 text-xs text-slate-400">
-                    Turn the tool on, then click a beacon of the main figure on the preview to give it a
-                    double circle; click it again to take it off.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
-                      {doubleCircleMode ? "Click beacons… (click here when done)" : "Double Circle Tool"}
-                    </Button>
-                    {doubleCircles.length > 0 && (
-                      <Button variant="ghost" onClick={() => setDoubleCircles([])}>Clear all ({doubleCircles.length})</Button>
-                    )}
-                  </div>
-                </Card>
-              )}
               {!isBorehole && (
                 <Card title="Custom Text">
                   <p className="mb-2 text-xs text-slate-400">
@@ -1740,9 +1707,6 @@ export function Diagrams() {
                 points={points}
                 sides={sides}
                 extraPoints={extraPoints}
-                doubleCircleNames={doubleCircles}
-                doubleCircleMode={doubleCircleMode}
-                onBeaconClick={toggleDoubleCircle}
                 manualAnnotations={[...annotations, ...autoShared.annotations]}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}

@@ -122,6 +122,19 @@ interface Props {
    *  beacon's own circle (not its label) to toggle it. */
   blockCornerIds?: Set<string>;
   onToggleBlockCorner?: (name: string) => void;
+  /** Beacons marked with a double circle via the dedicated Double Circle
+   *  Tool (client req 2026-10-22 — moved here from Diagrams, "this should
+   *  only be at working plan window"; originally client req 2026-10-22
+   *  there: "sometimes i will wanna put double circles on the parent/main
+   *  figure beacons"). Drawn with the same double-ring as a block corner
+   *  (they're visually identical either way) — a separate list so the two
+   *  reasons for having one can be toggled independently. While the tool
+   *  is on, clicking a beacon's circle calls onBeaconClick instead of
+   *  onToggleBlockCorner (same click target, different action per mode,
+   *  same convention CogoWorkspace's own draftTool branches use). */
+  doubleCircles?: string[];
+  doubleCircleMode?: boolean;
+  onBeaconClick?: (name: string) => void;
   /** Same select/move/resize treatment as the beacon labels above, but for
    *  the manual text notes — keyed by the note's own `id` instead of a point
    *  name (client req 2026-08-28: "I want to be able to select, resize, and
@@ -272,6 +285,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onLabelResize,
     blockCornerIds,
     onToggleBlockCorner,
+    doubleCircles,
+    doubleCircleMode,
+    onBeaconClick,
     textOffsets,
     selectedTextId,
     onTextClick,
@@ -934,6 +950,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         const isSel = !!p.name && selectedLabel === p.name;
         const boxW = 10 * scale, boxH = 7 * scale;
         const isBlockCorner = !!p.name && !!blockCornerIds?.has(p.name);
+        // Double Circle Tool (client req 2026-10-22, moved here from
+        // Diagrams) — a second, independent reason for the same double-ring
+        // (see the Props doc above). Either flag draws the same ring, so a
+        // beacon that's both doesn't double up on it.
+        const isDoubleCircled = !!p.name && !!doubleCircles?.includes(p.name);
         return (
           <g key={`b${i}`}>
             {showDot && (
@@ -941,7 +962,12 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 cx={bx} cy={by} r={beaconR}
                 fill="white" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)}
                 style={{ cursor: p.name ? "pointer" : "default" }}
-                onClick={(e) => { e.stopPropagation(); if (p.name) onToggleBlockCorner?.(p.name); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!p.name) return;
+                  if (doubleCircleMode) onBeaconClick?.(p.name);
+                  else onToggleBlockCorner?.(p.name);
+                }}
               />
             )}
             {/* Double circle for a block corner (client req 2026-09-07:
@@ -949,7 +975,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 circles on block corners") — a second, larger ring around
                 the same centre, matching the reference screenshot's
                 convention. Click the inner circle above to toggle. */}
-            {showDot && isBlockCorner && (
+            {showDot && (isBlockCorner || isDoubleCircled) && (
               <circle
                 cx={bx} cy={by} r={beaconR * 2.4}
                 fill="none" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)}
