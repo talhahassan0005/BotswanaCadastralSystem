@@ -978,10 +978,6 @@ export function WorkingPlanView() {
       {/* Double Circle Tool (client req 2026-10-22 — moved here from
           Diagrams: "this should only be at working plan window"). */}
       <Card title="Double Circles">
-        <p className="mb-2 text-xs text-slate-400">
-          Turn the tool on, then click a beacon on the preview to give it a double circle; click it again to
-          take it off.
-        </p>
         <div className="flex items-center gap-2">
           <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
             {doubleCircleMode ? "Click beacons… (click here when done)" : "Double Circle Tool"}

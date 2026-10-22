@@ -1609,15 +1609,6 @@ export function Diagrams() {
               </Card>
               {!isBorehole && (
                 <Card title="Adjoining Parcels">
-                  <p className="mb-2 text-xs text-slate-400">
-                    These dashed extension lines are added by hand, the same way a surveyor marks them up on
-                    paper. Click "Draw Extension Line" below, then click two points directly on the preview — the
-                    line is added straight away (no lot number to type). Neighbouring lots that share a side with
-                    this plot in the project are marked automatically.
-                    Click an existing line to select it — drag the line itself to move it, drag an end-handle to
-                    stretch that end (hold Shift to rotate the whole line around the other end instead), type an
-                    exact length/angle while dragging, or press Delete to remove it. Esc cancels a drag in progress.
-                  </p>
                   <div className="flex items-center gap-2">
                     <Button
                       variant={drawingAnnotation ? "primary" : "ghost"}
@@ -1633,14 +1624,6 @@ export function Diagrams() {
               )}
               {!isBorehole && (
                 <Card title="Custom Text">
-                  <p className="mb-2 text-xs text-slate-400">
-                    For a note the fixed template wording doesn't cover — e.g. a remark next to a specific
-                    corner (client req 2026-08-24). Click "Add Text" below, then click where it should sit on
-                    the preview and type it. Click an existing note to select it, then drag to move it,
-                    drag its round handle to rotate it (Shift snaps to 15°), double-click to edit its wording
-                    and angle, or Delete to remove it. "Copy Selected Text" (or Ctrl+C, then Ctrl+V where the
-                    mouse is) duplicates it, so the same wording doesn't need typing again.
-                  </p>
                   <div className="flex items-center gap-2">
                     <Button
                       variant={addingText ? "primary" : "ghost"}
