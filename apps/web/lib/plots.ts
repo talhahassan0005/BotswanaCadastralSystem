@@ -28,6 +28,21 @@ export interface Plot {
  *  promoted out of WorkingPlan.tsx 2026-08-30 so the General Plan module's
  *  own title block — "LOTS {range} {name}", matching the GC-122 reference —
  *  can reuse it instead of forking a second copy). */
+/** Client req 2026-10-22: Diagrams' "Land called (lot name)" field now
+ *  auto-fills as the full "LOT {number}" text (formatLotName in
+ *  Diagrams.tsx), not just the bare number it used to hold. Anything that
+ *  treats a lot "name" as if it were the bare NUMBER — a numeric-range
+ *  title ("LOTS 2121-2125 ..."), an inset/compact label, a match against
+ *  cogoPlots' own bare numbers — needs that prefix stripped back off
+ *  first, or it silently breaks (a tiny inset label overflowing with
+ *  "LOT 2121" instead of "2121", a range title doubling the word to
+ *  "LOTS LOT 2121 ..."). Shared here so every "single plot, no
+ *  cogoPlots/resolvedPlots to read a real bare number from" fallback uses
+ *  the same stripping logic instead of forking its own copy. */
+export function bareLotNumber(lotName: string): string {
+  return lotName.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "");
+}
+
 export function formatLotRange(numbers: string[]): string {
   const trimmed = numbers.map((n) => n.trim()).filter(Boolean);
   const allNumeric = trimmed.length > 0 && trimmed.every((n) => /^\d+$/.test(n));

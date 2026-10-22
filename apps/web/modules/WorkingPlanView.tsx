@@ -6,7 +6,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
-import { dedupePoints } from "@/lib/plots";
+import { bareLotNumber, dedupePoints } from "@/lib/plots";
 import { landCalledName, currentMonthYear } from "@/lib/diagramLayout";
 
 /**
@@ -678,7 +678,11 @@ export function WorkingPlanView() {
       return t!.toWorld(s.x, s.y);
     }
 
-    const activePlots = resolvedPlots.length > 0 ? resolvedPlots : [{ number: effectiveMeta.lotName, points }];
+    // bareLotNumber: effectiveMeta.lotName reads "LOT {number}" (client req
+    // 2026-10-22) — this single-plot fallback's `number` should match the
+    // bare numbers resolvedPlots/cogoPlots use, same reasoning as
+    // WorkingPlan.tsx's own identical fallback.
+    const activePlots = resolvedPlots.length > 0 ? resolvedPlots : [{ number: bareLotNumber(effectiveMeta.lotName), points }];
     for (const plot of activePlots) {
       if (plot.points.length < 2) continue;
       polylines.push({

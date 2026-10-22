@@ -2,7 +2,7 @@
 
 import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
-import { dedupePoints, formatLotRange } from "@/lib/plots";
+import { bareLotNumber, dedupePoints, formatLotRange } from "@/lib/plots";
 import { declutterLabels } from "@/lib/labelLayout";
 
 // ---------------------------------------------------------------------------
@@ -301,7 +301,12 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // single implicit figure when the caller has added one or more plots from
   // the Cadastral work station.
   const useMultiPlot = !!plots && plots.length > 0;
-  const activePlots: WorkingPlanPlot[] = useMultiPlot ? plots! : [{ number: meta.lotName, points }];
+  // bareLotNumber: meta.lotName now reads "LOT {number}" (client req
+  // 2026-10-22), but `number` here feeds the inset's compact lot-number
+  // label and the "LOTS {range} ..." title (formatLotRange, which only
+  // recognises a purely-numeric string) — both need the bare number, not
+  // the full "Land called" text.
+  const activePlots: WorkingPlanPlot[] = useMultiPlot ? plots! : [{ number: bareLotNumber(meta.lotName), points }];
   const allPoints = dedupePoints(activePlots);
 
   // ---- Empty / degenerate state ----
