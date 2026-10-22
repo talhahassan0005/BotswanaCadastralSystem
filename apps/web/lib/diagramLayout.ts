@@ -69,6 +69,18 @@ export interface DiagramMeta {
   parentDiagramNo?: string;  // "The immediate parent diagram is annexed to No."
   annexName?: string;        // optional name printed above "Registrar of Deeds"
   certLine?: string;         // optional manual override for the certification line
+  // Client req 2026-10-22, WhatsApp voice note "where do i change paper
+  // size" + "sometimes points are too many and everything do not fit in A4
+  // page... now we will have to fit in A3 or A2": the frame, the top
+  // table's row band, column widths and every font size on the sheet are
+  // all fixed to the exact mm figures measured off the official A4
+  // reference (Part 23) — a beacon-heavy plot's table legitimately needs
+  // more vertical room than A4 has once its row-height floor is hit, and
+  // that was a hard ceiling with nowhere to grow into. A3/A2 scale the
+  // WHOLE template up by the true ISO paper-size ratio (A3 = A4×√2, A2 =
+  // A4×2 — see PAGE_SCALE below), not just print the same cramped A4
+  // layout onto bigger paper.
+  paperSize?: "A4" | "A3" | "A2";
 }
 
 /** Certification line wording — differs per diagram type per SG convention.
@@ -233,27 +245,39 @@ export function computeDiagramLayout(
   // A4 page size, so print CSS no longer needs a separate margin hack to
   // position the frame on the page (see Diagrams.tsx's printDiagram()).
   // ---------------------------------------------------------------------
-  const MM = 10;
-  const VB_W = 210 * MM; // 2100 — full A4 width
-  const VB_H = 297 * MM; // 2970 — full A4 height
+  const MM = 10; // units per PHYSICAL mm of paper — unchanged by paper size, so viewBox units always equal real print mm (see Diagrams.tsx's printDiagram()).
+  // True ISO paper-size ratio (client req 2026-10-22 — see DiagramMeta.paperSize
+  // above): A3's mm dimensions are exactly A4's × √2, A2's are exactly A4's
+  // × 2. Scaling every mm-measured figure below by this one factor keeps
+  // the whole template — frame, table band, columns, fonts, spacing — at
+  // the same PROPORTIONS as the A4 reference, just literally bigger, which
+  // is what actually gives a beacon-heavy plot's table room to grow into
+  // instead of overflowing a fixed-size page.
+  const PAGE_SCALE = meta.paperSize === "A3" ? Math.SQRT2 : meta.paperSize === "A2" ? 2 : 1;
+  const VB_W = 210 * PAGE_SCALE * MM; // full page width
+  const VB_H = 297 * PAGE_SCALE * MM; // full page height
 
-  const FRAME_X = 24.8 * MM;
-  const FRAME_Y = 12.2 * MM;
-  const FRAME_W = 160.4 * MM;
-  const FRAME_H = 272.9 * MM;
+  const FRAME_X = 24.8 * PAGE_SCALE * MM;
+  const FRAME_Y = 12.2 * PAGE_SCALE * MM;
+  const FRAME_W = 160.4 * PAGE_SCALE * MM;
+  const FRAME_H = 272.9 * PAGE_SCALE * MM;
   const FRAME_RIGHT = FRAME_X + FRAME_W;
   const FRAME_BOTTOM = FRAME_Y + FRAME_H;
 
   // Font sizes — increased across the board per the client's explicit
   // "increase font" feedback comparing the app's output to the reference.
-  const FS_TABLE_HEAD = 32, FS_TABLE_SUB = 28, FS_CONSTANTS = 23;
-  const FS_BEACON_HEAD = 34, FS_BEACON = 31, FS_LOCALITY = 38;
-  const FS_DOS = 29, FS_ARROW = 26, FS_SCALE = 26;
-  const FS_LEGAL = 37, FS_LANDCALLED = 37, FS_PARENT = 31, FS_CERT = 31;
+  // Scaled by PAGE_SCALE too (client req 2026-10-22) so text on an A3/A2
+  // sheet reads at the same PHYSICAL size on paper as it does on A4 —
+  // without this, the same font-size numbers on a bigger viewBox would
+  // print smaller, not bigger, relative to the page.
+  const FS_TABLE_HEAD = 32 * PAGE_SCALE, FS_TABLE_SUB = 28 * PAGE_SCALE, FS_CONSTANTS = 23 * PAGE_SCALE;
+  const FS_BEACON_HEAD = 34 * PAGE_SCALE, FS_BEACON = 31 * PAGE_SCALE, FS_LOCALITY = 38 * PAGE_SCALE;
+  const FS_DOS = 29 * PAGE_SCALE, FS_ARROW = 26 * PAGE_SCALE, FS_SCALE = 26 * PAGE_SCALE;
+  const FS_LEGAL = 37 * PAGE_SCALE, FS_LANDCALLED = 37 * PAGE_SCALE, FS_PARENT = 31 * PAGE_SCALE, FS_CERT = 31 * PAGE_SCALE;
   // Name and title kept equal on purpose (client req 2026-08-22: "same
   // font size as how the lower one is") — a later across-the-board font
   // bump accidentally drifted them apart by 1pt; restored here.
-  const FS_SURVEYOR = 26, FS_SURVEYOR_TITLE = 26, FS_FOOTER = 21, FS_ANNEX = 24;
+  const FS_SURVEYOR = 26 * PAGE_SCALE, FS_SURVEYOR_TITLE = 26 * PAGE_SCALE, FS_FOOTER = 21 * PAGE_SCALE, FS_ANNEX = 24 * PAGE_SCALE;
 
   // ---- top data table: fixed 51.0mm band, 14.0mm header for a normal-
   // sized plot (client req, Part 23) — the data area's row height used to
@@ -271,12 +295,12 @@ export function computeDiagramLayout(
   const tx = FRAME_X;
   const tw = FRAME_W;
   const ty = FRAME_Y;
-  const headH = 14.0 * MM;
+  const headH = 14.0 * PAGE_SCALE * MM;
   const dataTop = ty + headH;
   const n = Math.max(points.length, sides.length, 1);
   const dataFS = FS_TABLE_SUB;
   const ROW_H_MIN = FS_TABLE_SUB / 0.55; // the row height a fixed-size row actually needs
-  const rowH = Math.max((51.0 * MM - headH) / n, ROW_H_MIN);
+  const rowH = Math.max((51.0 * PAGE_SCALE * MM - headH) / n, ROW_H_MIN);
   const dataH = rowH * n;
   const topBandH = headH + dataH;
   const tableBottom = ty + topBandH;
@@ -290,21 +314,21 @@ export function computeDiagramLayout(
   // spare room from the D.S.M No. box (which only ever holds one short
   // number) rather than moving the frame or any other fixed measurement.
   const maxSideLabelChars = Math.max(2, ...sides.map((s) => sideLabel(s.from, s.to).length));
-  const sideValExtra = Math.min(200, Math.max(0, maxSideLabelChars * dataFS * 0.62 + 16 - 7.9 * MM));
-  const xSideVal = tx + 7.9 * MM + sideValExtra; // between the row-label and its distance value
-  const xMetR = xSideVal + 25.6 * MM; // right of SIDES/METRES group
+  const sideValExtra = Math.min(200 * PAGE_SCALE, Math.max(0, maxSideLabelChars * dataFS * 0.62 + 16 * PAGE_SCALE - 7.9 * PAGE_SCALE * MM));
+  const xSideVal = tx + 7.9 * PAGE_SCALE * MM + sideValExtra; // between the row-label and its distance value
+  const xMetR = xSideVal + 25.6 * PAGE_SCALE * MM; // right of SIDES/METRES group
   const xDir = xMetR;                       // DIRECTIONS column
-  const xDirR = xDir + 27.9 * MM;           // right of DIRECTIONS
+  const xDirR = xDir + 27.9 * PAGE_SCALE * MM;           // right of DIRECTIONS
   const xPt = xDirR;                        // point-letter column
-  const xPtR = xPt + 6.6 * MM;
+  const xPtR = xPt + 6.6 * PAGE_SCALE * MM;
   const xY = xPtR;                          // Y coordinate column
-  const xYR = xY + 25.5 * MM;
+  const xYR = xY + 25.5 * PAGE_SCALE * MM;
   const xX = xYR;                           // X coordinate column
-  const xXR = xX + 27.0 * MM;
+  const xXR = xX + 27.0 * PAGE_SCALE * MM;
   // Shifted a bit left of the exact Part 23 boundary (client req
   // 2026-08-23) — widens the D.S.M/Approved/Director column slightly;
   // exact figure to follow once the client sends their own measurement.
-  const xDsm = xXR - 40;                    // D.S.M No. box
+  const xDsm = xXR - 40 * PAGE_SCALE;                    // D.S.M No. box
   const tableRight = tx + tw;               // = FRAME_RIGHT
   // header sub-row baselines and the partial-height Y/X dividers (no exact
   // figures given for these internal header rows — proportioned the same
@@ -319,11 +343,15 @@ export function computeDiagramLayout(
 
   // ---- bottom registration table (Part 23) — fixed 34.0mm band starting
   // 251.1mm from the page top, dividers at 53.4mm/111.4mm from the
-  // frame's left edge. Independent of the top table's row count. ----
-  const annTop = 251.1 * MM;
-  const annBottom = 285.1 * MM; // = FRAME_BOTTOM
-  const annC1 = FRAME_X + 53.4 * MM;
-  const annC2 = FRAME_X + 111.4 * MM;
+  // frame's left edge. Independent of the top table's row count — which is
+  // exactly why a beacon-heavy plot's top table could grow tall enough to
+  // run into this one on a fixed A4 page (client req 2026-10-22); scaling
+  // these by PAGE_SCALE on A3/A2 is what actually buys the top table more
+  // room to grow into before that happens.
+  const annTop = 251.1 * PAGE_SCALE * MM;
+  const annBottom = 285.1 * PAGE_SCALE * MM; // = FRAME_BOTTOM
+  const annC1 = FRAME_X + 53.4 * PAGE_SCALE * MM;
+  const annC2 = FRAME_X + 111.4 * PAGE_SCALE * MM;
   const dash = (v?: string) => (v && v.trim() ? v : "");
 
   // ---- middle zone (Part 19 items 2-7: beacon description, locality,
@@ -339,7 +367,7 @@ export function computeDiagramLayout(
   const figureLines = wrapSvgWords(
     ["The", "figure", ...figureLetters.split(/\s+/).filter(Boolean), "represents", ...areaText(meta.areaHa).split(" "), "of", "land", "called"],  // areaText already lowercase
 
-    tw - 80,
+    tw - 80 * PAGE_SCALE,
     FS_LEGAL
   );
   const LEGAL_LH = FS_LEGAL * 1.5;
@@ -348,7 +376,7 @@ export function computeDiagramLayout(
   // req 2026-08-24: an unusually long lot name/location used to just run
   // off the sheet as one un-wrapped line instead of dropping to a second).
   const landCalled = landCalledName(meta.lotName, meta.location);
-  const landCalledLines = wrapSvgWords(landCalled.split(/\s+/).filter(Boolean), tw - 80, FS_LANDCALLED);
+  const landCalledLines = wrapSvgWords(landCalled.split(/\s+/).filter(Boolean), tw - 80 * PAGE_SCALE, FS_LANDCALLED);
   // Optional "(A PORTION OF ...)" ancestry lines — client req 2026-08-23:
   // long-history plots (subdivided from a lot, itself a portion of another
   // lot, itself a portion of a cadastre) need up to 3 stacked lines here,
@@ -361,7 +389,7 @@ export function computeDiagramLayout(
     .map((p) => (p ?? "").trim())
     .filter(Boolean)
     .map((p) => {
-      const wrapped = wrapSvgWords(p.split(/\s+/).filter(Boolean), tw - 100, FS_LEGAL);
+      const wrapped = wrapSvgWords(p.split(/\s+/).filter(Boolean), tw - 100 * PAGE_SCALE, FS_LEGAL);
       if (wrapped.length === 0) return wrapped;
       const withParens = [...wrapped];
       withParens[0] = `(${withParens[0]}`;
@@ -371,7 +399,7 @@ export function computeDiagramLayout(
   const toTitleCase = (s: string) => s.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   const situateLines = wrapSvgWords(
     ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)],
-    tw - 80,
+    tw - 80 * PAGE_SCALE,
     FS_BEACON_HEAD
   );
   // A little extra breathing room between each of this block's sub-sections
@@ -381,7 +409,7 @@ export function computeDiagramLayout(
   // "...LAND CALLED" line, after the underlined lot name, and after the
   // "(A PORTION OF...)" ancestry line(s), each right before the next block
   // starts.
-  const LEGAL_EXTRA_GAP = 25;
+  const LEGAL_EXTRA_GAP = 25 * PAGE_SCALE;
   // Reserve room at the bottom of the middle zone for the legal-description
   // block (however many lines each free-text piece wraps to) + the
   // certificate/surveyor lines, so the figure box above it never overlaps
@@ -394,7 +422,7 @@ export function computeDiagramLayout(
       2 + // certification + deductions lines
       3) * // spare margin, matching the original fixed-block breathing room
       LEGAL_LH +
-    60 +
+    60 * PAGE_SCALE +
     LEGAL_EXTRA_GAP * 3;
   const legalY0 = annTop - legalBlockH;
 
@@ -408,20 +436,20 @@ export function computeDiagramLayout(
   const beaconLines = meta.beaconDescription
     .split(/\s*[;\n]\s*/)
     .filter(Boolean)
-    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8, FS_BEACON_HEAD));
+    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
   const BD_LH = FS_BEACON * 1.35;
-  const bdHeadingY = midTop + 40;
-  const bdLinesY0 = midTop + 74;
+  const bdHeadingY = midTop + 40 * PAGE_SCALE;
+  const bdLinesY0 = midTop + 74 * PAGE_SCALE;
   const bdBlockBottom = bdLinesY0 + Math.max(beaconLines.length, 1) * BD_LH;
-  const localityY = bdBlockBottom + 44;
+  const localityY = bdBlockBottom + 44 * PAGE_SCALE;
 
-  const figTop = localityY + 44;
-  const figBottom = Math.max(figTop + 400, legalY0 - 40);
+  const figTop = localityY + 44 * PAGE_SCALE;
+  const figBottom = Math.max(figTop + 400 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
   // Reserve the extra margin on the LEFT of the figure box, not the right
   // (client req 2026-08-22) — the north arrow moved to the left side of the
   // sheet, so that's where the box now needs the spare 300 units of room.
-  const fig = { x: tx + 300, y: figTop, w: tw - 300 - 60, h: figBottom - figTop };
-  const pad = 60;
+  const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
+  const pad = 60 * PAGE_SCALE;
   // Figure bounds include any extra (non-traverse) marks so they stay visible.
   const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
   const bN = [...nsv, ...(extraPoints ?? []).map((p) => p.north)];
@@ -464,18 +492,18 @@ export function computeDiagramLayout(
   // column geometry (client req 2026-08-22/2026-08-26) — moved here so the
   // DXF export draws the exact same open-bottom box the SVG does. ====
   const dsmBoxTop = ty + headH;
-  const dsmApprovedY = dsmBoxTop + 35;
+  const dsmApprovedY = dsmBoxTop + 35 * PAGE_SCALE;
   // +430 is a deliberate, client-tested gap between "Approved" and
   // "Director of Surveys" (client req 2026-08-26) — this is NOT the
   // earlier-suspected stray concurrent-session edit; it's the client's own
   // manual adjustment, made permanent here so it stops being reverted.
-  const dosY1 = dsmApprovedY + 400 + FS_DOS * 2.2;
+  const dosY1 = dsmApprovedY + 400 * PAGE_SCALE + FS_DOS * 2.2;
   const dosY2 = dosY1 + FS_DOS * 1.3;
   const dosLineY = dosY2 + FS_DOS * 1.1;
 
   // ===================== North arrow anchor (client req 2026-08-22) =====
-  const arrowX = Math.max(tx + 90, Math.min(fig.x - 90, offX - 90));
-  const arrowY = fig.y + 200;
+  const arrowX = Math.max(tx + 90 * PAGE_SCALE, Math.min(fig.x - 90 * PAGE_SCALE, offX - 90 * PAGE_SCALE));
+  const arrowY = fig.y + 200 * PAGE_SCALE;
 
   // ===================== Legal description + certificate/surveyor
   // (client req 2026-08-22) — exact same line positions as the SVG. =====
@@ -483,10 +511,10 @@ export function computeDiagramLayout(
   const parentY0 = landCalledY0 + landCalledLines.length * LEGAL_LH + LEGAL_EXTRA_GAP;
   const parentTotalLines = parentLineGroups.reduce((a, g) => a + g.length, 0);
   const situateY0 = parentY0 + parentTotalLines * LEGAL_LH + LEGAL_EXTRA_GAP;
-  const deductionsY = annTop - 20;
+  const deductionsY = annTop - 20 * PAGE_SCALE;
   const certY1 = deductionsY - FS_CERT * 1.15;
-  const leftColW = VB_W - 700 - (tx + 4) - 20;
-  const rightColW = tableRight - (VB_W - 700) - 20;
+  const leftColW = VB_W - 700 * PAGE_SCALE - (tx + 4 * PAGE_SCALE) - 20 * PAGE_SCALE;
+  const rightColW = tableRight - (VB_W - 700 * PAGE_SCALE) - 20 * PAGE_SCALE;
   // Every word of the certification line shows (client req 2026-10-21: "all
   // words should fit in" — a long Framed/Compiled line was cut to "I...").
   // The font shrinks a little first; past that the line wraps, extra lines
@@ -501,7 +529,7 @@ export function computeDiagramLayout(
   // (client req 2026-08-22/2026-08-24) — same shrink-to-fit/wrap rules. ===
   // All right-column values share ONE x position — the longest label's right
   // edge — so they form a clean aligned column (client req 2026-10-xx).
-  const valueX = (label: string) => annC2 + 12 + label.length * FS_BEACON_HEAD * 0.55 + 8;
+  const valueX = (label: string) => annC2 + 12 * PAGE_SCALE + label.length * FS_BEACON_HEAD * 0.55 + 8 * PAGE_SCALE;
   const _valueXAligned = valueX("General Plan No."); // longest label sets the column
   const gpNoX = _valueXAligned;
   const srNoX = _valueXAligned;
@@ -515,17 +543,18 @@ export function computeDiagramLayout(
   const comp = dash(meta.comp); // full value, never truncated — callers shrink-to-fit
   const degreeSquare = dash(meta.degreeSquare); // full value, never truncated — callers shrink-to-fit
   const lirNo = dash(meta.lirNo); // full value, never truncated — callers shrink-to-fit
-  const annexedTo = clampWords(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
-  const annexedDate = clampWords(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 - (tx + 10) - 20, FS_BEACON_HEAD);
-  const annexedFavour = clampWords(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10) - 10, FS_BEACON_HEAD);
+  const annexedTo = clampWords(`No. ${dash(meta.annexedToNo)}`, annC1 - (tx + 10 * PAGE_SCALE) - 10 * PAGE_SCALE, FS_BEACON_HEAD);
+  const annexedDate = clampWords(`Dated ${dash(meta.annexedDate)}`, annC1 - 140 * PAGE_SCALE - (tx + 10 * PAGE_SCALE) - 20 * PAGE_SCALE, FS_BEACON_HEAD);
+  const annexedFavour = clampWords(`of ${dash(meta.annexedInFavourOf)}`, annC1 - (tx + 10 * PAGE_SCALE) - 10 * PAGE_SCALE, FS_BEACON_HEAD);
   const annexNameLines = meta.annexName && meta.annexName.trim()
-    ? clampToLines(meta.annexName, annC1 - tx - 40, FS_BEACON_HEAD, 2)
+    ? clampToLines(meta.annexName, annC1 - tx - 40 * PAGE_SCALE, FS_BEACON_HEAD, 2)
     : [];
   const ANNEX_NAME_LH = FS_BEACON_HEAD * 1.15;
-  const parentDiagramNo = clampWords(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50) - 10, FS_BEACON_HEAD);
+  const parentDiagramNo = clampWords(`No. ${dash(meta.parentDiagramNo || meta.parentDiagram)}`, annC2 - (annC1 + 50 * PAGE_SCALE) - 10 * PAGE_SCALE, FS_BEACON_HEAD);
 
   return {
     points, sides,
+    PAGE_SCALE,
     MM, VB_W, VB_H,
     FRAME_X, FRAME_Y, FRAME_W, FRAME_H, FRAME_RIGHT, FRAME_BOTTOM,
     FS_TABLE_HEAD, FS_TABLE_SUB, FS_CONSTANTS,

@@ -1276,18 +1276,22 @@ export function Diagrams() {
     }
     // Root-caused (client req 2026-08-22, Part 23): the sheet's own margins
     // (24.8mm sides, 12.2/11.9mm top/bottom) are now baked directly into
-    // SgDiagram's geometry — its viewBox IS a full A4 page (2100x2970 = a
-    // 210:297 ratio) with the frame positioned inside it, not a 160x270mm
-    // sheet relying on separate CSS margins to land correctly on A4. So the
-    // print rule just needs the SVG at exactly A4 size with zero margin —
-    // no more mm-rounding tightrope between a sub-page-sized sheet and
-    // hand-tuned CSS margins.
+    // SgDiagram's geometry — its viewBox IS a full page (A4 = 2100x2970, a
+    // 210:297 ratio, scaled up for A3/A2 — client req 2026-10-22, see
+    // diagramLayout.ts's PAGE_SCALE) with the frame positioned inside it,
+    // not a 160x270mm sheet relying on separate CSS margins to land
+    // correctly on the page. So the print rule just needs the SVG at
+    // exactly the chosen paper's physical size with zero margin — no more
+    // mm-rounding tightrope between a sub-page-sized sheet and hand-tuned
+    // CSS margins.
+    const pageMm = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "420mm" : "210mm";
+    const pageMmH = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "594mm" : "297mm";
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>` +
-        `@page{size:A4 portrait;margin:0}` +
+        `@page{size:${meta.paperSize ?? "A4"} portrait;margin:0}` +
         `body{margin:0}` +
-        `svg{width:210mm;height:297mm;display:block}` +
+        `svg{width:${pageMm};height:${pageMmH};display:block}` +
         `.print-note{position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#78350f;font:14px/1.4 system-ui,sans-serif;padding:10px 16px;z-index:10}` +
         `.print-note button{margin-left:12px;padding:4px 12px;font-weight:600;background:#0f766e;color:#fff;border:none;border-radius:4px;cursor:pointer}` +
         `@media print{.print-note{display:none}}` +
@@ -1591,6 +1595,25 @@ export function Diagrams() {
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
                   <Field label="Scale 1:N"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+                  {/* Client req 2026-10-22, voice note "where do i change
+                      paper size" + "sometimes points are too many and
+                      everything do not fit in A4 page... now we will have
+                      to fit in A3 or A2": the whole template (table band,
+                      columns, fonts, spacing) scales up by the true A-series
+                      ratio on A3/A2, not just a bigger blank page around the
+                      same cramped A4 layout — see diagramLayout.ts's
+                      PAGE_SCALE. */}
+                  <Field label="Paper size">
+                    <Select
+                      value={meta.paperSize ?? "A4"}
+                      onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" ? v : "A4") }))}
+                      options={[
+                        { value: "A4", label: "A4 (210 × 297mm)" },
+                        { value: "A3", label: "A3 (297 × 420mm) — more room for many points" },
+                        { value: "A2", label: "A2 (420 × 594mm) — a lot more room" },
+                      ]}
+                    />
+                  </Field>
                   {!isBorehole && (
                     <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} /></Field>
                   )}
