@@ -74,6 +74,21 @@ function suggestDiagramScale(pts: { east: number; north: number }[]): number {
   return NICE.find((n) => n >= raw) ?? Math.ceil(raw / 1000) * 1000;
 }
 
+/** Client req 2026-10-22, screenshot of "Land called (lot name)" with
+ *  "Lot 2121" typed in by hand, circled: "that lot should be add
+ *  automatically not manually by user." Every "pick a plot" site below
+ *  was already auto-filling lotName, but with just the bare plot number
+ *  (e.g. "2121") — leaving the word "Lot" for the surveyor to type in
+ *  front of it themselves to match the sheet's own expected "LOT ..."
+ *  format (the same prefix the module's hardcoded fallback lot name
+ *  already uses). This fills in that whole final string, so picking a
+ *  plot needs no follow-up typing at all. Skips the prefix when the
+ *  number already carries one (LOT/ERF/PLOT) rather than doubling it. */
+function formatLotName(plotNumber: string): string {
+  const n = plotNumber.trim();
+  return /^(LOT|ERF|PLOT)\b/i.test(n) ? n.toUpperCase() : `LOT ${n.toUpperCase()}`;
+}
+
 /** Default "Beacon Description" text — lists the actual boundary point
  *  names (client req 2026-08-22: "ALL" isn't what the reference shows,
  *  it lists the real letters, e.g. "A,B,C,D : 12mm iron peg"), falling
@@ -274,10 +289,15 @@ export function Diagrams() {
   // "Generate Diagram" (neither backed by a numbered, saved plot)
   // correctly finds nothing here and this whole feature is a no-op for
   // them.
-  const loadedPlotNumber = useMemo(
-    () => cogoPlots.find((p) => p.number.trim().toUpperCase() === meta.lotName.trim().toUpperCase())?.number ?? null,
-    [cogoPlots, meta.lotName]
-  );
+  const loadedPlotNumber = useMemo(() => {
+    // meta.lotName now reads "LOT {number}" (formatLotName, client req
+    // 2026-10-22) rather than the bare number it used to hold — strip that
+    // prefix back off before matching, so this still resolves for both the
+    // new format and any already-saved diagram whose lotName is still just
+    // the bare number from before this change.
+    const bare = meta.lotName.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "");
+    return cogoPlots.find((p) => p.number.trim().toUpperCase() === bare.toUpperCase())?.number ?? null;
+  }, [cogoPlots, meta.lotName]);
   // Main figure (the parent outline the subdivisions sit inside) — client
   // req 2026-10-20: "Plot 12580 is a main figure. It only shows the plot. No
   // neighbouring plots shown." A lot counts as the main figure when it's
@@ -874,7 +894,7 @@ export function Diagrams() {
     const suggested = suggestDiagramScale(fig?.points ?? []);
     setMeta((m) => ({
       ...m,
-      ...(p?.number ? { lotName: p.number.toUpperCase() } : {}),
+      ...(p?.number ? { lotName: formatLotName(p.number) } : {}),
       scale: suggested,
       beaconDescription: defaultBeaconDescription(fig?.points ?? []),
     }));
@@ -1328,7 +1348,7 @@ export function Diagrams() {
     setDiagramFigure(plot.fig);
     setForcePicker(false);
     const suggested = suggestDiagramScale(plot.fig.points);
-    setMeta((m) => ({ ...m, lotName: plot.number.toUpperCase(), scale: suggested }));
+    setMeta((m) => ({ ...m, lotName: formatLotName(plot.number), scale: suggested }));
   }
 
   if (forcePicker || !fig || points.length < 3) {
@@ -1374,7 +1394,7 @@ export function Diagrams() {
                           setDiagramFigure(p.fig);
                           setForcePicker(false);
                           const suggested = suggestDiagramScale(p.fig.points);
-                          setMeta((m) => ({ ...m, lotName: p.number.toUpperCase(), scale: suggested }));
+                          setMeta((m) => ({ ...m, lotName: formatLotName(p.number), scale: suggested }));
                         }}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:border-brand hover:text-brand-dark"
                       >
@@ -1483,7 +1503,7 @@ export function Diagrams() {
                       setActiveCogoLotNumber(plot.number);
                       setDiagramFigure(plot.fig);
                       const suggested = suggestDiagramScale(plot.fig.points);
-                      setMeta((m) => ({ ...m, lotName: plot.number.toUpperCase(), scale: suggested }));
+                      setMeta((m) => ({ ...m, lotName: formatLotName(plot.number), scale: suggested }));
                       return;
                     }
                     setSelParcelId(v || null);
