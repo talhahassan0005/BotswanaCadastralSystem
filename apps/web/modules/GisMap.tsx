@@ -6,6 +6,7 @@ import { Button, Card } from "@/components/ui";
 import { transformPoint } from "@/lib/server/crs";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
+import { createZip } from "@/lib/zip";
 import type { ParcelDoc } from "@/lib/types";
 import type { WPoint } from "@/lib/cogoTools/types";
 
@@ -334,31 +335,56 @@ export function GisMap() {
   const rulerLegs = ruler.slice(1).map((r, i) => inverse(ruler[i], r));
   const rulerTotal = rulerLegs.reduce((s, [, d]) => s + d, 0);
 
-  function exportKml() {
+  function buildKml(): string {
     const marks: string[] = [];
     for (const b of beacons) marks.push(`<Placemark><name>${esc(b.id)}</name><Point><coordinates>${b.lon},${b.lat},0</coordinates></Point></Placemark>`);
+    for (const p of manualPts) {
+      const ll = toLatLon(p.east, p.north);
+      if (ll) marks.push(`<Placemark><name>${esc(p.name)}</name><Point><coordinates>${ll[1]},${ll[0]},0</coordinates></Point></Placemark>`);
+    }
     for (const p of parcels) {
       const coords = [...p.ring, p.ring[0]].map(([la, lo]) => `${lo},${la},0`).join(" ");
       marks.push(`<Placemark><name>${esc(p.number)}</name><Style><LineStyle><color>ff00ccff</color><width>2</width></LineStyle><PolyStyle><color>3300ccff</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`);
     }
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(config.name || "Survey")}</name>${marks.join("")}</Document></kml>`;
-    const blob = new Blob([kml], { type: "application/vnd.google-earth.kml+xml" });
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(config.name || "Survey")}</name>${marks.join("")}</Document></kml>`;
+  }
+  function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(config.name || "survey").replace(/\s+/g, "_")}.kml`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }
+  function exportKml() {
+    const blob = new Blob([buildKml()], { type: "application/vnd.google-earth.kml+xml" });
+    downloadBlob(blob, `${(config.name || "survey").replace(/\s+/g, "_")}.kml`);
+  }
+  // Client req 2026-10-22: "I should also be able to export KML, kmz files"
+  // — KMZ is just KML zipped (Google Earth's own preferred format, since it
+  // keeps a large placemark set small); same content as Export KML above,
+  // wrapped with the dependency-free zip writer already built for the
+  // Shapefile export (lib/zip.ts), named doc.kml inside the archive — the
+  // conventional root filename every KMZ reader (Google Earth included)
+  // looks for.
+  function exportKmz() {
+    const blob = createZip([{ name: "doc.kml", data: new TextEncoder().encode(buildKml()) }]);
+    downloadBlob(blob, `${(config.name || "survey").replace(/\s+/g, "_")}.kmz`);
+  }
 
   const earthUrl = `https://earth.google.com/web/@${centroid[0]},${centroid[1]},1000a,3000d,35y,0h,0t,0r`;
-  const hasData = beacons.length > 0;
+  // Client-added points (the Add Point tool) count as exportable data too —
+  // previously this only looked at beacons/parcels, so a project with
+  // nothing BUT manually-added GIS points had both export buttons
+  // wrongly disabled.
+  const hasData = beacons.length > 0 || manualPts.length > 0;
 
   return (
     <div className="space-y-4">
       <Card title="GIS Map — satellite basemap & survey overlay">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Button onClick={exportKml} disabled={!hasData}>⬇ Export KML</Button>
+          <Button onClick={exportKmz} disabled={!hasData}>⬇ Export KMZ</Button>
           <a href={earthUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="ghost">Open in Google Earth →</Button>
           </a>
@@ -366,6 +392,7 @@ export function GisMap() {
             {tool === "point" ? "Click the map to add points…" : "Add Point"}
           </Button>
           <Button variant={tool === "ruler" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "ruler" ? "none" : "ruler"))}>
+            <RulerIcon />
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
@@ -408,6 +435,18 @@ export function GisMap() {
 function displayLo(cs: string): string {
   const m = cs.match(/Lo\s*(\d+)/i);
   return m ? `Lo ${m[1]}°` : cs;
+}
+
+/** Client req 2026-10-22 ("use ruler icon"): a plain monochrome ruler glyph
+ *  for the Ruler tool button — a measuring bar with tick marks, same
+ *  stroke-icon convention used throughout the app (no colour). */
+function RulerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2.5" y="8.5" width="19" height="7" rx="1" />
+      <path d="M6 8.5v2.5M9.5 8.5v4M13 8.5v2.5M16.5 8.5v4" strokeWidth="1.3" />
+    </svg>
+  );
 }
 
 function esc(s: string): string {
