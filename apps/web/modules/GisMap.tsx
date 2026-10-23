@@ -23,6 +23,31 @@ const ESRI_IMAGERY =
 const OSM = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const BOTSWANA_CENTER: [number, number] = [-22.33, 24.68];
 
+/** Deepest zoom Esri actually has imagery for at a place (client screenshot
+ *  2026-10-23: "Map data not yet available" tiles — rural Botswana often only
+ *  goes to z17). Asks Esri's tilemap service; beyond this zoom Leaflet scales
+ *  up the last real tile instead of showing the placeholder. */
+async function esriImageryMaxZoom(lat: number, lon: number): Promise<number> {
+  const tile = (z: number) => {
+    const n = 2 ** z, r = (lat * Math.PI) / 180;
+    return { x: Math.floor(((lon + 180) / 360) * n), y: Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n) };
+  };
+  const zs = [19, 18, 17, 16, 15, 14, 13];
+  const has = await Promise.all(zs.map(async (z) => {
+    try {
+      const { x, y } = tile(z);
+      const r = await fetch(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tilemap/${z}/${y}/${x}/1/1`);
+      const j = await r.json();
+      return Array.isArray(j?.data) && j.data[0] === 1;
+    } catch {
+      return null;
+    }
+  }));
+  if (has.every((h) => h === null)) return 17; // service unreachable: a safe Botswana-wide value
+  const i = has.findIndex((h) => h === true);
+  return i >= 0 ? zs[i] : 13;
+}
+
 function loadLeaflet(): Promise<any> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") return reject(new Error("no window"));
@@ -226,9 +251,23 @@ export function GisMap() {
       .then((L) => {
         if (cancelled || !mapDivRef.current) return;
         map = L.map(mapDivRef.current);
-        const sat = L.tileLayer(ESRI_IMAGERY, { maxZoom: 19, attribution: "Imagery © Esri" });
+        // maxNativeZoom starts at 17 (available almost everywhere in
+        // Botswana) and is then set to what Esri really has at the place
+        // being viewed, re-checked after each move.
+        const sat = L.tileLayer(ESRI_IMAGERY, { maxZoom: 19, maxNativeZoom: 17, attribution: "Imagery © Esri" });
         const streets = L.tileLayer(OSM, { maxZoom: 19, attribution: "© OpenStreetMap" });
         sat.addTo(map);
+        let checkSeq = 0;
+        const fitImageryZoom = () => {
+          const seq = ++checkSeq;
+          const c = map.getCenter();
+          esriImageryMaxZoom(c.lat, c.lng).then((z) => {
+            if (cancelled || seq !== checkSeq || sat.options.maxNativeZoom === z) return;
+            sat.options.maxNativeZoom = z;
+            if (map.hasLayer(sat)) sat._resetView?.();
+          });
+        };
+        map.on("moveend", fitImageryZoom);
         L.control.layers({ "Satellite (Esri)": sat, "Streets (OSM)": streets }).addTo(map);
 
         const bounds: [number, number][] = [];
