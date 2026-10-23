@@ -114,7 +114,7 @@ export function RefMarks() {
           {geo.state === "error" && <p className="mt-2 text-xs text-red-600">{geo.msg}</p>}
           <p className="mt-2 text-xs text-slate-400">
             {rows.length} of {marks.length} marks ·{" "}
-            {source === "database" ? "from database" : "seed (not in database yet)"}
+            {source === "database" ? "national list + database" : "national reference-mark list"}
           </p>
           {account && (
             <div className="mt-2 flex flex-wrap gap-2">

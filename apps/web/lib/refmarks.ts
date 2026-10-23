@@ -98,9 +98,17 @@ const COLS = "id,number,name,type,lat,lon,description,status,region";
 export async function fetchRefMarks(): Promise<{ marks: RefMark[]; source: "database" | "seed" }> {
   if (!supabase) return { marks: REF_MARKS, source: "seed" };
   const { data, error } = await supabase.from("ref_marks").select(COLS).order("number");
-  if (error || !data || data.length === 0) return { marks: REF_MARKS, source: "seed" };
-  return { marks: data as RefMark[], source: "database" };
+  // The 16 hand-made starter marks were seeded into the table early on; they
+  // are dummy data (client req 2026-10-22) and are always left out. Database
+  // marks are layered over the official national list, never replace it, so a
+  // table holding only the old dummy rows can't hide the real 2746 marks.
+  const dbMarks = ((error ? null : data) ?? []).filter((m) => !DUMMY_NUMBERS.has((m as RefMark).number)) as RefMark[];
+  if (!dbMarks.length) return { marks: REF_MARKS, source: "seed" };
+  const byNumber = new Map(REF_MARKS.map((m) => [m.number, m] as const));
+  for (const m of dbMarks) byNumber.set(m.number, m);
+  return { marks: Array.from(byNumber.values()), source: "database" };
 }
+const DUMMY_NUMBERS = new Set(SEED_FALLBACK.map((m) => m.number));
 
 /** Upsert marks into the table (keyed on `number`). Used by Publish-seed / CSV import. */
 export async function importRefMarks(marks: Omit<RefMark, "id">[]): Promise<{ count: number; error?: string }> {

@@ -100,25 +100,9 @@ create policy ref_marks_update on public.ref_marks for update to authenticated u
 drop policy if exists ref_marks_delete on public.ref_marks;
 create policy ref_marks_delete on public.ref_marks for delete to authenticated using (true);
 
--- Seed the 16 starter marks (idempotent). Replace/extend with the official DSM export.
-insert into public.ref_marks (number, name, type, lat, lon, description, status, region) values
-  ('T 24/101','Gaborone','Trigonometrical beacon',-24.6282,25.9231,'Concrete pillar, brass bolt','In good order','South-East'),
-  ('T 25/044','Lobatse','Trigonometrical beacon',-25.2210,25.6770,'Concrete beacon on hill','In good order','South-East'),
-  ('T 24/318','Molepolole','Town survey mark',-24.4067,25.4951,'Standard iron peg in kerb','In good order','Kweneng'),
-  ('T 24/206','Kanye','Trigonometrical beacon',-24.9833,25.3500,'Pillar with vane','Witness mark','Southern'),
-  ('T 24/512','Jwaneng','Reference mark',-24.6017,24.7280,'Brass plate in concrete','In good order','Southern'),
-  ('T 23/077','Mahalapye','Trigonometrical beacon',-23.1041,26.8142,'Concrete beacon','Reported destroyed','Central'),
-  ('T 22/133','Palapye','Town survey mark',-22.5500,27.1250,'Iron peg, 12mm','In good order','Central'),
-  ('T 22/061','Serowe','Trigonometrical beacon',-22.3875,26.7108,'Pillar on koppie','In good order','Central'),
-  ('T 22/240','Selebi-Phikwe','Reference mark',-21.9764,27.8478,'Brass bolt in slab','Not visited','Central'),
-  ('T 21/018','Francistown','Trigonometrical beacon',-21.1702,27.5078,'Concrete pillar','In good order','North-East'),
-  ('T 19/004','Maun','Trigonometrical beacon',-19.9833,23.4167,'Beacon near airport','In good order','North-West'),
-  ('T 17/002','Kasane','Reference mark',-17.8000,25.1500,'Brass plate, riverbank','Witness mark','Chobe'),
-  ('T 21/090','Ghanzi','Trigonometrical beacon',-21.7000,21.6500,'Concrete beacon','In good order','Ghanzi'),
-  ('T 21/142','Charleshill','Reference mark',-21.9300,20.9800,'Iron peg near Lot 14182','In good order','Ghanzi'),
-  ('T 26/011','Tsabong','Trigonometrical beacon',-26.0167,22.4000,'Pillar, sand dune ridge','Not visited','Kgalagadi'),
-  ('T 24/660','Ramotswa','Town survey mark',-24.8667,25.8167,'Standard mark in pavement','In good order','South-East')
-on conflict (number) do nothing;
+-- The 16 hand-made starter marks once seeded here were dummy data (client
+-- req 2026-10-22); the app now uses the official national list. Remove them:
+delete from public.ref_marks where number in ('T 24/101', 'T 25/044', 'T 24/318', 'T 24/206', 'T 24/512', 'T 23/077', 'T 22/133', 'T 22/061', 'T 22/240', 'T 21/018', 'T 19/004', 'T 17/002', 'T 21/090', 'T 21/142', 'T 26/011', 'T 24/660');
 
 -- ---------------------------------------------------------------------------
 -- Row-Level Security
