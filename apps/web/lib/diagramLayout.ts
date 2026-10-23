@@ -253,9 +253,23 @@ export function computeDiagramLayout(
   // the same PROPORTIONS as the A4 reference, just literally bigger, which
   // is what actually gives a beacon-heavy plot's table room to grow into
   // instead of overflowing a fixed-size page.
-  const PAGE_SCALE = meta.paperSize === "A3" ? Math.SQRT2 : meta.paperSize === "A2" ? 2 : meta.paperSize === "A1" ? 2 * Math.SQRT2 : 1;
+  // A3 is NOT a scaled-up A4 (client req 2026-10-24, photo of an A3 sheet:
+  // "2 A4's joined together.. the other side is just a diagram or sketch and
+  // the other is details"): a landscape sheet of two A4 pages — the figure,
+  // other is details", plus the client's own A3 model "dg 1881"): a
+  // landscape sheet of two A4 pages — the SIDES/DIRECTIONS/CO-ORDINATES
+  // table alone on the LEFT page (running down the full page, so a beacon-
+  // heavy lot fits), and everything else (D.S.M box, beacon description,
+  // village, north arrow, figure, legal description, certificate,
+  // registration table) on the RIGHT page, offset by DETAILS_DX. All
+  // coordinates below stay page-local (0..VB_W); the renderers add the
+  // offset for the right page.
+  const SPLIT = meta.paperSize === "A3";
+  const PAGE_SCALE = SPLIT ? 1 : meta.paperSize === "A2" ? 2 : meta.paperSize === "A1" ? 2 * Math.SQRT2 : 1;
   const VB_W = 210 * PAGE_SCALE * MM; // full page width
   const VB_H = 297 * PAGE_SCALE * MM; // full page height
+  const SHEET_W = SPLIT ? 2 * VB_W : VB_W; // whole sheet (both pages when split)
+  const DETAILS_DX = SPLIT ? VB_W : 0;     // x offset of the right (diagram/details) page
 
   const FRAME_X = 24.8 * PAGE_SCALE * MM;
   const FRAME_Y = 12.2 * PAGE_SCALE * MM;
@@ -300,7 +314,10 @@ export function computeDiagramLayout(
   const n = Math.max(points.length, sides.length, 1);
   const dataFS = FS_TABLE_SUB;
   const ROW_H_MIN = FS_TABLE_SUB / 0.55; // the row height a fixed-size row actually needs
-  const rowH = Math.max((51.0 * PAGE_SCALE * MM - headH) / n, ROW_H_MIN);
+  const rowH = SPLIT
+    // Own page: fixed-size rows down the whole frame, squeezed only if even that runs out.
+    ? Math.min(ROW_H_MIN, (FRAME_H - headH - 5 * MM) / n)
+    : Math.max((51.0 * PAGE_SCALE * MM - headH) / n, ROW_H_MIN);
   const dataH = rowH * n;
   const topBandH = headH + dataH;
   const tableBottom = ty + topBandH;
@@ -359,7 +376,8 @@ export function computeDiagramLayout(
   // certificate paragraph, surveyor signature line) — Part 23 gives no
   // fixed sub-measurements here, only the ~188mm total budget between the
   // two tables ("lay these out with even, uncramped spacing"). ----
-  const midTop = tableBottom;
+  // On the split A3 the right page has no table above this zone.
+  const midTop = SPLIT ? FRAME_Y : tableBottom;
   const es = points.map((p) => p.east);
   const nsv = points.map((p) => p.north);
   const figureLetters =
@@ -436,7 +454,7 @@ export function computeDiagramLayout(
   const beaconLines = meta.beaconDescription
     .split(/\s*[;\n]\s*/)
     .filter(Boolean)
-    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
+    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), SPLIT ? xDsm - tx - 30 : tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
   const BD_LH = FS_BEACON * 1.35;
   const bdHeadingY = midTop + 40 * PAGE_SCALE;
   const bdLinesY0 = midTop + 74 * PAGE_SCALE;
@@ -448,7 +466,9 @@ export function computeDiagramLayout(
   // Reserve the extra margin on the LEFT of the figure box, not the right
   // (client req 2026-08-22) — the north arrow moved to the left side of the
   // sheet, so that's where the box now needs the spare 300 units of room.
-  const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
+  // Split A3: the D.S.M/Approved box sits at the top-right of the figure's
+  // page with no table under it, so the figure box stops left of it.
+  const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: SPLIT ? xDsm - 40 - (tx + 300 * PAGE_SCALE) : tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
   const pad = 60 * PAGE_SCALE;
   // Figure bounds include any extra (non-traverse) marks so they stay visible.
   const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
@@ -570,6 +590,7 @@ export function computeDiagramLayout(
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
+    SPLIT, SHEET_W, DETAILS_DX,
     sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,

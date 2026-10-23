@@ -1003,9 +1003,12 @@ export function Diagrams() {
         const o = id ? blockOffsets[id] : undefined;
         blk = o ? { ox, oy, dx: o.dx, dy: o.dy, s: o.scale ?? 1 } : null;
       };
+      // Split A3: page-local sheet coordinates + the page's x offset (the
+      // table page is at 0, the figure/details page at DETAILS_DX).
+      let pageDX = 0;
       const w = (x: number, y: number) => {
         const b = blk;
-        return b ? t.toWorld(b.ox + (x - b.ox) * b.s + b.dx, b.oy + (y - b.oy) * b.s + b.dy) : t.toWorld(x, y);
+        return b ? t.toWorld(b.ox + (x - b.ox) * b.s + b.dx + pageDX, b.oy + (y - b.oy) * b.s + b.dy) : t.toWorld(x + pageDX, y);
       };
       const line = (x1: number, y1: number, x2: number, y2: number) => {
         const a = w(x1, y1), b = w(x2, y2);
@@ -1096,13 +1099,25 @@ export function Diagrams() {
         gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
         gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
         annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,
+        SPLIT, DETAILS_DX,
       } = L;
 
-      // ===================== Outer frame border =====================
-      line(tx, ty, tableRight, ty);
-      line(tableRight, ty, tableRight, ty + FRAME_H);
-      line(tableRight, ty + FRAME_H, tx, ty + FRAME_H);
-      line(tx, ty + FRAME_H, tx, ty);
+      // ===================== Outer frame border(s) =====================
+      const frame = () => {
+        line(tx, ty, tableRight, ty);
+        line(tableRight, ty, tableRight, ty + FRAME_H);
+        line(tableRight, ty + FRAME_H, tx, ty + FRAME_H);
+        line(tx, ty + FRAME_H, tx, ty);
+      };
+      pageDX = DETAILS_DX;
+      frame();
+      pageDX = 0; // the table (left page when split; the only page otherwise)
+      if (SPLIT) {
+        // Left page frame joins the right page's frame (one sheet, one divider).
+        line(tx, ty, DETAILS_DX + tx, ty);
+        line(tx, ty + FRAME_H, DETAILS_DX + tx, ty + FRAME_H);
+        line(tx, ty, tx, ty + FRAME_H);
+      }
 
       // ===================== Top data table (Part 27: open-bottom) =====================
       line(xSideVal, dataTop, xSideVal, tableBottom);
@@ -1110,13 +1125,13 @@ export function Diagrams() {
       line(xDirR, ty, xDirR, tableBottom);
       line(xY, xYDividerTop, xY, tableBottom);
       line(xX, xXDividerTop, xX, tableBottom);
-      line(xDsm, ty, xDsm, tableBottom);
-      line(tx, ty + headH, xDsm, ty + headH);
+      line(SPLIT ? xXR : xDsm, ty, SPLIT ? xXR : xDsm, tableBottom);
+      line(tx, ty + headH, SPLIT ? xXR : xDsm, ty + headH);
 
       text((tx + xMetR) / 2, hRow1, "SIDES", FS_TABLE_HEAD, "middle");
       text((xDir + xDirR) / 2, hRow1, "DIRECTIONS", FS_TABLE_HEAD, "middle");
       text((xPt + xXR) / 2, hRow1, "CO-ORDINATES", FS_TABLE_HEAD, "middle");
-      text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
+      if (!SPLIT) text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
       text((tx + xMetR) / 2, hRow2, "METRES", FS_TABLE_SUB, "middle");
       text(xPt + (xY - xPt) / 2, hRow2, "Y", FS_TABLE_SUB, "middle");
       text((xY + xXR) / 2, hRow2, `System ${fmtSystem(liveCoordinateSystem)}`, FS_TABLE_SUB, "middle");
@@ -1124,7 +1139,7 @@ export function Diagrams() {
       // column sat right against the tail of the "System LO. N°" label next
       // to it, which spans into this column too, so the two collided.
       text(xX + (xXR - xX) / 2 + 20, hRow2, "X", FS_TABLE_SUB, "middle");
-      text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
+      if (!SPLIT) text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
       text((xDir + xDirR) / 2, hRow3, "CONSTANTS", FS_CONSTANTS, "middle");
       text(xY + 8, hRow3, "+    0,00", FS_CONSTANTS);
       text(xX + 8, hRow3, "+    0,00", FS_CONSTANTS);
@@ -1145,6 +1160,14 @@ export function Diagrams() {
         }
       }
 
+      // Everything below is on the figure/details page.
+      pageDX = DETAILS_DX;
+      if (SPLIT) {
+        text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
+        text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
+        line(xDsm, ty + headH, tableRight, ty + headH);
+      }
+
       // ===================== Beacon description + locality =====================
       applyBlock("beaconDesc", tx + 4, bdHeadingY);
       text(tx + 4, bdHeadingY, "BEACON DESCRIPTION", FS_BEACON_HEAD);
@@ -1154,7 +1177,7 @@ export function Diagrams() {
       applyBlock(null);
 
       // ===================== D.S.M No. / Approved / Director of Surveys box =====================
-      line(xDsm, tableBottom, xDsm, Math.max(tableBottom, dosLineY));
+      line(xDsm, SPLIT ? ty : tableBottom, xDsm, SPLIT ? dosLineY : Math.max(tableBottom, dosLineY));
       text(xDsm + 16, dsmApprovedY, "Approved", FS_BEACON_HEAD);
       text(xDsm + 16, dosY1, "Director of Surveys", FS_BEACON_HEAD);
       text(xDsm + 16, dosY2, "and Mapping", FS_BEACON_HEAD);
@@ -1312,12 +1335,12 @@ export function Diagrams() {
     // exactly the chosen paper's physical size with zero margin — no more
     // mm-rounding tightrope between a sub-page-sized sheet and hand-tuned
     // CSS margins.
-    const pageMm = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "420mm" : meta.paperSize === "A1" ? "594mm" : "210mm";
-    const pageMmH = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "594mm" : meta.paperSize === "A1" ? "841mm" : "297mm";
+    const pageMm = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "420mm" : meta.paperSize === "A1" ? "594mm" : "210mm";
+    const pageMmH = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "594mm" : meta.paperSize === "A1" ? "841mm" : "297mm";
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>` +
-        `@page{size:${meta.paperSize ?? "A4"} portrait;margin:0}` +
+        `@page{size:${meta.paperSize ?? "A4"} ${meta.paperSize === "A3" ? "landscape" : "portrait"};margin:0}` +
         `body{margin:0}` +
         `svg{width:${pageMm};height:${pageMmH};display:block}` +
         `.print-note{position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#78350f;font:14px/1.4 system-ui,sans-serif;padding:10px 16px;z-index:10}` +
@@ -1637,7 +1660,7 @@ export function Diagrams() {
                       onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" || v === "A1" ? v : "A4") }))}
                       options={[
                         { value: "A4", label: "A4 (210 × 297mm)" },
-                        { value: "A3", label: "A3 (297 × 420mm) — more room for many points" },
+                        { value: "A3", label: "A3 landscape (420 × 297mm) — two A4 pages: table | diagram + details" },
                         { value: "A2", label: "A2 (420 × 594mm) — a lot more room" },
                         { value: "A1", label: "A1 (594 × 841mm) — very large lots" },
                       ]}

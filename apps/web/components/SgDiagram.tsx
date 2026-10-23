@@ -345,7 +345,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
-    sc, dw, dh, offX, offY, toX, toY,
+    sc, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
     landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, certLines, certFs, surveyorFit,
@@ -398,11 +398,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // pixel-space click/drag back to real survey coordinates so annotations
   // stay attached to the boundary regardless of how this scale/offset
   // recomputes later (a fixed pixel position doesn't).
+  // Split A3: the figure's page is drawn DETAILS_DX to the right, so these
+  // sheet coordinates include that offset (0 on every single-page size).
   onTransform?.({
-    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
-    toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
-    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
-    toWorldLive: (x, y) => {
+    toScreen: (east, north) => ({ x: toX(east) + DETAILS_DX, y: toY(north) }),
+    toWorld: (x, y) => ({ east: (x - DETAILS_DX - offX) / sc + minE, north: maxN - (y - offY) / sc }),
+    toScreenLive: (east, north) => ({ x: fx(east, north) + DETAILS_DX, y: fy(east, north) }),
+    toWorldLive: (xs, y) => {
+      const x = xs - DETAILS_DX;
       // Undo rotate (about the figure pivot), then the flip, then toX/toY.
       const dx = x - figPivotX, dy = y - figPivotY;
       let x0 = rotation ? figPivotX + dx * figCosR + dy * figSinR : x;
@@ -414,7 +417,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   return (
     <svg
       ref={ref}
-      viewBox={`0 0 ${VB_W} ${VB_H}`}
+      viewBox={`0 0 ${SHEET_W} ${VB_H}`}
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
       onClick={onCanvasClick}
@@ -432,7 +435,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     >
       {/* outer border — 160.4 x 272.9mm, positioned per Part 23's exact
           margins (24.8mm left/right, 12.2mm top, ~11.9mm bottom) */}
-      <rect x={FRAME_X} y={FRAME_Y} width={FRAME_W} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />
+      {/* Split A3: left page frame around the table; the right page's own
+          frame (and everything on that page) sits in the offset group. */}
+      {/* Runs right up to the details page's frame, so the two pages read
+          as one joined sheet with a single divider (client's A3 sample). */}
+      {SPLIT && <rect x={FRAME_X} y={FRAME_Y} width={DETAILS_DX} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />}
+      <g transform={DETAILS_DX ? `translate(${DETAILS_DX} 0)` : undefined}>
+        <rect x={FRAME_X} y={FRAME_Y} width={FRAME_W} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />
+      </g>
 
       {/* ===================== TOP DATA TABLE ===================== */}
       {/* Open-at-the-bottom, per the reference PDF's actual line geometry
@@ -458,18 +468,23 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <line x1={xDirR} y1={ty} x2={xDirR} y2={tableBottom} stroke="black" strokeWidth={1.2} />
         <line x1={xY} y1={xYDividerTop} x2={xY} y2={tableBottom} stroke="black" strokeWidth={1.2} />
         <line x1={xX} y1={xXDividerTop} x2={xX} y2={tableBottom} stroke="black" strokeWidth={1.2} />
-        <line x1={xDsm} y1={ty} x2={xDsm} y2={tableBottom} stroke="black" strokeWidth={1.2} />
+        {/* Split A3: the table's own page has no D.S.M column — it closes at the X column. */}
+        <line x1={SPLIT ? xXR : xDsm} y1={ty} x2={SPLIT ? xXR : xDsm} y2={tableBottom} stroke="black" strokeWidth={1.2} />
         {/* header underline */}
-        <line x1={tx} y1={ty + headH} x2={xDsm} y2={ty + headH} stroke="black" strokeWidth={1.2} />
+        <line x1={tx} y1={ty + headH} x2={SPLIT ? xXR : xDsm} y2={ty + headH} stroke="black" strokeWidth={1.2} />
 
         {/* header row 1 */}
         <text x={(tx + xMetR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Sides</text>
         <text x={(xDir + xDirR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Directions</text>
         <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Co-ordinates</text>
-        <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
-        <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
-          {meta.dsmNo || ""}
-        </text>
+        {!SPLIT && (
+          <>
+            <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
+            <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
+              {meta.dsmNo || ""}
+            </text>
+          </>
+        )}
         {/* header row 2 */}
         <text x={(tx + xMetR) / 2} y={hRow2} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_SUB}>Metres</text>
         <text x={xPt + (xY - xPt) / 2} y={hRow2} textAnchor="middle" fontSize={FS_TABLE_SUB} fontWeight="medium">Y</text>
@@ -509,6 +524,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         })}
       </g>
 
+      {/* Everything from here on is on the right (figure/details) page when split. */}
+      <g transform={DETAILS_DX ? `translate(${DETAILS_DX} 0)` : undefined}>
+      {SPLIT && (
+        <>
+          {/* D.S.M box header, on its own at the top-right of this page. */}
+          <line x1={xDsm} y1={ty + headH} x2={tableRight} y2={ty + headH} stroke="black" strokeWidth={1.2} />
+          <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
+          <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
+            {meta.dsmNo || ""}
+          </text>
+        </>
+      )}
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
       {block("beaconDesc", tx + 4, bdHeadingY, (
         <>
@@ -549,7 +576,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             running down to the signature line below "and Mapping".
             Only extends past tableBottom if the block itself is taller
             than the table (never for a normal-sized plot). */}
-        <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
+        <line x1={xDsm} y1={SPLIT ? ty : tableBottom} x2={xDsm} y2={SPLIT ? dosLineY : Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
         <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
         <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
         <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
@@ -714,7 +741,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         );
       })}
       {pendingAnnotationPoint && (
-        <circle cx={pendingAnnotationPoint.x} cy={pendingAnnotationPoint.y} r={5} fill="black" />
+        <circle cx={pendingAnnotationPoint.x - DETAILS_DX} cy={pendingAnnotationPoint.y} r={5} fill="black" />
       )}
       {/* Free-text notes the surveyor placed directly on the diagram
           (client req 2026-08-24), rotatable (client req 2026-08-26) via an
@@ -975,6 +1002,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </g>
         );
       })()}
+      </g>
     </svg>
   );
 });
