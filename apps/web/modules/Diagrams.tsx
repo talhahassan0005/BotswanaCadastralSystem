@@ -16,6 +16,7 @@ import {
   type DiagramTransform,
   type ManualAnnotation,
   type ManualText,
+  type BlockOffset,
 } from "@/components/SgDiagram";
 import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
 import { estimateDominantAngle } from "@/lib/plots";
@@ -189,6 +190,7 @@ export function Diagrams() {
     leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
     annotations?: ManualAnnotation[];
     texts?: ManualText[];
+    blockOffsets?: Record<string, BlockOffset>;
   };
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
@@ -452,6 +454,11 @@ export function Diagrams() {
   // followed by a small prompt for the text content instead of committing
   // immediately.
   const [texts, setTexts] = useState<ManualText[]>(di.texts ?? []);
+  // Sheet blocks the user dragged/resized (client req 2026-10-23: "Lets
+  // make all that text movable") — beacon description, locality, north
+  // arrow, legal description, certificate lines, surveyor name.
+  const [blockOffsets, setBlockOffsets] = useState<Record<string, BlockOffset>>(di.blockOffsets ?? {});
+  const setBlockOffset = (id: string, v: BlockOffset) => setBlockOffsets((m) => ({ ...m, [id]: v }));
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
@@ -895,8 +902,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts });
-  }, [kind, meta, leaseMeta, annotations, texts, liveCoordinateSystem, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets });
+  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, liveCoordinateSystem, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
@@ -907,6 +914,7 @@ export function Diagrams() {
     if (!svgRef.current) return null;
     const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.querySelectorAll("[data-noexport]").forEach((el) => el.remove());
     return new XMLSerializer().serializeToString(clone);
   }
 
@@ -924,6 +932,7 @@ export function Diagrams() {
     if (!svgRef.current) return null;
     const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.querySelectorAll("[data-noexport]").forEach((el) => el.remove());
     clone.style.removeProperty("width");
     clone.style.removeProperty("height");
     return new XMLSerializer().serializeToString(clone);
@@ -986,7 +995,18 @@ export function Diagrams() {
       const o = t.toWorld(0, 0);
       const u = t.toWorld(1, 0);
       const metresPerUnit = Math.hypot(u.east - o.east, u.north - o.north) || 1e-6;
-      const w = (x: number, y: number) => t.toWorld(x, y);
+      // A block the user moved/resized on the sheet: the same translate +
+      // scale-about-anchor as SgDiagram's MovableBlock, applied while that
+      // block's text/lines are written (null = untouched sheet geometry).
+      let blk: { ox: number; oy: number; dx: number; dy: number; s: number } | null = null;
+      const applyBlock = (id: string | null, ox = 0, oy = 0) => {
+        const o = id ? blockOffsets[id] : undefined;
+        blk = o ? { ox, oy, dx: o.dx, dy: o.dy, s: o.scale ?? 1 } : null;
+      };
+      const w = (x: number, y: number) => {
+        const b = blk;
+        return b ? t.toWorld(b.ox + (x - b.ox) * b.s + b.dx, b.oy + (y - b.oy) * b.s + b.dy) : t.toWorld(x, y);
+      };
       const line = (x1: number, y1: number, x2: number, y2: number) => {
         const a = w(x1, y1), b = w(x2, y2);
         sheetLines.push({ pts: [{ x: a.east, y: a.north }, { x: b.east, y: b.north }], closed: false, layer: "SHEET" });
@@ -1010,7 +1030,7 @@ export function Diagrams() {
       const text = (x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") => {
         if (!s) return;
         const p = w(x, y);
-        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
+        notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit * (blk?.s ?? 1), layer: "SHEET", anchor });
       };
       // Three rounds of assuming the viewer renders something close to a
       // proportional font (Arial, measured precisely via Canvas, then with
@@ -1126,9 +1146,12 @@ export function Diagrams() {
       }
 
       // ===================== Beacon description + locality =====================
+      applyBlock("beaconDesc", tx + 4, bdHeadingY);
       text(tx + 4, bdHeadingY, "BEACON DESCRIPTION", FS_BEACON_HEAD);
       beaconLines.forEach((ln, i) => text(tx + 4, bdLinesY0 + i * BD_LH, dxfLabelFit(ln, tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD));
+      applyBlock("locality", tx + tw / 2, localityY);
       text(tx + tw / 2, localityY, dxfLabelFit(meta.location || "", tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle");
+      applyBlock(null);
 
       // ===================== D.S.M No. / Approved / Director of Surveys box =====================
       line(xDsm, tableBottom, xDsm, Math.max(tableBottom, dosLineY));
@@ -1138,6 +1161,7 @@ export function Diagrams() {
       line(xDsm, dosLineY, tableRight - 16, dosLineY);
 
       // ===================== North arrow (same outline style/size as the SVG) =====================
+      applyBlock("northArrow", arrowX, arrowY);
       line(arrowX, arrowY - 170, arrowX, arrowY + 54);
       {
         const p1 = w(arrowX, arrowY - 170), p2 = w(arrowX - 14, arrowY - 55), p3 = w(arrowX + 4, arrowY - 30);
@@ -1149,6 +1173,7 @@ export function Diagrams() {
       }
       text(arrowX - 6, arrowY + 24, "T", FS_BEACON_HEAD, "end");
       text(arrowX + 6, arrowY + 24, "N", FS_BEACON_HEAD);
+      applyBlock("legal", VB_W / 2, legalY0 - 40);
 
       if (meta.scale > 0) {
         text(VB_W / 2, legalY0 - 40, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
@@ -1177,6 +1202,7 @@ export function Diagrams() {
         });
       });
       situateLines.forEach((ln, i) => text(VB_W / 2, situateY0 + i * LEGAL_LH, dxfLabelFit(ln, legalMaxW, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle"));
+      applyBlock("cert", tx + 20, deductionsY);
 
       // ===================== Certification/deductions (left) + surveyor (right) =====================
       // `cert`/`surveyorFit` are already clamped to `leftColW`/`rightColW` in
@@ -1192,8 +1218,10 @@ export function Diagrams() {
         text(tx + 4, certY1 - (certLines.length - 1 - i) * FS_BEACON_HEAD * 1.15, ln, w > leftColW ? FS_BEACON_HEAD * leftColW / w : FS_BEACON_HEAD);
       });
       text(tx + 4, deductionsY, dxfLabelFit("DEDUCTIONS ON THIS DIAGRAM ARE MADE ON THE BACK HEREOF", leftColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
+      applyBlock("surveyor", tableRight - 48, deductionsY);
       text(VB_W - 700, certY1, dxfLabelFit(surveyorFit, rightColW, FS_BEACON_HEAD), FS_BEACON_HEAD);
       text(VB_W - 700, deductionsY, "Land Surveyor", FS_BEACON_HEAD);
+      applyBlock(null);
 
       // ===================== Bottom registration (deeds/annexure) table =====================
       // Every value/label below is re-fit with the same precise Arial
@@ -1284,8 +1312,8 @@ export function Diagrams() {
     // exactly the chosen paper's physical size with zero margin — no more
     // mm-rounding tightrope between a sub-page-sized sheet and hand-tuned
     // CSS margins.
-    const pageMm = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "420mm" : "210mm";
-    const pageMmH = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "594mm" : "297mm";
+    const pageMm = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "420mm" : meta.paperSize === "A1" ? "594mm" : "210mm";
+    const pageMmH = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "594mm" : meta.paperSize === "A1" ? "841mm" : "297mm";
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>` +
@@ -1606,11 +1634,12 @@ export function Diagrams() {
                   <Field label="Paper size">
                     <Select
                       value={meta.paperSize ?? "A4"}
-                      onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" ? v : "A4") }))}
+                      onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" || v === "A1" ? v : "A4") }))}
                       options={[
                         { value: "A4", label: "A4 (210 × 297mm)" },
                         { value: "A3", label: "A3 (297 × 420mm) — more room for many points" },
                         { value: "A2", label: "A2 (420 × 594mm) — a lot more room" },
+                        { value: "A1", label: "A1 (594 × 841mm) — very large lots" },
                       ]}
                     />
                   </Field>
@@ -1659,6 +1688,9 @@ export function Diagrams() {
                     )}
                     {selectedTextId && (
                       <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
+                    )}
+                    {Object.keys(blockOffsets).length > 0 && (
+                      <Button variant="ghost" onClick={() => setBlockOffsets({})}>Reset moved text</Button>
                     )}
                   </div>
                 </Card>
@@ -1739,6 +1771,8 @@ export function Diagrams() {
                 rotation={autoRotationDeg}
                 arrowRotation={northArrowRotationDeg}
                 flip={false}
+                blockOffsets={blockOffsets}
+                onBlockOffset={setBlockOffset}
               />
             )}
           </div>

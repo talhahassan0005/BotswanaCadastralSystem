@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type MouseEvent, type PointerEvent } from "react";
+import { forwardRef, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { clampWords, clampToLines, fitFontSize } from "@/lib/wrapSvgText";
 import { declutterLabels } from "@/lib/labelLayout";
 import {
@@ -181,9 +181,88 @@ interface Props {
    *  project-wide setting as CogoWorkspace's Flip button; rotation alone
    *  can never fix a mirrored shape. */
   flip?: boolean;
+  /** Moved/resized sheet blocks, by id: beaconDesc, locality, northArrow,
+   *  legal, cert, surveyor. With onBlockOffset set the blocks can be clicked,
+   *  dragged and resized (+/-) on the sheet. */
+  blockOffsets?: Record<string, BlockOffset>;
+  onBlockOffset?: (id: string, v: BlockOffset) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
+
+/** Offset/size of a movable sheet block (client req 2026-10-23: "Lets make
+ *  all that text movable"). Scaled about (ox, oy), the block's own anchor —
+ *  the DXF export uses the same anchor so both land in the same place. */
+export type BlockOffset = { dx: number; dy: number; scale?: number };
+
+function MovableBlock({
+  id, ox, oy, off, interactive, selected, onSelect, onChange, children,
+}: {
+  id: string; ox: number; oy: number; off?: BlockOffset; interactive: boolean; selected: boolean;
+  onSelect: (id: string) => void; onChange?: (id: string, v: BlockOffset) => void; children: ReactNode;
+}) {
+  const gRef = useRef<SVGGElement>(null);
+  const [bb, setBb] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const g = gRef.current;
+    if (!g) return;
+    const b = g.getBBox();
+    setBb((p) => (p && Math.abs(p.x - b.x) < 0.5 && Math.abs(p.y - b.y) < 0.5 && Math.abs(p.w - b.width) < 0.5 && Math.abs(p.h - b.height) < 0.5 ? p : { x: b.x, y: b.y, w: b.width, h: b.height }));
+  });
+  const dx = off?.dx ?? 0, dy = off?.dy ?? 0, s = off?.scale ?? 1;
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const toSvg = (e: PointerEvent<SVGGElement>) => {
+    const svg = (e.currentTarget as SVGGraphicsElement).ownerSVGElement;
+    const m = svg?.getScreenCTM();
+    if (!svg || !m) return { x: 0, y: 0 };
+    const p = svg.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    const q = p.matrixTransform(m.inverse());
+    return { x: q.x, y: q.y };
+  };
+  const pad = 12;
+  return (
+    <g
+      transform={`translate(${dx} ${dy}) translate(${ox} ${oy}) scale(${s}) translate(${-ox} ${-oy})`}
+      style={interactive ? { cursor: selected ? "move" : "pointer" } : undefined}
+      onPointerDown={interactive ? (e) => {
+        e.stopPropagation();
+        onSelect(id);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const p = toSvg(e);
+        drag.current = { sx: p.x, sy: p.y, ox: dx, oy: dy };
+      } : undefined}
+      onPointerMove={interactive ? (e) => {
+        const d = drag.current;
+        if (!d) return;
+        e.stopPropagation();
+        const p = toSvg(e);
+        onChange?.(id, { dx: d.ox + p.x - d.sx, dy: d.oy + p.y - d.sy, scale: s });
+      } : undefined}
+      onPointerUp={interactive ? (e) => { drag.current = null; e.stopPropagation(); } : undefined}
+      onClick={interactive ? (e) => e.stopPropagation() : undefined}
+    >
+      {interactive && bb && <rect x={bb.x - pad} y={bb.y - pad} width={bb.w + 2 * pad} height={bb.h + 2 * pad} fill="transparent" />}
+      <g ref={gRef}>{children}</g>
+      {interactive && selected && bb && (
+        <g data-noexport="1">
+          <rect x={bb.x - pad} y={bb.y - pad} width={bb.w + 2 * pad} height={bb.h + 2 * pad} fill="none" stroke="#dc2626" strokeWidth={2 / s} strokeDasharray={`${8 / s} ${6 / s}`} style={{ pointerEvents: "none" }} />
+          {([["+", 0.1], ["−", -0.1]] as const).map(([label, delta], i) => (
+            <g
+              key={label}
+              style={{ cursor: "pointer" }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onChange?.(id, { dx, dy, scale: Math.max(0.5, Math.min(3, +(s + delta).toFixed(2))) }); }}
+            >
+              <circle cx={bb.x + bb.w + pad + 34 / s} cy={bb.y + (i * 56 + 20) / s} r={22 / s} fill="white" stroke="#dc2626" strokeWidth={2 / s} />
+              <text x={bb.x + bb.w + pad + 34 / s} y={bb.y + (i * 56 + 31) / s} textAnchor="middle" fontSize={32 / s} fill="#dc2626">{label}</text>
+            </g>
+          ))}
+        </g>
+      )}
+    </g>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Component — Botswana SG cadastral diagram, portrait A4, faithful to the
@@ -195,10 +274,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     meta, points: rawPoints, sides: rawSides, parcels, extraPoints, manualAnnotations, pendingAnnotationPoint,
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
-    rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp,
+    rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
   },
   ref
 ) {
+  const [selBlock, setSelBlock] = useState<string | null>(null);
   // A single-lot diagram sheet's SIDES/DIRECTIONS/CO-ORDINATES table lists
   // one row per boundary point — real, required data, not decoration, so
   // unlike the beacon-dot labels below (nudged/hidden by declutterLabels
@@ -242,6 +322,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // Destructuring back the same names the old inline computation used
   // keeps the JSX below completely unchanged.
   const L = computeDiagramLayout(meta, rawPoints, rawSides, extraPoints ?? []);
+  const blocksLive = !!onBlockOffset && !drawMode;
+  const block = (id: string, ox: number, oy: number, children: ReactNode) => (
+    <MovableBlock id={id} ox={ox} oy={oy} off={blockOffsets?.[id]} interactive={blocksLive} selected={selBlock === id} onSelect={setSelBlock} onChange={onBlockOffset}>
+      {children}
+    </MovableBlock>
+  );
   const {
     points, sides,
     MM, VB_W, VB_H,
@@ -332,6 +418,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       xmlns="http://www.w3.org/2000/svg"
       fill="#000"
       onClick={onCanvasClick}
+      onPointerDown={() => setSelBlock(null)}
       onPointerMove={onCanvasMouseMove}
       onPointerUp={onCanvasMouseUp}
       style={{
@@ -423,15 +510,21 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       </g>
 
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
-      <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
-        Beacon description
-      </text>
-      {beaconLines.map((ln, i) => (
-        <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
+      {block("beaconDesc", tx + 4, bdHeadingY, (
+        <>
+          <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
+            Beacon description
+          </text>
+          {beaconLines.map((ln, i) => (
+            <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
+          ))}
+        </>
       ))}
-      <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">
-        {clampWords(meta.location, tw - 8, FS_BEACON_HEAD)}
-      </text>
+      {block("locality", tx + tw / 2, localityY, (
+        <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">
+          {clampWords(meta.location, tw - 8, FS_BEACON_HEAD)}
+        </text>
+      ))}
 
       {/* ===================== Right-side D.S.M / Approved / Director of
           Surveys column (client req 2026-08-22) — reference shows this as
@@ -486,20 +579,23 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           it in place around its own anchor so it keeps correctly pointing
           to true north's actual direction for whatever genuine tilt the
           data has. */}
-      <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200}) rotate(${arrowRotation})`}>
-        <line x1={0} y1={-170} x2={0} y2={54} stroke="black" strokeWidth={1} />
-        <polygon points="0,-170 -14,-55 4,-30" fill="none" stroke="black" strokeWidth={1.2} strokeLinejoin="round" />
-        <text x={-6} y={24} textAnchor="end" fontSize={FS_BEACON_HEAD}>T</text>
-        <text x={6} y={24} textAnchor="start" fontSize={FS_BEACON_HEAD}>N</text>
-      </g>
+      {block("northArrow", Math.max(tx + 90, Math.min(fig.x - 90, offX - 90)), fig.y + 200, (
+        <g transform={`translate(${Math.max(tx + 90, Math.min(fig.x - 90, offX - 90))}, ${fig.y + 200}) rotate(${arrowRotation})`}>
+          <line x1={0} y1={-170} x2={0} y2={54} stroke="black" strokeWidth={1} />
+          <polygon points="0,-170 -14,-55 4,-30" fill="none" stroke="black" strokeWidth={1.2} strokeLinejoin="round" />
+          <text x={-6} y={24} textAnchor="end" fontSize={FS_BEACON_HEAD}>T</text>
+          <text x={6} y={24} textAnchor="start" fontSize={FS_BEACON_HEAD}>N</text>
+        </g>
+      ))}
 
       {/* Scale tag moved here, right above the legal-description block
-          (client req 2026-08-22) — no longer under the north arrow. */}
-      {meta.scale > 0 && (
+          (client req 2026-08-22) — no longer under the north arrow. Moves
+          together with the legal description (same "legal" block). */}
+      {meta.scale > 0 && block("legal", VB_W / 2, legalY0 - 40, (
         <text x={VB_W / 2} y={legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
           Scale 1:{meta.scale.toLocaleString()}
         </text>
-      )}
+      ))}
 
       {/* ===================== FIGURE ===================== */}
       {parcels && parcels.length > 0 ? (
@@ -724,6 +820,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         let parentLine = 0;
         return (
           <>
+            {block("legal", VB_W / 2, legalY0 - 40, (
             <g textAnchor="middle">
               {figureLines.map((line, i) => (
                 <text key={i} x={VB_W / 2} y={legalY0 + i * LEGAL_LH} fontSize={FS_LEGAL} fontWeight="medium">
@@ -752,18 +849,27 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 </text>
               ))}
             </g>
+            ))}
 
             {/* ===================== certification/deductions (left) + surveyor (right) ===================== */}
-            {certLines.map((line, i) => (
-              <text key={`cert${i}`} x={tx + 20} y={certY1 - (certLines.length - 1 - i) * FS_BEACON_HEAD * 1.15} fontSize={certFs}>{line}</text>
+            {block("cert", tx + 20, deductionsY, (
+              <>
+                {certLines.map((line, i) => (
+                  <text key={`cert${i}`} x={tx + 20} y={certY1 - (certLines.length - 1 - i) * FS_BEACON_HEAD * 1.15} fontSize={certFs}>{line}</text>
+                ))}
+                <text x={tx + 20} y={deductionsY} fontSize={FS_BEACON_HEAD}>Deductions on this diagram are made on the back hereof</text>
+              </>
             ))}
-            <text x={tx + 20} y={deductionsY} fontSize={FS_BEACON_HEAD}>Deductions on this diagram are made on the back hereof</text>
             {/* Plain/simple styling (client req 2026-08-22) — no bold, no
                 forced caps, no signature line above; prints exactly
                 whatever the surveyor field and the fixed "Land Surveyor"
                 title read. */}
-            <text x={tableRight - 48} y={certY1} textAnchor="end" fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
-            <text x={tableRight - 48} y={deductionsY} textAnchor="end" fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
+            {block("surveyor", tableRight - 48, deductionsY, (
+              <>
+                <text x={tableRight - 48} y={certY1} textAnchor="end" fontSize={FS_BEACON_HEAD}>{surveyorFit}</text>
+                <text x={tableRight - 48} y={deductionsY} textAnchor="end" fontSize={FS_BEACON_HEAD}>Land Surveyor</text>
+              </>
+            ))}
           </>
         );
       })()}

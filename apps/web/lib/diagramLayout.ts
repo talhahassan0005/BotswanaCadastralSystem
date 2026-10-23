@@ -80,7 +80,7 @@ export interface DiagramMeta {
   // WHOLE template up by the true ISO paper-size ratio (A3 = A4×√2, A2 =
   // A4×2 — see PAGE_SCALE below), not just print the same cramped A4
   // layout onto bigger paper.
-  paperSize?: "A4" | "A3" | "A2";
+  paperSize?: "A4" | "A3" | "A2" | "A1";
 }
 
 /** Certification line wording — differs per diagram type per SG convention.
@@ -253,7 +253,7 @@ export function computeDiagramLayout(
   // the same PROPORTIONS as the A4 reference, just literally bigger, which
   // is what actually gives a beacon-heavy plot's table room to grow into
   // instead of overflowing a fixed-size page.
-  const PAGE_SCALE = meta.paperSize === "A3" ? Math.SQRT2 : meta.paperSize === "A2" ? 2 : 1;
+  const PAGE_SCALE = meta.paperSize === "A3" ? Math.SQRT2 : meta.paperSize === "A2" ? 2 : meta.paperSize === "A1" ? 2 * Math.SQRT2 : 1;
   const VB_W = 210 * PAGE_SCALE * MM; // full page width
   const VB_H = 297 * PAGE_SCALE * MM; // full page height
 
