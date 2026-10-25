@@ -267,8 +267,13 @@ export function computeDiagramLayout(
   // table on the RIGHT page, offset by DETAILS_DX.  All coordinates below
   // stay page-local (0..VB_W); the renderers add the offset for the right
   // page when SPLIT.
-  const SPLIT = meta.paperSize === "A3";
-  const PAGE_SCALE = SPLIT ? 1 : meta.paperSize === "A2" ? 2 : meta.paperSize === "A1" ? 2 * Math.SQRT2 : 1;
+  // All A-series larger than A4 use the split layout (diagram left | table
+  // right), each half-page being one size smaller than the full sheet:
+  //   A3 split → two A4 halves  (PAGE_SCALE = 1)
+  //   A2 split → two A3 halves  (PAGE_SCALE = √2)
+  //   A1 split → two A2 halves  (PAGE_SCALE = 2)
+  const SPLIT = meta.paperSize === "A3" || meta.paperSize === "A2" || meta.paperSize === "A1";
+  const PAGE_SCALE = meta.paperSize === "A1" ? 2 : meta.paperSize === "A2" ? Math.SQRT2 : 1;
   const VB_W = 210 * PAGE_SCALE * MM; // full page width
   const VB_H = 297 * PAGE_SCALE * MM; // full page height
   const SHEET_W = SPLIT ? 2 * VB_W : VB_W; // whole sheet (both pages when split)

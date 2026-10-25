@@ -1411,12 +1411,13 @@ export function Diagrams() {
     // exactly the chosen paper's physical size with zero margin — no more
     // mm-rounding tightrope between a sub-page-sized sheet and hand-tuned
     // CSS margins.
-    const pageMm = meta.paperSize === "A3" ? "420mm" : meta.paperSize === "A2" ? "420mm" : meta.paperSize === "A1" ? "594mm" : "210mm";
-    const pageMmH = meta.paperSize === "A3" ? "297mm" : meta.paperSize === "A2" ? "594mm" : meta.paperSize === "A1" ? "841mm" : "297mm";
+    // SPLIT sizes print landscape (two half-pages side by side).
+    const pageMm = meta.paperSize === "A1" ? "841mm" : meta.paperSize === "A2" ? "594mm" : meta.paperSize === "A3" ? "420mm" : "210mm";
+    const pageMmH = meta.paperSize === "A1" ? "594mm" : meta.paperSize === "A2" ? "420mm" : meta.paperSize === "A3" ? "297mm" : "297mm";
     w.document.write(
       `<html><head><title>${kind} diagram — ${meta.lotName}</title>` +
         `<style>` +
-        `@page{size:${meta.paperSize ?? "A4"} ${meta.paperSize === "A3" ? "landscape" : "portrait"};margin:0}` +
+        `@page{size:${meta.paperSize ?? "A4"} ${(meta.paperSize === "A3" || meta.paperSize === "A2" || meta.paperSize === "A1") ? "landscape" : "portrait"};margin:0}` +
         `body{margin:0}` +
         `svg{width:${pageMm};height:${pageMmH};display:block}` +
         `.print-note{position:fixed;top:0;left:0;right:0;background:#fef3c7;color:#78350f;font:14px/1.4 system-ui,sans-serif;padding:10px 16px;z-index:10}` +
@@ -1737,8 +1738,8 @@ export function Diagrams() {
                       options={[
                         { value: "A4", label: "A4 (210 × 297mm)" },
                         { value: "A3", label: "A3 landscape (420 × 297mm) — two A4 pages: diagram | table + details" },
-                        { value: "A2", label: "A2 (420 × 594mm) — a lot more room" },
-                        { value: "A1", label: "A1 (594 × 841mm) — very large lots" },
+                        { value: "A2", label: "A2 landscape (594 × 420mm) — two A3 pages: diagram | table + details" },
+                        { value: "A1", label: "A1 landscape (841 × 594mm) — two A2 pages: diagram | table + details" },
                       ]}
                     />
                   </Field>
