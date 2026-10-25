@@ -191,7 +191,17 @@ export function Diagrams() {
     annotations?: ManualAnnotation[];
     texts?: ManualText[];
     blockOffsets?: Record<string, BlockOffset>;
+    lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset> }>;
   };
+  // Per-lot edit stash — each lot (identified by its key, see activeLotKey
+  // below) gets its own independent set of annotations, texts and
+  // blockOffsets. Switching lots saves the current edits under the previous
+  // lot's key and restores the new lot's saved edits (or an empty set if
+  // this lot has never been edited). The stash lives in `diagramInput` so
+  // it survives project saves and reloads.
+  // `lotEditsRef` is a ref (not state) so we can read the latest stash
+  // synchronously inside the lot-switch effect without stale closure issues.
+  const lotEditsRef = useRef<Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset> }>>(di.lotEdits ?? {});
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
@@ -459,6 +469,19 @@ export function Diagrams() {
   // arrow, legal description, certificate lines, surveyor name.
   const [blockOffsets, setBlockOffsets] = useState<Record<string, BlockOffset>>(di.blockOffsets ?? {});
   const setBlockOffset = (id: string, v: BlockOffset) => setBlockOffsets((m) => ({ ...m, [id]: v }));
+  // Refs that always hold the latest values — needed so the lot-switch
+  // effect can read them without a stale closure (effects only capture the
+  // values that existed when they were created; these refs are always current).
+  const annotationsRef = useRef(annotations);
+  const textsRef = useRef(texts);
+  const blockOffsetsRef = useRef(blockOffsets);
+  annotationsRef.current = annotations;
+  textsRef.current = texts;
+  blockOffsetsRef.current = blockOffsets;
+  // The key that identifies the currently-loaded lot — COGO lots get a
+  // "cogo:" prefix so they never collide with Parcels-tab parcel IDs.
+  const activeLotKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
+  const prevLotKeyRef = useRef(activeLotKey); // initialised to the key at mount
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
@@ -900,9 +923,35 @@ export function Diagrams() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selParcelId]);
 
+  // Lot-switch effect: when the user switches to a different lot, save the
+  // current annotations/texts/blockOffsets under the previous lot's key and
+  // load (or initialise to empty) the new lot's saved edits. This is the
+  // entire isolation mechanism — no other code needs to change.
+  useEffect(() => {
+    const newKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
+    const prevKey = prevLotKeyRef.current;
+    if (newKey === prevKey) return;
+    // Persist the current lot's edits into the stash.
+    lotEditsRef.current = {
+      ...lotEditsRef.current,
+      [prevKey]: {
+        annotations: annotationsRef.current,
+        texts: textsRef.current,
+        blockOffsets: blockOffsetsRef.current,
+      },
+    };
+    // Load the new lot's saved edits, or start clean.
+    const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {} };
+    setAnnotations(entry.annotations);
+    setTexts(entry.texts);
+    setBlockOffsets(entry.blockOffsets);
+    prevLotKeyRef.current = newKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCogoLotNumber, selParcelId]);
+
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets });
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, lotEdits: lotEditsRef.current });
   }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, liveCoordinateSystem, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
@@ -1092,7 +1141,8 @@ export function Diagrams() {
         hRow1, hRow2, hRow3, xYDividerTop, xXDividerTop,
         dsmApprovedY, dosY1, dosY2, dosLineY,
         arrowX, arrowY,
-        bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY,
+        bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY, localityY_left,
+        fig,
         figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
         landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, certLines, surveyorFit, leftColW, rightColW,
         annTop, annBottom, annC1, annC2,
@@ -1111,13 +1161,16 @@ export function Diagrams() {
       };
       pageDX = DETAILS_DX;
       frame();
-      pageDX = 0; // the table (left page when split; the only page otherwise)
+      pageDX = 0; // the figure page (left page when split; the only page otherwise)
       if (SPLIT) {
         // Left page frame joins the right page's frame (one sheet, one divider).
         line(tx, ty, DETAILS_DX + tx, ty);
         line(tx, ty + FRAME_H, DETAILS_DX + tx, ty + FRAME_H);
         line(tx, ty, tx, ty + FRAME_H);
       }
+      // For Split A3 the table is on the right page; for every other size
+      // it is the only page (pageDX remains 0).
+      pageDX = SPLIT ? DETAILS_DX : 0;
 
       // ===================== Top data table (Part 27: open-bottom) =====================
       line(xSideVal, dataTop, xSideVal, tableBottom);
@@ -1160,28 +1213,43 @@ export function Diagrams() {
         }
       }
 
-      // Everything below is on the figure/details page.
-      pageDX = DETAILS_DX;
+      // For SPLIT A3: D.S.M box header is on the right page (table page).
+      // Table is already at pageDX = SPLIT ? DETAILS_DX : 0 (set above).
       if (SPLIT) {
         text((xDsm + tableRight) / 2, hRow1, "D.S.M No.", FS_TABLE_HEAD, "middle");
         text((xDsm + tableRight) / 2, hRow2, meta.dsmNo || "", FS_TABLE_HEAD, "middle");
         line(xDsm, ty + headH, tableRight, ty + headH);
       }
 
-      // ===================== Beacon description + locality =====================
+      // ===================== Beacon description (on the table/right page) =====================
       applyBlock("beaconDesc", tx + 4, bdHeadingY);
       text(tx + 4, bdHeadingY, "BEACON DESCRIPTION", FS_BEACON_HEAD);
       beaconLines.forEach((ln, i) => text(tx + 4, bdLinesY0 + i * BD_LH, dxfLabelFit(ln, tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD));
-      applyBlock("locality", tx + tw / 2, localityY);
-      text(tx + tw / 2, localityY, dxfLabelFit(meta.location || "", tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle");
-      applyBlock(null);
+      // Locality: on right/only page for non-SPLIT; added to left page below for SPLIT.
+      if (!SPLIT) {
+        applyBlock("locality", tx + tw / 2, localityY);
+        text(tx + tw / 2, localityY, dxfLabelFit(meta.location || "", tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle");
+        applyBlock(null);
+      } else {
+        applyBlock(null);
+      }
 
       // ===================== D.S.M No. / Approved / Director of Surveys box =====================
-      line(xDsm, SPLIT ? ty : tableBottom, xDsm, SPLIT ? dosLineY : Math.max(tableBottom, dosLineY));
+      line(xDsm, tableBottom, xDsm, Math.max(tableBottom, dosLineY));
       text(xDsm + 16, dsmApprovedY, "Approved", FS_BEACON_HEAD);
       text(xDsm + 16, dosY1, "Director of Surveys", FS_BEACON_HEAD);
       text(xDsm + 16, dosY2, "and Mapping", FS_BEACON_HEAD);
       line(xDsm, dosLineY, tableRight - 16, dosLineY);
+
+      // Everything below is on the left (figure) page.
+      pageDX = 0;
+
+      // Village/locality on left page (SPLIT A3 only).
+      if (SPLIT) {
+        applyBlock("locality", tx + tw / 2, localityY_left);
+        text(tx + tw / 2, localityY_left, dxfLabelFit(meta.location || "", tw - 8, FS_BEACON_HEAD), FS_BEACON_HEAD, "middle");
+        applyBlock(null);
+      }
 
       // ===================== North arrow (same outline style/size as the SVG) =====================
       applyBlock("northArrow", arrowX, arrowY);
@@ -1196,11 +1264,19 @@ export function Diagrams() {
       }
       text(arrowX - 6, arrowY + 24, "T", FS_BEACON_HEAD, "end");
       text(arrowX + 6, arrowY + 24, "N", FS_BEACON_HEAD);
-      applyBlock("legal", VB_W / 2, legalY0 - 40);
-
-      if (meta.scale > 0) {
-        text(VB_W / 2, legalY0 - 40, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
+      {
+        // Scale: for Split A3 near the bottom of the left (figure) page;
+        // for every other size just above the legal-description block.
+        const scaleY = SPLIT ? fig.y + fig.h - 50 : legalY0 - 40;
+        applyBlock("legal", VB_W / 2, scaleY);
+        if (meta.scale > 0) {
+          text(VB_W / 2, scaleY, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
+        }
+        applyBlock(null);
       }
+
+      // Legal description and annex are on the right page for Split A3.
+      pageDX = SPLIT ? DETAILS_DX : 0;
 
       // ===================== Legal description =====================
       // Every line here was already word-wrapped once, in the shared layout,
@@ -1660,7 +1736,7 @@ export function Diagrams() {
                       onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" || v === "A1" ? v : "A4") }))}
                       options={[
                         { value: "A4", label: "A4 (210 × 297mm)" },
-                        { value: "A3", label: "A3 landscape (420 × 297mm) — two A4 pages: table | diagram + details" },
+                        { value: "A3", label: "A3 landscape (420 × 297mm) — two A4 pages: diagram | table + details" },
                         { value: "A2", label: "A2 (420 × 594mm) — a lot more room" },
                         { value: "A1", label: "A1 (594 × 841mm) — very large lots" },
                       ]}

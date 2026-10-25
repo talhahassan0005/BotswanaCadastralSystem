@@ -343,7 +343,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     annTop, annBottom, annC1, annC2, dash,
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
-    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY,
+    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
     sc, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
@@ -398,14 +398,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // pixel-space click/drag back to real survey coordinates so annotations
   // stay attached to the boundary regardless of how this scale/offset
   // recomputes later (a fixed pixel position doesn't).
-  // Split A3: the figure's page is drawn DETAILS_DX to the right, so these
-  // sheet coordinates include that offset (0 on every single-page size).
+  // After the A3 swap the figure is on the LEFT page (no DETAILS_DX offset).
+  // For every single-page size DETAILS_DX is 0 anyway.
   onTransform?.({
-    toScreen: (east, north) => ({ x: toX(east) + DETAILS_DX, y: toY(north) }),
-    toWorld: (x, y) => ({ east: (x - DETAILS_DX - offX) / sc + minE, north: maxN - (y - offY) / sc }),
-    toScreenLive: (east, north) => ({ x: fx(east, north) + DETAILS_DX, y: fy(east, north) }),
+    toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
+    toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
+    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
     toWorldLive: (xs, y) => {
-      const x = xs - DETAILS_DX;
+      const x = xs;
       // Undo rotate (about the figure pivot), then the flip, then toX/toY.
       const dx = x - figPivotX, dy = y - figPivotY;
       let x0 = rotation ? figPivotX + dx * figCosR + dy * figSinR : x;
@@ -435,26 +435,22 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     >
       {/* outer border — 160.4 x 272.9mm, positioned per Part 23's exact
           margins (24.8mm left/right, 12.2mm top, ~11.9mm bottom) */}
-      {/* Split A3: left page frame around the table; the right page's own
-          frame (and everything on that page) sits in the offset group. */}
-      {/* Runs right up to the details page's frame, so the two pages read
-          as one joined sheet with a single divider (client's A3 sample). */}
+      {/* Split A3: left page frame for the figure; the right page's own
+          frame sits in the offset group below. The two frames share a
+          divider line so the joined sheet reads as one landscape page. */}
       {SPLIT && <rect x={FRAME_X} y={FRAME_Y} width={DETAILS_DX} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />}
       <g transform={DETAILS_DX ? `translate(${DETAILS_DX} 0)` : undefined}>
         <rect x={FRAME_X} y={FRAME_Y} width={FRAME_W} height={FRAME_H} fill="white" stroke="black" strokeWidth={2} />
       </g>
 
-      {/* ===================== TOP DATA TABLE ===================== */}
-      {/* Open-at-the-bottom, per the reference PDF's actual line geometry
-          (client req 2026-08-22, Part 27) — the reference has only two
-          horizontal lines in this band (the frame's own top edge, and the
-          header/data divider); there is no line between individual data
-          rows and no closing bottom border. No table-outline <rect> here:
-          the top/left/right edges are already the frame's own border
-          (tx/tableRight = FRAME_X/FRAME_RIGHT, ty = FRAME_Y), so drawing a
-          separate table rect would just duplicate them AND add the bottom
-          border the reference doesn't have. */}
-      <g>
+      {/* ===================== RIGHT PAGE: table + beacon desc + details ===================== */}
+      {/* For Split A3 this entire group is offset by DETAILS_DX so it lands
+          on the right page.  For every other paper size DETAILS_DX is 0 so
+          the group renders without any offset (the only page). */}
+      {/* TOP DATA TABLE — Open-at-the-bottom, per the reference PDF's actual
+          line geometry (client req 2026-08-22, Part 27). */}
+      <g transform={SPLIT ? `translate(${DETAILS_DX} 0)` : undefined}>
+        <g>{/* inner group for table lines + rows */}
         {/* vertical dividers */}
         {/* Row-label / distance-value split within SIDES METRES (client req
             2026-08-22) — matches the point-letter/Y divider's style: a
@@ -522,10 +518,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             </g>
           );
         })}
-      </g>
+        </g>{/* end inner table group */}
 
-      {/* Everything from here on is on the right (figure/details) page when split. */}
-      <g transform={DETAILS_DX ? `translate(${DETAILS_DX} 0)` : undefined}>
       {SPLIT && (
         <>
           {/* D.S.M box header, on its own at the top-right of this page. */}
@@ -547,7 +541,9 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           ))}
         </>
       ))}
-      {block("locality", tx + tw / 2, localityY, (
+      {/* Locality on the right/only page for non-SPLIT (A4/A2/A1).
+          For SPLIT A3 the locality lives on the left page — see below. */}
+      {!SPLIT && block("locality", tx + tw / 2, localityY, (
         <text x={tx + tw / 2} y={localityY} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">
           {clampWords(meta.location, tw - 8, FS_BEACON_HEAD)}
         </text>
@@ -576,7 +572,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             running down to the signature line below "and Mapping".
             Only extends past tableBottom if the block itself is taller
             than the table (never for a normal-sized plot). */}
-        <line x1={xDsm} y1={SPLIT ? ty : tableBottom} x2={xDsm} y2={SPLIT ? dosLineY : Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
+        <line x1={xDsm} y1={tableBottom} x2={xDsm} y2={Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
         <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD}>Approved</text>
         <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD}>Director of Surveys</text>
         <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD}>and Mapping</text>
@@ -584,6 +580,16 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             (client req 2026-10-21: "close that corner"). */}
         <line x1={xDsm} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1.2} />
       </>
+      </g>{/* end right-page group 1: table + beacon desc + DSM/Approved */}
+
+      {/* ===================== LEFT PAGE: village name (SPLIT) + north arrow + scale + figure ===================== */}
+      {/* For Split A3 these elements sit on the left page (no offset).
+          For every other size DETAILS_DX = 0, so they render on the only page. */}
+      {SPLIT && block("locality", tx + tw / 2, localityY_left, (
+        <text x={tx + tw / 2} y={localityY_left} textAnchor="middle" fontSize={FS_BEACON_HEAD} letterSpacing="1">
+          {clampWords(meta.location, tw - 8, FS_BEACON_HEAD)}
+        </text>
+      ))}
 
       {/* ===================== North arrow + scale (left of the figure) ===================== */}
       {/* Moved to the LEFT side of the sheet (client req 2026-08-22) —
@@ -615,11 +621,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         </g>
       ))}
 
-      {/* Scale tag moved here, right above the legal-description block
-          (client req 2026-08-22) — no longer under the north arrow. Moves
-          together with the legal description (same "legal" block). */}
-      {meta.scale > 0 && block("legal", VB_W / 2, legalY0 - 40, (
-        <text x={VB_W / 2} y={legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
+      {/* Scale tag: for Split A3 it sits near the bottom of the left page
+          (just above the figure's lower boundary); for every other size it
+          sits just above the legal-description block (client req 2026-08-22).
+          Uses the "legal" block ID so it moves together with the legal
+          description when dragged. */}
+      {meta.scale > 0 && block("legal", VB_W / 2, SPLIT ? figBottom - 50 : legalY0 - 40, (
+        <text x={VB_W / 2} y={SPLIT ? figBottom - 50 : legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
           Scale 1:{meta.scale.toLocaleString()}
         </text>
       ))}
@@ -741,7 +749,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         );
       })}
       {pendingAnnotationPoint && (
-        <circle cx={pendingAnnotationPoint.x - DETAILS_DX} cy={pendingAnnotationPoint.y} r={5} fill="black" />
+        <circle cx={pendingAnnotationPoint.x} cy={pendingAnnotationPoint.y} r={5} fill="black" />
       )}
       {/* Free-text notes the surveyor placed directly on the diagram
           (client req 2026-08-24), rotatable (client req 2026-08-26) via an
@@ -814,6 +822,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </text>
         </g>
       ))}
+
+      {/* ===================== RIGHT PAGE group 2: legal + cert + annex ===================== */}
+      {/* For Split A3 this group is offset to the right page; for every
+          other size DETAILS_DX = 0 so it renders on the only page. */}
+      <g transform={SPLIT ? `translate(${DETAILS_DX} 0)` : undefined}>
 
       {/* ===================== LEGAL DESCRIPTION ===================== */}
       {(() => {

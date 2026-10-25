@@ -257,13 +257,13 @@ export function computeDiagramLayout(
   // "2 A4's joined together.. the other side is just a diagram or sketch and
   // the other is details"): a landscape sheet of two A4 pages — the figure,
   // other is details", plus the client's own A3 model "dg 1881"): a
-  // landscape sheet of two A4 pages — the SIDES/DIRECTIONS/CO-ORDINATES
-  // table alone on the LEFT page (running down the full page, so a beacon-
-  // heavy lot fits), and everything else (D.S.M box, beacon description,
-  // village, north arrow, figure, legal description, certificate,
-  // registration table) on the RIGHT page, offset by DETAILS_DX. All
-  // coordinates below stay page-local (0..VB_W); the renderers add the
-  // offset for the right page.
+  // landscape sheet of two A4 pages — the figure, north arrow, scale and
+  // village name on the LEFT page (nearly the full page available for the
+  // drawing), and the SIDES/DIRECTIONS/CO-ORDINATES table, D.S.M box,
+  // beacon description, legal description, certificate and registration
+  // table on the RIGHT page, offset by DETAILS_DX.  All coordinates below
+  // stay page-local (0..VB_W); the renderers add the offset for the right
+  // page when SPLIT.
   const SPLIT = meta.paperSize === "A3";
   const PAGE_SCALE = SPLIT ? 1 : meta.paperSize === "A2" ? 2 : meta.paperSize === "A1" ? 2 * Math.SQRT2 : 1;
   const VB_W = 210 * PAGE_SCALE * MM; // full page width
@@ -376,8 +376,8 @@ export function computeDiagramLayout(
   // certificate paragraph, surveyor signature line) — Part 23 gives no
   // fixed sub-measurements here, only the ~188mm total budget between the
   // two tables ("lay these out with even, uncramped spacing"). ----
-  // On the split A3 the right page has no table above this zone.
-  const midTop = SPLIT ? FRAME_Y : tableBottom;
+  // The right page (or the only page on A4) always has the table above.
+  const midTop = tableBottom;
   const es = points.map((p) => p.east);
   const nsv = points.map((p) => p.north);
   const figureLetters =
@@ -454,21 +454,27 @@ export function computeDiagramLayout(
   const beaconLines = meta.beaconDescription
     .split(/\s*[;\n]\s*/)
     .filter(Boolean)
-    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), SPLIT ? xDsm - tx - 30 : tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
+    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
   const BD_LH = FS_BEACON * 1.35;
   const bdHeadingY = midTop + 40 * PAGE_SCALE;
   const bdLinesY0 = midTop + 74 * PAGE_SCALE;
   const bdBlockBottom = bdLinesY0 + Math.max(beaconLines.length, 1) * BD_LH;
   const localityY = bdBlockBottom + 44 * PAGE_SCALE;
+  // For SPLIT A3: village/locality name shows at the top of the LEFT page,
+  // above the figure.  For every other size it stays after the beacon
+  // description on the only page (= localityY above).
+  const localityY_left = SPLIT ? FRAME_Y + 48 * PAGE_SCALE : localityY;
 
-  const figTop = localityY + 44 * PAGE_SCALE;
-  const figBottom = Math.max(figTop + 400 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
+  // For SPLIT A3: the figure is on the LEFT page, which has no table above
+  // it, so it can fill the full frame height.  For every other size the
+  // figure sits below the beacon-description + locality block.
+  const figTop = SPLIT ? FRAME_Y + 80 * PAGE_SCALE : localityY + 44 * PAGE_SCALE;
+  const figBottom = SPLIT
+    ? FRAME_BOTTOM - 60 * PAGE_SCALE
+    : Math.max(figTop + 400 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
   // Reserve the extra margin on the LEFT of the figure box, not the right
-  // (client req 2026-08-22) — the north arrow moved to the left side of the
-  // sheet, so that's where the box now needs the spare 300 units of room.
-  // Split A3: the D.S.M/Approved box sits at the top-right of the figure's
-  // page with no table under it, so the figure box stops left of it.
-  const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: SPLIT ? xDsm - 40 - (tx + 300 * PAGE_SCALE) : tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
+  // (client req 2026-08-22) — the north arrow sits on the left side.
+  const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
   const pad = 60 * PAGE_SCALE;
   // Figure bounds include any extra (non-traverse) marks so they stay visible.
   const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
@@ -588,7 +594,7 @@ export function computeDiagramLayout(
     annTop, annBottom, annC1, annC2, dash,
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
-    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY,
+    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
     sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
