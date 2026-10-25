@@ -894,13 +894,13 @@ export function Diagrams() {
   // Tribal-lease sketch carries its own (Land Board) field set.
   const [leaseMeta, setLeaseMeta] = useState<Omit<LeaseMeta, "areaM2" | "coordinateSystem">>(di.leaseMeta ?? {
     fileNo: "B",
-    date: "16/09/2025",
-    compiledBy: "O. Ithuteng",
-    applicantName: "Aobakwe Thuo Chijoro",
-    useType: "Residential",
-    tribalLot: "4266",
-    village: "Mmopane, Block 1",
-    postal: "P O Box 80934 Gaborone",
+    date: new Date().toLocaleDateString("en-GB").replace(/\//g, "/"),
+    compiledBy: di.meta?.surveyor ?? "",
+    applicantName: "",
+    useType: "",
+    tribalLot: "",
+    village: di.meta?.location ?? "",
+    postal: "",
     localityScale: 1530,
     boundaryScale: 1250,
   });

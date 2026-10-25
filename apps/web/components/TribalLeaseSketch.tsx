@@ -102,6 +102,8 @@ export const TribalLeaseSketch = forwardRef<SVGSVGElement, Props>(function Triba
 
       {/* ---------- Header ---------- */}
       <text x={40} y={56} fontSize={15} fontWeight="bold" textDecoration="underline">TRIBAL LEASE SKETCH FOR :</text>
+      {/* Vertical separator between title block and applicant info */}
+      <line x1={292} y1={20} x2={292} y2={145} stroke="black" strokeWidth={1} />
       <g fontSize={12}>
         <text x={300} y={56}>{meta.applicantName}</text>
         <text x={300} y={74}>{meta.useType}</text>
