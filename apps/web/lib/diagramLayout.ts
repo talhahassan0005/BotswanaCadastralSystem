@@ -148,12 +148,15 @@ export function sideLabel(from: string | null, to: string | null): string {
 /** Sequential boundary letter — A, B, ... Z, AA, AB, ... (client req
  *  2026-08-23: the diagram must letter the boundary A, B, C, ... on the
  *  official sheet regardless of what the underlying survey data calls
- *  those points, e.g. "25A2"/"M1" — same as every SG reference sample). */
+ *  those points, e.g. "25A2"/"M1" — same as every SG reference sample).
+ *  I and O are skipped to avoid confusion with 1 and 0 (client req 2026-10-25). */
+const _BL = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // 24 letters — skips I and O
 export function boundaryLetter(i: number): string {
+  const BASE = _BL.length; // 24
   let n = i, s = "";
   do {
-    s = String.fromCharCode(65 + (n % 26)) + s;
-    n = Math.floor(n / 26) - 1;
+    s = _BL[n % BASE] + s;
+    n = Math.floor(n / BASE) - 1;
   } while (n >= 0);
   return s;
 }
