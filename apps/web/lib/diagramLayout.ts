@@ -459,18 +459,35 @@ export function computeDiagramLayout(
   // Beacon Description (dynamic line count) + locality name sit right
   // below the top table; the figure gets whatever's left above the legal
   // block reserve.
-  // Each semicolon-separated entry gets its own word-wrap pass (client req
-  // 2026-08-24 — an unusually long single entry, with no semicolon to break
-  // on, used to just run off the right edge of the sheet instead of
-  // dropping to a second line like every other free-text block here).
-  const beaconLines = meta.beaconDescription
+  // Beacon description: each newline/semicolon entry is one row with
+  // [beacon names] - [description] in separate columns (client req 2026-10-26).
+  // Entries without a colon are treated as description-only (no left column).
+  const BD_BEACON_COL = 90 * PAGE_SCALE;  // width of the beacon-names column
+  const BD_DASH_COL   = 18 * PAGE_SCALE;  // width of the "-" separator
+  const BD_DESC_COL   = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
+  const beaconEntries = meta.beaconDescription
     .split(/\s*[;\n]\s*/)
     .filter(Boolean)
-    .flatMap((entry) => wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD));
+    .map((entry) => {
+      const ci = entry.indexOf(":");
+      if (ci > 0) {
+        const beacons = entry.slice(0, ci).trim();
+        const desc = entry.slice(ci + 1).trim();
+        const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
+        return { beacons, descLines };
+      }
+      const descLines = wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
+      return { beacons: "", descLines };
+    });
+  // Flat lines for DXF export (formatted with dash separator)
+  const beaconLines = beaconEntries.flatMap(({ beacons, descLines }) =>
+    descLines.map((dl, i) => (beacons && i === 0 ? `${beacons} - ${dl}` : dl))
+  );
   const BD_LH = FS_BEACON * 1.35;
   const bdHeadingY = midTop + 40 * PAGE_SCALE;
   const bdLinesY0 = midTop + 74 * PAGE_SCALE;
-  const bdBlockBottom = bdLinesY0 + Math.max(beaconLines.length, 1) * BD_LH;
+  const totalBeaconRows = Math.max(beaconEntries.reduce((s, e) => s + e.descLines.length, 0), 1);
+  const bdBlockBottom = bdLinesY0 + totalBeaconRows * BD_LH;
   const localityY = bdBlockBottom + 44 * PAGE_SCALE;
   // For SPLIT A3: village/locality name shows at the top of the LEFT page,
   // above the figure.  For every other size it stays after the beacon
@@ -606,7 +623,7 @@ export function computeDiagramLayout(
     annTop, annBottom, annC1, annC2, dash,
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
-    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
+    beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
     sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,

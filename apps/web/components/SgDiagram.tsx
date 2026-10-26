@@ -343,7 +343,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     annTop, annBottom, annC1, annC2, dash,
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
-    beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
+    beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
     sc, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
@@ -536,9 +536,27 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
             Beacon description
           </text>
-          {beaconLines.map((ln, i) => (
-            <text key={`bd${i}`} x={tx + 4} y={bdLinesY0 + i * BD_LH} fontSize={FS_BEACON_HEAD}>{ln}</text>
-          ))}
+          {(() => {
+            let row = 0;
+            return beaconEntries.map(({ beacons, descLines }, ei) => {
+              const els = descLines.map((dl, li) => {
+                const y = bdLinesY0 + row * BD_LH;
+                row++;
+                return (
+                  <g key={`bd${ei}-${li}`}>
+                    {beacons && li === 0 && (
+                      <>
+                        <text x={tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{beacons}</text>
+                        <text x={tx + 4 + BD_BEACON_COL} y={y} fontSize={FS_BEACON_HEAD} textAnchor="middle">-</text>
+                      </>
+                    )}
+                    <text x={beacons ? tx + 4 + BD_BEACON_COL + BD_DASH_COL : tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{dl}</text>
+                  </g>
+                );
+              });
+              return els;
+            });
+          })()}
         </>
       ))}
       {/* Locality on the right/only page for non-SPLIT (A4/A2/A1).
