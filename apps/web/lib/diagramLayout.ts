@@ -465,47 +465,61 @@ export function computeDiagramLayout(
   // [beacon names] - [description] in separate columns (client req 2026-10-26).
   // Entries without a colon are treated as description-only (no left column).
   const BD_DASH_COL = 18 * PAGE_SCALE;
-  // Parse entries once to find the widest beacon-group name, then size the
-  // beacon column dynamically so long lists like "A,B,C,D,E,F" don't overflow.
-  const _rawBeaconEntries = meta.beaconDescription
+  // Fixed beacon column: 30% of table width.  Long lists wrap by comma within
+  // this width so they never overflow into the dash/description columns.
+  const BD_BEACON_COL = Math.round(tw * 0.30);
+  const BD_DESC_COL = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
+
+  // Split a comma-separated beacon list ("A1,A2,...") into lines that each
+  // fit within BD_BEACON_COL SVG units at the given font size.
+  function wrapBeaconNames(names: string): string[] {
+    const parts = names.split(",").map((s) => s.trim()).filter(Boolean);
+    const lines: string[] = [];
+    let cur = "";
+    for (const part of parts) {
+      const candidate = cur ? `${cur},${part}` : part;
+      if (cur && candidate.length * FS_BEACON_HEAD * 0.58 > BD_BEACON_COL - 4 * PAGE_SCALE) {
+        lines.push(`${cur},`);
+        cur = part;
+      } else {
+        cur = candidate;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [names];
+  }
+
+  const beaconEntries = meta.beaconDescription
     .split(/\s*[;\n]\s*/).filter(Boolean)
     .map((entry) => {
       // Support both "A,B - desc" (space-dash-space) and "A,B : desc" as separators.
-      // Space-dash-space is checked first so beacon names with hyphens (e.g. "AA-AB")
-      // are not mistakenly split.
       const dashIdx = entry.indexOf(" - ");
       const colonIdx = entry.indexOf(":");
       const ci = dashIdx > 0 ? dashIdx : colonIdx;
-      const skip = dashIdx > 0 ? 3 : 1; // chars to skip past the separator
-      return ci > 0
-        ? { beacons: entry.slice(0, ci).trim(), desc: entry.slice(ci + skip).trim() }
-        : { beacons: "", desc: entry.trim() };
+      const skip = dashIdx > 0 ? 3 : 1;
+      if (ci > 0) {
+        const beacons = entry.slice(0, ci).trim();
+        const desc = entry.slice(ci + skip).trim();
+        const beaconNameLines = wrapBeaconNames(beacons);
+        const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
+        return { beaconNameLines, descLines };
+      }
+      const descLines = wrapSvgWords(entry.trim().split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
+      return { beaconNameLines: [] as string[], descLines };
     });
-  const _maxBeaconW = _rawBeaconEntries.reduce(
-    (mx, { beacons }) => Math.max(mx, beacons.length * FS_BEACON_HEAD * 0.58), 0
-  );
-  // Minimum 90 units, grows to fit, capped at 40% of table width.
-  const BD_BEACON_COL = Math.min(
-    Math.max(90 * PAGE_SCALE, _maxBeaconW + 12 * PAGE_SCALE),
-    tw * 0.4
-  );
-  const BD_DESC_COL = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
-  const beaconEntries = _rawBeaconEntries.map(({ beacons, desc }) => {
-    if (beacons) {
-      const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
-      return { beacons, descLines };
-    }
-    const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
-    return { beacons: "", descLines };
-  });
   // Flat lines for DXF export (formatted with dash separator)
-  const beaconLines = beaconEntries.flatMap(({ beacons, descLines }) =>
-    descLines.map((dl, i) => (beacons && i === 0 ? `${beacons} - ${dl}` : dl))
-  );
+  const beaconLines = beaconEntries.flatMap(({ beaconNameLines, descLines }) => {
+    if (!beaconNameLines.length) return descLines;
+    // Merge: last beacon name line gets the "- desc" appended; remaining lines are names only
+    const rows: string[] = beaconNameLines.slice(0, -1);
+    const lastBn = beaconNameLines[beaconNameLines.length - 1];
+    descLines.forEach((dl, i) => rows.push(i === 0 ? `${lastBn} - ${dl}` : dl));
+    return rows;
+  });
   const BD_LH = FS_BEACON * 1.35;
   const bdHeadingY = midTop + 40 * PAGE_SCALE;
   const bdLinesY0 = midTop + 74 * PAGE_SCALE;
-  const totalBeaconRows = Math.max(beaconEntries.reduce((s, e) => s + e.descLines.length, 0), 1);
+  const totalBeaconRows = Math.max(beaconEntries.reduce((s, e) => s + Math.max(0, e.beaconNameLines.length - 1) + e.descLines.length, 0), 1);
   const bdBlockBottom = bdLinesY0 + totalBeaconRows * BD_LH;
   const localityY = bdBlockBottom + 44 * PAGE_SCALE;
   // For SPLIT A3: village/locality name shows at the top of the LEFT page,

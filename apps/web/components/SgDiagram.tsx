@@ -549,23 +549,31 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </text>
           {(() => {
             let row = 0;
-            return beaconEntries.map(({ beacons, descLines }, ei) => {
-              const els = descLines.map((dl, li) => {
-                const y = bdLinesY0 + row * BD_LH;
-                row++;
-                return (
+            return beaconEntries.map(({ beaconNameLines, descLines }, ei) => {
+              const hasBeacons = beaconNameLines.length > 0;
+              const rows: React.ReactNode[] = [];
+              // Beacon-name-only rows (all but the last name line)
+              beaconNameLines.slice(0, -1).forEach((bn, bi) => {
+                const y = bdLinesY0 + row * BD_LH; row++;
+                rows.push(<text key={`bdn${ei}-${bi}`} x={tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{bn}</text>);
+              });
+              // Last beacon name line + description lines
+              const lastBn = beaconNameLines[beaconNameLines.length - 1] ?? "";
+              descLines.forEach((dl, li) => {
+                const y = bdLinesY0 + row * BD_LH; row++;
+                rows.push(
                   <g key={`bd${ei}-${li}`}>
-                    {beacons && li === 0 && (
+                    {hasBeacons && li === 0 && (
                       <>
-                        <text x={tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{beacons}</text>
+                        <text x={tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{lastBn}</text>
                         <text x={tx + 4 + BD_BEACON_COL} y={y} fontSize={FS_BEACON_HEAD} textAnchor="middle">-</text>
                       </>
                     )}
-                    <text x={beacons ? tx + 4 + BD_BEACON_COL + BD_DASH_COL : tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{dl}</text>
+                    <text x={hasBeacons ? tx + 4 + BD_BEACON_COL + BD_DASH_COL : tx + 4} y={y} fontSize={FS_BEACON_HEAD}>{dl}</text>
                   </g>
                 );
               });
-              return els;
+              return rows;
             });
           })()}
         </>
