@@ -475,8 +475,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <text x={(xPt + xXR) / 2} y={hRow1} textAnchor="middle" fontWeight="medium" fontSize={FS_TABLE_HEAD}>Co-ordinates</text>
         {!SPLIT && (
           <>
-            <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
-            <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
+            <text x={xDsm + 60} y={hRow1} fontWeight="bold" fontSize={FS_TABLE_HEAD} fill="black">D.S.M No.</text>
+            <text x={xDsm + 60} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 60, FS_TABLE_HEAD)} fill="black">
               {meta.dsmNo || ""}
             </text>
           </>
@@ -523,9 +523,9 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {SPLIT && (
         <>
           {/* D.S.M box header, on its own at the top-right of this page. */}
-          <line x1={xDsm} y1={ty + headH} x2={tableRight} y2={ty + headH} stroke="black" strokeWidth={1.2} />
-          <text x={xDsm + 16} y={hRow1} fontWeight="medium" fontSize={FS_TABLE_HEAD}>D.S.M No.</text>
-          <text x={xDsm + 16} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xDsm - 16, FS_TABLE_HEAD)}>
+          <line x1={xXR} y1={ty + headH} x2={tableRight} y2={ty + headH} stroke="black" strokeWidth={1.2} />
+          <text x={xXR + 60} y={hRow1} fontWeight="bold" fontSize={FS_TABLE_HEAD} fill="black">D.S.M No.</text>
+          <text x={xXR + 60} y={hRow2} fontSize={fitFontSize(meta.dsmNo || "", tableRight - xXR - 60, FS_TABLE_HEAD)} fill="black">
             {meta.dsmNo || ""}
           </text>
         </>
