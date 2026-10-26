@@ -186,6 +186,16 @@ interface Props {
    *  dragged and resized (+/-) on the sheet. */
   blockOffsets?: Record<string, BlockOffset>;
   onBlockOffset?: (id: string, v: BlockOffset) => void;
+  /** Per-point-name label drag offsets (SVG units). When set, labels render
+   *  at their auto-positioned location plus this offset so the user can
+   *  nudge crowded labels away from each other. */
+  labelOffsets?: Record<string, { dx: number; dy: number }>;
+  /** The name of the currently-selected beacon label (click to select, then drag). */
+  selectedLabel?: string | null;
+  onLabelClick?: (name: string) => void;
+  onLabelPointerDown?: (name: string, e: PointerEvent<SVGElement>) => void;
+  onLabelPointerMove?: (name: string, e: PointerEvent<SVGElement>) => void;
+  onLabelPointerUp?: (e: PointerEvent<SVGElement>) => void;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -275,6 +285,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     selectedAnnotationId, drawMode, onCanvasClick, onAnnotationClick, onAnnotationHandleDown, onCanvasMouseMove, onCanvasMouseUp,
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
+    labelOffsets, selectedLabel, onLabelClick, onLabelPointerDown, onLabelPointerMove, onLabelPointerUp,
   },
   ref
 ) {
@@ -700,12 +711,30 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         return points.map((p, i) => {
           const bx = fx(p.east, p.north), by = fy(p.east, p.north);
           const pl = placements[i];
+          const off = (p.name ? labelOffsets?.[p.name] : undefined) ?? { dx: 0, dy: 0 };
+          const lx = pl.labelX + off.dx, ly = pl.labelY + off.dy;
+          const isSel = onLabelPointerDown && p.name === selectedLabel;
           return (
             <g key={`bcn${i}`}>
               <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
-              {pl.leader && <line x1={bx} y1={by} x2={pl.labelX} y2={pl.labelY} stroke="#999" strokeWidth={0.5} />}
-              {!pl.hidden && (
-                <text x={pl.labelX} y={pl.labelY + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
+              {pl.leader && <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />}
+              {!pl.hidden && p.name && (
+                <g
+                  style={{ cursor: onLabelPointerDown ? (isSel ? "move" : "pointer") : "default" }}
+                  onClick={() => onLabelClick?.(p.name!)}
+                  onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onLabelPointerDown(p.name!, e); } }}
+                  onPointerMove={(e) => onLabelPointerMove?.(p.name!, e)}
+                  onPointerUp={(e) => onLabelPointerUp?.(e)}
+                >
+                  {isSel && (
+                    <rect
+                      x={lx - FS_BEACON_HEAD * 0.8} y={ly - FS_BEACON_HEAD}
+                      width={FS_BEACON_HEAD * 1.6} height={FS_BEACON_HEAD * 1.2}
+                      fill="none" stroke="#2563eb" strokeWidth={1} strokeDasharray="4 2"
+                    />
+                  )}
+                  <text x={lx} y={ly + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
+                </g>
               )}
             </g>
           );

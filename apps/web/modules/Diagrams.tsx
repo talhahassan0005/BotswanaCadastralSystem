@@ -191,7 +191,8 @@ export function Diagrams() {
     annotations?: ManualAnnotation[];
     texts?: ManualText[];
     blockOffsets?: Record<string, BlockOffset>;
-    lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset> }>;
+    labelOffsets?: Record<string, { dx: number; dy: number }>;
+    lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }> }>;
   };
   // Per-lot edit stash — each lot (identified by its key, see activeLotKey
   // below) gets its own independent set of annotations, texts and
@@ -201,7 +202,7 @@ export function Diagrams() {
   // it survives project saves and reloads.
   // `lotEditsRef` is a ref (not state) so we can read the latest stash
   // synchronously inside the lot-switch effect without stale closure issues.
-  const lotEditsRef = useRef<Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset> }>>(di.lotEdits ?? {});
+  const lotEditsRef = useRef<Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }> }>>(di.lotEdits ?? {});
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
@@ -469,15 +470,22 @@ export function Diagrams() {
   // arrow, legal description, certificate lines, surveyor name.
   const [blockOffsets, setBlockOffsets] = useState<Record<string, BlockOffset>>(di.blockOffsets ?? {});
   const setBlockOffset = (id: string, v: BlockOffset) => setBlockOffsets((m) => ({ ...m, [id]: v }));
+  // Per-point label drag offsets — same pattern as WorkingPlanView.tsx.
+  const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number }>>(di.labelOffsets ?? {});
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [draggingLabel, setDraggingLabel] = useState<{ name: string; startSx: number; startSy: number; origDx: number; origDy: number } | null>(null);
+  const labelDragMovedRef = useRef(false);
   // Refs that always hold the latest values — needed so the lot-switch
   // effect can read them without a stale closure (effects only capture the
   // values that existed when they were created; these refs are always current).
   const annotationsRef = useRef(annotations);
   const textsRef = useRef(texts);
   const blockOffsetsRef = useRef(blockOffsets);
+  const labelOffsetsRef = useRef(labelOffsets);
   annotationsRef.current = annotations;
   textsRef.current = texts;
   blockOffsetsRef.current = blockOffsets;
+  labelOffsetsRef.current = labelOffsets;
   // The key that identifies the currently-loaded lot — COGO lots get a
   // "cogo:" prefix so they never collide with Parcels-tab parcel IDs.
   const activeLotKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
@@ -579,6 +587,28 @@ export function Diagrams() {
     setAnnotations((arr) => [...arr, { id: `adj-${Date.now()}`, e1: start.east, n1: start.north, e2: end.east, n2: end.north }]);
     setPendingPoint(null);
     setDrawingAnnotation(false);
+  }
+  // Beacon label drag handlers — same pattern as WorkingPlanView.tsx.
+  function handleLabelClick(name: string) {
+    if (labelDragMovedRef.current) { labelDragMovedRef.current = false; return; }
+    setSelectedLabel((cur) => (cur === name ? null : name));
+  }
+  function handleLabelPointerDown(name: string, e: ReactPointerEvent<SVGElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = toSvgPoint(e);
+    const orig = labelOffsets[name] ?? { dx: 0, dy: 0 };
+    setDraggingLabel({ name, startSx: p.x, startSy: p.y, origDx: orig.dx, origDy: orig.dy });
+  }
+  function handleLabelPointerMove(name: string, e: ReactPointerEvent<SVGElement>) {
+    if (!draggingLabel || draggingLabel.name !== name) return;
+    const p = toSvgPoint(e);
+    const dx = p.x - draggingLabel.startSx, dy = p.y - draggingLabel.startSy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) labelDragMovedRef.current = true;
+    setLabelOffsets((m) => ({ ...m, [name]: { dx: draggingLabel.origDx + dx, dy: draggingLabel.origDy + dy } }));
+  }
+  function handleLabelPointerUp() {
+    setDraggingLabel(null);
+    setTimeout(() => { labelDragMovedRef.current = false; }, 0);
   }
   function handleAnnotationClick(id: string) {
     if (drawingAnnotation || drawingBoundaryMarker) return;
@@ -938,21 +968,23 @@ export function Diagrams() {
         annotations: annotationsRef.current,
         texts: textsRef.current,
         blockOffsets: blockOffsetsRef.current,
+        labelOffsets: labelOffsetsRef.current,
       },
     };
     // Load the new lot's saved edits, or start clean.
-    const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {} };
+    const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {}, labelOffsets: {} };
     setAnnotations(entry.annotations);
     setTexts(entry.texts);
     setBlockOffsets(entry.blockOffsets);
+    setLabelOffsets(entry.labelOffsets ?? {});
     prevLotKeyRef.current = newKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCogoLotNumber, selParcelId]);
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, lotEdits: lotEditsRef.current });
-  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, liveCoordinateSystem, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, lotEdits: lotEditsRef.current });
+  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, liveCoordinateSystem, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
@@ -1903,6 +1935,12 @@ export function Diagrams() {
                 flip={false}
                 blockOffsets={blockOffsets}
                 onBlockOffset={setBlockOffset}
+                labelOffsets={labelOffsets}
+                selectedLabel={selectedLabel}
+                onLabelClick={handleLabelClick}
+                onLabelPointerDown={handleLabelPointerDown}
+                onLabelPointerMove={handleLabelPointerMove}
+                onLabelPointerUp={handleLabelPointerUp}
               />
             )}
           </div>
