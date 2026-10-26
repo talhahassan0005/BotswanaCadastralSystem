@@ -355,10 +355,12 @@ export function computeDiagramLayout(
   const xX = xYR;                           // X coordinate column
   const xXR = xX + 27.0 * PAGE_SCALE * MM;
   // Shifted a bit left of the exact Part 23 boundary (client req
-  // 2026-08-23) — widens the D.S.M/Approved/Director column slightly;
-  // exact figure to follow once the client sends their own measurement.
-  const xDsm = xXR - 40 * PAGE_SCALE;                    // D.S.M No. box
+  // 2026-08-23) — widens the D.S.M/Approved/Director column slightly.
+  // Also capped so the DSM column is always wide enough for "Director of
+  // Surveys and Mapping" regardless of how wide sideValExtra makes xXR.
   const tableRight = tx + tw;               // = FRAME_RIGHT
+  const DSM_COL_MIN = 450 * PAGE_SCALE; // ~45mm — fits "Director of Surveys" at any PAGE_SCALE
+  const xDsm = Math.min(xXR - 40 * PAGE_SCALE, tableRight - DSM_COL_MIN);
   // header sub-row baselines and the partial-height Y/X dividers (no exact
   // figures given for these internal header rows — proportioned the same
   // way the old 3-row header split its 66-unit band, scaled to the new
