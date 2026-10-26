@@ -325,7 +325,7 @@ export function computeDiagramLayout(
   const dataTop = ty + headH;
   const n = Math.max(points.length, sides.length, 1);
   const dataFS = FS_TABLE_SUB;
-  const ROW_H_MIN = FS_TABLE_SUB / 0.55; // the row height a fixed-size row actually needs
+  const ROW_H_MIN = FS_TABLE_SUB / 0.72; // row height — 0.72 keeps rows tight while text stays readable
   const rowH = SPLIT
     // Own page: fixed-size rows down the whole frame, squeezed only if even that runs out.
     ? Math.min(ROW_H_MIN, (FRAME_H - headH - 5 * MM) / n)

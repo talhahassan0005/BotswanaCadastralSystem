@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
-import { transformPoint } from "@/lib/server/crs";
+import { transformPoint, CRS_LIST } from "@/lib/server/crs";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
@@ -466,7 +466,99 @@ export function GisMap() {
           {!hasData && " Build a parcel or run a closed traverse to see your survey on the map."}
         </p>
       </Card>
+      <CoordConverter projectCs={config.coordinateSystem} />
     </div>
+  );
+}
+
+/** Coordinate conversion panel: UTM <-> WGS84 <-> LO (any registered CRS). */
+function CoordConverter({ projectCs }: { projectCs: string }) {
+  const defaultSrc = CRS_LIST.find((c) => projectCs.includes(c.code.replace("Lo", "Lo ")))?.code
+    ?? CRS_LIST.find((c) => c.code.startsWith("Lo 25"))?.code
+    ?? CRS_LIST[0].code;
+  const [src, setSrc] = useState(defaultSrc);
+  const [dst, setDst] = useState("WGS84");
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [result, setResult] = useState<[number, number] | null>(null);
+  const [err, setErr] = useState("");
+
+  function convert() {
+    setErr(""); setResult(null);
+    const av = parseFloat(a), bv = parseFloat(b);
+    if (isNaN(av) || isNaN(bv)) { setErr("Enter valid numbers in both fields."); return; }
+    try {
+      setResult(transformPoint(av, bv, src, dst));
+    } catch (e: any) {
+      setErr(e?.message ?? "Conversion failed.");
+    }
+  }
+
+  const srcInfo = CRS_LIST.find((c) => c.code === src);
+  const dstInfo = CRS_LIST.find((c) => c.code === dst);
+  const isGeoSrc = src === "WGS84";
+  const isGeoDst = dst === "WGS84";
+
+  return (
+    <Card title="Coordinate Conversion — UTM / WGS84 / Lo">
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">From</label>
+            <select value={src} onChange={(e) => { setSrc(e.target.value); setResult(null); }}
+              className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none">
+              {CRS_LIST.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+            </select>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-0.5 block text-xs text-slate-500">{isGeoSrc ? "Latitude" : "Y (Northing)"}</label>
+                <input value={a} onChange={(e) => { setA(e.target.value); setResult(null); }}
+                  placeholder={isGeoSrc ? "e.g. -22.5" : "e.g. -97468.06"}
+                  className="w-full rounded-md border border-slate-200 px-2 py-1 font-mono text-sm focus:border-brand focus:outline-none" />
+              </div>
+              <div>
+                <label className="mb-0.5 block text-xs text-slate-500">{isGeoSrc ? "Longitude" : "X (Easting)"}</label>
+                <input value={b} onChange={(e) => { setB(e.target.value); setResult(null); }}
+                  placeholder={isGeoSrc ? "e.g. 25.9" : "e.g. 2728457.06"}
+                  onKeyDown={(e) => { if (e.key === "Enter") convert(); }}
+                  className="w-full rounded-md border border-slate-200 px-2 py-1 font-mono text-sm focus:border-brand focus:outline-none" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">To</label>
+            <select value={dst} onChange={(e) => { setDst(e.target.value); setResult(null); }}
+              className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none">
+              {CRS_LIST.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+            </select>
+            {result && (
+              <div className="mt-2 rounded-md bg-slate-50 px-3 py-2 font-mono text-sm">
+                <div className="text-xs text-slate-500 mb-1">{dstInfo?.label}</div>
+                {isGeoDst ? (
+                  <>
+                    <div>Lat: <span className="font-medium">{result[0].toFixed(8)}</span></div>
+                    <div>Lon: <span className="font-medium">{result[1].toFixed(8)}</span></div>
+                  </>
+                ) : (
+                  <>
+                    <div>Y: <span className="font-medium">{result[0].toFixed(3)}</span></div>
+                    <div>X: <span className="font-medium">{result[1].toFixed(3)}</span></div>
+                  </>
+                )}
+              </div>
+            )}
+            {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={convert}>Convert</Button>
+          <button onClick={() => { setSrc(dst); setDst(src); setResult(null); }}
+            className="text-xs text-slate-500 hover:text-slate-800 underline">
+            Swap
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }
 
