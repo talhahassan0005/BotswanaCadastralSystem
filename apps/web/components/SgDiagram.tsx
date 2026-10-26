@@ -590,15 +590,16 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             running down to the signature line below "and Mapping".
             Only extends past tableBottom if the block itself is taller
             than the table (never for a normal-sized plot). */}
-        {/* Left border of the DSM column: for SPLIT the data-rows area has no
-            xDsm line yet (the main divider ends at xXR), so start from
-            dsmBoxTop; for non-SPLIT line 468 already covers ty→tableBottom
-            so we only need tableBottom→dosLineY here. */}
-        <line x1={xDsm} y1={SPLIT ? dsmBoxTop : tableBottom} x2={xDsm} y2={Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
-        <text x={xDsm + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD} fill="black">Approved</text>
-        <text x={xDsm + 16} y={dosY1} fontSize={FS_BEACON_HEAD} fill="black">Director of Surveys</text>
-        <text x={xDsm + 16} y={dosY2} fontSize={FS_BEACON_HEAD} fill="black">and Mapping</text>
-        <line x1={xDsm} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1.2} />
+        {/* Extends the DSM column's left border below the table if the
+            Approved/Director block overflows tableBottom (rare for large plots).
+            In SPLIT mode the table right border sits at xXR (not xDsm),
+            so anchor here at xXR to avoid drawing a spurious line inside
+            the X-coordinate column. */}
+        <line x1={SPLIT ? xXR : xDsm} y1={tableBottom} x2={SPLIT ? xXR : xDsm} y2={Math.max(tableBottom, dosLineY)} stroke="black" strokeWidth={1.2} />
+        <text x={(SPLIT ? xXR : xDsm) + 16} y={dsmApprovedY} fontSize={FS_BEACON_HEAD} fill="black">Approved</text>
+        <text x={(SPLIT ? xXR : xDsm) + 16} y={dosY1} fontSize={FS_BEACON_HEAD} fill="black">Director of Surveys</text>
+        <text x={(SPLIT ? xXR : xDsm) + 16} y={dosY2} fontSize={FS_BEACON_HEAD} fill="black">and Mapping</text>
+        <line x1={SPLIT ? xXR : xDsm} y1={dosLineY} x2={tableRight - 16} y2={dosLineY} stroke="black" strokeWidth={1.2} />
       </>
       </g>{/* end right-page group 1: table + beacon desc + DSM/Approved */}
 

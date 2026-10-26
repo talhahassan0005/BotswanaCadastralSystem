@@ -464,23 +464,34 @@ export function computeDiagramLayout(
   // Beacon description: each newline/semicolon entry is one row with
   // [beacon names] - [description] in separate columns (client req 2026-10-26).
   // Entries without a colon are treated as description-only (no left column).
-  const BD_BEACON_COL = 90 * PAGE_SCALE;  // width of the beacon-names column
-  const BD_DASH_COL   = 18 * PAGE_SCALE;  // width of the "-" separator
-  const BD_DESC_COL   = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
-  const beaconEntries = meta.beaconDescription
-    .split(/\s*[;\n]\s*/)
-    .filter(Boolean)
+  const BD_DASH_COL = 18 * PAGE_SCALE;
+  // Parse entries once to find the widest beacon-group name, then size the
+  // beacon column dynamically so long lists like "A,B,C,D,E,F" don't overflow.
+  const _rawBeaconEntries = meta.beaconDescription
+    .split(/\s*[;\n]\s*/).filter(Boolean)
     .map((entry) => {
       const ci = entry.indexOf(":");
-      if (ci > 0) {
-        const beacons = entry.slice(0, ci).trim();
-        const desc = entry.slice(ci + 1).trim();
-        const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
-        return { beacons, descLines };
-      }
-      const descLines = wrapSvgWords(entry.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
-      return { beacons: "", descLines };
+      return ci > 0
+        ? { beacons: entry.slice(0, ci).trim(), desc: entry.slice(ci + 1).trim() }
+        : { beacons: "", desc: entry.trim() };
     });
+  const _maxBeaconW = _rawBeaconEntries.reduce(
+    (mx, { beacons }) => Math.max(mx, beacons.length * FS_BEACON_HEAD * 0.58), 0
+  );
+  // Minimum 90 units, grows to fit, capped at 40% of table width.
+  const BD_BEACON_COL = Math.min(
+    Math.max(90 * PAGE_SCALE, _maxBeaconW + 12 * PAGE_SCALE),
+    tw * 0.4
+  );
+  const BD_DESC_COL = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
+  const beaconEntries = _rawBeaconEntries.map(({ beacons, desc }) => {
+    if (beacons) {
+      const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
+      return { beacons, descLines };
+    }
+    const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
+    return { beacons: "", descLines };
+  });
   // Flat lines for DXF export (formatted with dash separator)
   const beaconLines = beaconEntries.flatMap(({ beacons, descLines }) =>
     descLines.map((dl, i) => (beacons && i === 0 ? `${beacons} - ${dl}` : dl))
