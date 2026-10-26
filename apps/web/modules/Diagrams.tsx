@@ -1743,9 +1743,25 @@ export function Diagrams() {
                       ]}
                     />
                   </Field>
-                  {!isBorehole && (
-                    <Field label="Beacon description"><Input value={meta.beaconDescription} onChange={set("beaconDescription")} /></Field>
-                  )}
+                  {!isBorehole && (() => {
+                    const allDesc = "ALL : 12mm Iron peg";
+                    const isAll = meta.beaconDescription === allDesc;
+                    return (
+                      <Field label="Beacon description">
+                        <div className="flex items-center gap-2 mb-1">
+                          <input
+                            type="checkbox"
+                            id="beaconDescAll"
+                            checked={isAll}
+                            onChange={(e) => setMeta((m) => ({ ...m, beaconDescription: e.target.checked ? allDesc : defaultBeaconDescription(fig?.points ?? []) }))}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                          <label htmlFor="beaconDescAll" className="text-xs cursor-pointer select-none">All</label>
+                        </div>
+                        <Input value={meta.beaconDescription} onChange={set("beaconDescription")} />
+                      </Field>
+                    );
+                  })()}
                   {(kind === "compiled" || kind === "framed") && (
                     <Field label="Certification line (leave blank for auto)">
                       <textarea
