@@ -806,9 +806,12 @@ export function WorkingPlanView() {
     // margin:0 on @page drops the browser's own header/footer (date, title,
     // about:blank, page number) from the print (client req 2026-10-21); the
     // 10mm body padding keeps the sheet inside the printable area instead.
+    const ps = meta.paperSize ?? "A4";
+    const pgSize = ps === "A4L" ? "A4 landscape" : ps === "A3" ? "A3 portrait" : ps === "A3L" ? "A3 landscape" : "A4 portrait";
+    const svgW = ps === "A4L" ? "277mm" : ps === "A3" ? "277mm" : ps === "A3L" ? "400mm" : "190mm";
     w.document.write(
       `<html><head><title>Working Plan — ${meta.lotName}</title>` +
-        `<style>@page{size:A4 portrait;margin:0}body{margin:0;padding:10mm}svg{width:190mm;height:auto;display:block;margin:0 auto}</style></head>` +
+        `<style>@page{size:${pgSize};margin:0}body{margin:0;padding:10mm}svg{width:${svgW};height:auto;display:block;margin:0 auto}</style></head>` +
         `<body onload="window.print()">${svg}</body></html>`
     );
     w.document.close();
@@ -874,6 +877,18 @@ export function WorkingPlanView() {
             <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
           </Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+          <Field label="Paper size">
+            <select
+              value={meta.paperSize ?? "A4"}
+              onChange={(e) => setMeta((m) => ({ ...m, paperSize: e.target.value as WorkingPlanMeta["paperSize"] }))}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            >
+              <option value="A4">A4 portrait (210 × 297 mm)</option>
+              <option value="A4L">A4 landscape (297 × 210 mm)</option>
+              <option value="A3">A3 portrait (297 × 420 mm)</option>
+              <option value="A3L">A3 landscape (420 × 297 mm)</option>
+            </select>
+          </Field>
           {minScale != null && meta.scale > 0 && meta.scale < minScale && (
             <p className="-mt-1 text-xs text-amber-600 md:col-span-2">
               At 1:{meta.scale} the plot is larger than the sheet — use 1:{minScale} or larger.

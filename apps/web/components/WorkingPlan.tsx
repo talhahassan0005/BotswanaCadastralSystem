@@ -64,6 +64,8 @@ export interface WorkingPlanMeta {
   /** Grid-mark spacing in real metres — 50, 100, or 200 (same choices as
    *  General Plan). Defaults to niceStep(span) when absent/invalid. */
   gridSpacingM?: number;
+  /** Paper size for print/PDF. Defaults to A4 portrait when absent. */
+  paperSize?: "A4" | "A4L" | "A3" | "A3L";
 }
 
 /** The sheet's coordinate grid exactly as drawn (sheet units, labels incl.
@@ -310,8 +312,14 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   },
   ref
 ) {
-  const VB_W = 600;
-  const VB_H = 800;
+  // Paper size → viewBox dimensions. SVG_PPI is constant so the coordinate
+  // scale (how much one SVG unit = in mm) stays identical regardless of
+  // paper size — only the canvas gets bigger/wider for A3/landscape.
+  const PAGE_DIMS: Record<string, [number, number]> = { A4: [210, 297], A4L: [297, 210], A3: [297, 420], A3L: [420, 297] };
+  const [pageWmm, pageHmm] = PAGE_DIMS[meta.paperSize ?? "A4"] ?? PAGE_DIMS["A4"];
+  const SVG_PPI = 600 / 210; // SVG units per mm — fixed for consistency
+  const VB_W = Math.round(pageWmm * SVG_PPI);
+  const VB_H = Math.round(pageHmm * SVG_PPI);
 
   // Multi-plot mode (client req 2026-08-26, Part 33a) — `plots` replaces the
   // single implicit figure when the caller has added one or more plots from
@@ -407,7 +415,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   // (1000/N) mm = (VB_W/210)*(1000/N) units. Falls back to fitting the
   // panel only when no valid scale is set.
   const fit = meta.scale > 0
-    ? ((VB_W / 210) * 1000) / meta.scale
+    ? ((VB_W / pageWmm) * 1000) / meta.scale
     : Math.min((draw.w - 2 * pad) / spanE, (draw.h - 2 * pad) / spanN);
   const drawW = spanE * fit;
   const drawH = spanN * fit;
