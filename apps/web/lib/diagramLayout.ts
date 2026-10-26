@@ -470,9 +470,15 @@ export function computeDiagramLayout(
   const _rawBeaconEntries = meta.beaconDescription
     .split(/\s*[;\n]\s*/).filter(Boolean)
     .map((entry) => {
-      const ci = entry.indexOf(":");
+      // Support both "A,B - desc" (space-dash-space) and "A,B : desc" as separators.
+      // Space-dash-space is checked first so beacon names with hyphens (e.g. "AA-AB")
+      // are not mistakenly split.
+      const dashIdx = entry.indexOf(" - ");
+      const colonIdx = entry.indexOf(":");
+      const ci = dashIdx > 0 ? dashIdx : colonIdx;
+      const skip = dashIdx > 0 ? 3 : 1; // chars to skip past the separator
       return ci > 0
-        ? { beacons: entry.slice(0, ci).trim(), desc: entry.slice(ci + 1).trim() }
+        ? { beacons: entry.slice(0, ci).trim(), desc: entry.slice(ci + skip).trim() }
         : { beacons: "", desc: entry.trim() };
     });
   const _maxBeaconW = _rawBeaconEntries.reduce(

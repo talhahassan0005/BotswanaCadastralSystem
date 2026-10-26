@@ -1744,7 +1744,7 @@ export function Diagrams() {
                     />
                   </Field>
                   {!isBorehole && (() => {
-                    const allDesc = "ALL : 12mm Iron peg";
+                    const allDesc = "ALL - 12mm Iron peg";
                     const lines = meta.beaconDescription.split(/\n/);
                     const hasAllLine = lines.some((l) => l.trim().toUpperCase().startsWith("ALL"));
                     return (
@@ -1771,7 +1771,7 @@ export function Diagrams() {
                           onChange={(e) => setMeta((m) => ({ ...m, beaconDescription: e.target.value }))}
                           rows={3}
                           className="w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-blue-400"
-                          placeholder={"A,B,C : 12mm Iron peg\nD,E : Concrete beacon"}
+                          placeholder={"A,B,C - 12mm Iron peg\nD,E - Concrete beacon"}
                         />
                       </Field>
                     );
