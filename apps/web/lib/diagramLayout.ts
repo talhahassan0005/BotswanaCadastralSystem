@@ -189,12 +189,16 @@ export function fmtSystem(cs: string): string {
   return m ? `LO. ${m[1]}°` : cs;
 }
 
-/** "272°36'20\"" (or "272 36 20") -> "272.36.20" (Botswana DIRECTIONS notation) */
+/** "272°36'20\"" (or "272 36 20") -> "272.36.20" (Botswana DIRECTIONS notation).
+ *  Seconds are rounded to the nearest 10 (client req 2026-10-26). */
 export function toDotted(dms: string): string {
   const m = dms.match(/(-?\d+)\D+(\d+)\D+(\d+(?:\.\d+)?)/);
   if (!m) return dms;
-  const ss = Math.round(parseFloat(m[3]));
-  return `${m[1]}.${m[2].padStart(2, "0")}.${String(ss).padStart(2, "0")}`;
+  let deg = parseInt(m[1]), min = parseInt(m[2]);
+  let ss = Math.round(parseFloat(m[3]) / 10) * 10;
+  if (ss >= 60) { ss -= 60; min += 1; }
+  if (min >= 60) { min -= 60; deg += 1; }
+  return `${deg}.${String(min).padStart(2, "0")}.${String(ss).padStart(2, "0")}`;
 }
 
 export const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / (ns.length || 1);
