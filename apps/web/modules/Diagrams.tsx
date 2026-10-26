@@ -1745,20 +1745,34 @@ export function Diagrams() {
                   </Field>
                   {!isBorehole && (() => {
                     const allDesc = "ALL : 12mm Iron peg";
-                    const isAll = meta.beaconDescription === allDesc;
+                    const lines = meta.beaconDescription.split(/\n/);
+                    const hasAllLine = lines.some((l) => l.trim().toUpperCase().startsWith("ALL"));
                     return (
                       <Field label="Beacon description">
                         <div className="flex items-center gap-2 mb-1">
                           <input
                             type="checkbox"
                             id="beaconDescAll"
-                            checked={isAll}
-                            onChange={(e) => setMeta((m) => ({ ...m, beaconDescription: e.target.checked ? allDesc : defaultBeaconDescription(fig?.points ?? []) }))}
+                            checked={hasAllLine}
+                            onChange={(e) => {
+                              const others = lines.filter((l) => !l.trim().toUpperCase().startsWith("ALL")).join("\n").trim();
+                              const next = e.target.checked
+                                ? (others ? `${allDesc}\n${others}` : allDesc)
+                                : (others || defaultBeaconDescription(fig?.points ?? []));
+                              setMeta((m) => ({ ...m, beaconDescription: next }));
+                            }}
                             className="w-4 h-4 cursor-pointer"
                           />
                           <label htmlFor="beaconDescAll" className="text-xs cursor-pointer select-none">All</label>
+                          <span className="text-xs text-gray-400">(each line = one description row)</span>
                         </div>
-                        <Input value={meta.beaconDescription} onChange={set("beaconDescription")} />
+                        <textarea
+                          value={meta.beaconDescription}
+                          onChange={(e) => setMeta((m) => ({ ...m, beaconDescription: e.target.value }))}
+                          rows={3}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          placeholder={"A,B,C : 12mm Iron peg\nD,E : Concrete beacon"}
+                        />
                       </Field>
                     );
                   })()}
