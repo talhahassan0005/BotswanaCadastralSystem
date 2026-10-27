@@ -465,20 +465,19 @@ export function computeDiagramLayout(
   // [beacon names] - [description] in separate columns (client req 2026-10-26).
   // Entries without a colon are treated as description-only (no left column).
   const BD_DASH_COL = 18 * PAGE_SCALE;
-  // Fixed beacon column: 30% of table width.  Long lists wrap by comma within
-  // this width so they never overflow into the dash/description columns.
-  const BD_BEACON_COL = Math.round(tw * 0.30);
-  const BD_DESC_COL = tw - 8 * PAGE_SCALE - BD_BEACON_COL - BD_DASH_COL;
 
-  // Split a comma-separated beacon list ("A1,A2,...") into lines that each
-  // fit within BD_BEACON_COL SVG units at the given font size.
-  function wrapBeaconNames(names: string): string[] {
+  // Two-pass layout: wrap beacon names to max 30% tw, then shrink the column
+  // to the actual widest wrapped line so short lists ("B,C,D,A") don't leave
+  // a huge gap before the dash.
+  const _BD_MAX = Math.round(tw * 0.30); // hard ceiling used for wrapping
+
+  function wrapBeaconNames(names: string, colW: number): string[] {
     const parts = names.split(",").map((s) => s.trim()).filter(Boolean);
     const lines: string[] = [];
     let cur = "";
     for (const part of parts) {
       const candidate = cur ? `${cur},${part}` : part;
-      if (cur && candidate.length * FS_BEACON_HEAD * 0.58 > BD_BEACON_COL - 4 * PAGE_SCALE) {
+      if (cur && candidate.length * FS_BEACON_HEAD * 0.58 > colW - 4 * PAGE_SCALE) {
         lines.push(`${cur},`);
         cur = part;
       } else {
@@ -489,10 +488,10 @@ export function computeDiagramLayout(
     return lines.length ? lines : [names];
   }
 
-  const beaconEntries = meta.beaconDescription
+  // Pass 1: wrap using the max column width, collect all wrapped name lines.
+  const _rawEntries = meta.beaconDescription
     .split(/\s*[;\n]\s*/).filter(Boolean)
     .map((entry) => {
-      // Support both "A,B - desc" (space-dash-space) and "A,B : desc" as separators.
       const dashIdx = entry.indexOf(" - ");
       const colonIdx = entry.indexOf(":");
       const ci = dashIdx > 0 ? dashIdx : colonIdx;
@@ -500,13 +499,28 @@ export function computeDiagramLayout(
       if (ci > 0) {
         const beacons = entry.slice(0, ci).trim();
         const desc = entry.slice(ci + skip).trim();
-        const beaconNameLines = wrapBeaconNames(beacons);
-        const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
-        return { beaconNameLines, descLines };
+        return { beacons, desc, beaconNameLines: wrapBeaconNames(beacons, _BD_MAX) };
       }
-      const descLines = wrapSvgWords(entry.trim().split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
-      return { beaconNameLines: [] as string[], descLines };
+      return { beacons: "", desc: entry.trim(), beaconNameLines: [] as string[] };
     });
+
+  // Pass 2: measure widest wrapped line → final column width (responsive).
+  const _maxWrappedW = _rawEntries.reduce((mx, { beaconNameLines }) =>
+    beaconNameLines.reduce((m, ln) => Math.max(m, ln.length * FS_BEACON_HEAD * 0.58), mx), 0
+  );
+  const BD_BEACON_COL = _maxWrappedW > 0
+    ? Math.min(_maxWrappedW + 8 * PAGE_SCALE, _BD_MAX)
+    : 0; // no beacon columns at all when there are no named entries
+  const BD_DESC_COL = tw - 8 * PAGE_SCALE - (BD_BEACON_COL > 0 ? BD_BEACON_COL + BD_DASH_COL : 0);
+
+  const beaconEntries = _rawEntries.map(({ beacons, desc, beaconNameLines }) => {
+    if (beacons) {
+      const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), BD_DESC_COL, FS_BEACON_HEAD);
+      return { beaconNameLines, descLines };
+    }
+    const descLines = wrapSvgWords(desc.split(/\s+/).filter(Boolean), tw - 8 * PAGE_SCALE, FS_BEACON_HEAD);
+    return { beaconNameLines: [] as string[], descLines };
+  });
   // Flat lines for DXF export (formatted with dash separator)
   const beaconLines = beaconEntries.flatMap(({ beaconNameLines, descLines }) => {
     if (!beaconNameLines.length) return descLines;
