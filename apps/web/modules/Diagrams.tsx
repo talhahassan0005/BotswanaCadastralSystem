@@ -308,7 +308,7 @@ export function Diagrams() {
     // new format and any already-saved diagram whose lotName is still just
     // the bare number from before this change.
     const bare = meta.lotName.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "");
-    return cogoPlots.find((p) => p.number.trim().toUpperCase() === bare.toUpperCase())?.number ?? null;
+    return cogoPlots.find((p) => p.number.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase() === bare.toUpperCase())?.number ?? null;
   }, [cogoPlots, meta.lotName]);
   // Main figure (the parent outline the subdivisions sit inside) — client
   // req 2026-10-20: "Plot 12580 is a main figure. It only shows the plot. No
