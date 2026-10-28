@@ -321,7 +321,7 @@ export function Diagrams() {
     const doc = (cogoWorkspaceDoc ?? {}) as { polygons?: { id: string }[]; polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }> };
     for (const pg of doc.polygons ?? []) {
       const m = doc.polygonMeta?.[pg.id];
-      if (m?.mainFigure && m.position?.trim()) out.add(m.position.trim().toUpperCase());
+      if (m?.mainFigure && m.position?.trim()) out.add(m.position.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase());
     }
     const inside = (pt: { east: number; north: number }, ring: { east: number; north: number }[]) => {
       let hit = false;
@@ -341,7 +341,7 @@ export function Diagrams() {
         const c = { east: o.fig.points.reduce((s, q) => s + q.east, 0) / o.fig.points.length, north: o.fig.points.reduce((s, q) => s + q.north, 0) / o.fig.points.length };
         return inside(c, p.fig.points);
       }).length;
-      if (containedCount >= 2) out.add(p.number.trim().toUpperCase());
+      if (containedCount >= 2) out.add(p.number.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase());
     }
     return out;
   }, [cogoPlots, cogoWorkspaceDoc]);
@@ -350,10 +350,11 @@ export function Diagrams() {
     // A single standalone plot, or the main figure itself, shows only the
     // plot — no neighbour marks or numbers.
     if (!loadedPlotNumber || points.length < 3 || cogoPlots.length <= 1) return empty;
-    if (mainFigureNumbers.has(loadedPlotNumber.trim().toUpperCase())) return empty;
+    const bareLoaded = loadedPlotNumber.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase();
+    if (mainFigureNumbers.has(bareLoaded)) return empty;
     // Neighbours are the other SUBDIVISION lots — never the main figure,
     // whose outline overlaps this lot's outer sides.
-    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber && !mainFigureNumbers.has(p.number.trim().toUpperCase()));
+    const others = cogoPlots.filter((p) => p.number !== loadedPlotNumber && !mainFigureNumbers.has(p.number.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase()));
     const cE = points.reduce((s, p) => s + p.east, 0) / points.length;
     const cN = points.reduce((s, p) => s + p.north, 0) / points.length;
     const span = Math.max(
