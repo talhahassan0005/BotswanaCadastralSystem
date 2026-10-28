@@ -333,12 +333,15 @@ export function Diagrams() {
     };
     for (const p of cogoPlots) {
       if (p.fig.points.length < 3) continue;
-      const containsAnother = cogoPlots.some((o) => {
+      // A true main figure contains ALL (or nearly all) sub-lots inside it.
+      // Requiring at least 2 contained lots avoids misclassifying a large
+      // sub-lot whose boundary accidentally wraps around one neighbour's centroid.
+      const containedCount = cogoPlots.filter((o) => {
         if (o === p || o.fig.points.length < 3 || o.fig.area_m2 >= p.fig.area_m2) return false;
         const c = { east: o.fig.points.reduce((s, q) => s + q.east, 0) / o.fig.points.length, north: o.fig.points.reduce((s, q) => s + q.north, 0) / o.fig.points.length };
         return inside(c, p.fig.points);
-      });
-      if (containsAnother) out.add(p.number.trim().toUpperCase());
+      }).length;
+      if (containedCount >= 2) out.add(p.number.trim().toUpperCase());
     }
     return out;
   }, [cogoPlots, cogoWorkspaceDoc]);
