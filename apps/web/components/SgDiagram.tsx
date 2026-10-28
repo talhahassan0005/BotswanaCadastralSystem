@@ -542,8 +542,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         </>
       )}
       {/* ===================== BEACON DESCRIPTION + village ===================== */}
+      {/* Clip beacon description text to the space left of the DSM column */}
+      <defs>
+        <clipPath id="bdClip">
+          <rect x={tx} y={tableBottom} width={(SPLIT ? xXR : xDsm) - tx} height={9999} />
+        </clipPath>
+      </defs>
       {block("beaconDesc", tx + 4, bdHeadingY, (
-        <>
+        <g clipPath="url(#bdClip)">
           <text x={tx + 4} y={bdHeadingY} fontSize={FS_BEACON_HEAD} fontWeight="medium" textDecoration="underline">
             Beacon description
           </text>
@@ -576,7 +582,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               return rows;
             });
           })()}
-        </>
+        </g>
       ))}
       {/* Locality on the right/only page for non-SPLIT (A4/A2/A1).
           For SPLIT A3 the locality lives on the left page — see below. */}
