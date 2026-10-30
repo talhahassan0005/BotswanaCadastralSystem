@@ -82,21 +82,6 @@ export function CogoEngine() {
   // error or a wrong polygon built from every point.
   const coordinateOnly = legs.length < 2 && coordPoints.length >= 3;
 
-  // Auto-run coordinate-only computation when data is freshly imported
-  // (client req: "when i want to work on the data there is nothing" —
-  // coordinate-only imports from SHP/CSV need no manual button click) —
-  // but only after the user has clicked "Run COGO Computation" once in this
-  // project (client req 2026-10-22: it must not come up by itself at first).
-  useEffect(() => {
-    if (!config.cogoRunOnce || !coordinateOnly || cogoResult) return;
-    if (coordPoints.length < 3 || coordPoints.length > 60) return;
-    apiJson<CogoResult>("/cogo/coordinates", {
-      points: coordPoints,
-      type: config.traverseType,
-    }).then(setCogoResult).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [importResult]);
-
   // The computed boundary, handed to the work station canvas so "Run COGO
   // Computation" actually draws it there — not just in the results tables
   // below (client req 2026-08-21, Part 13a). Memoized so CogoWorkspace's
