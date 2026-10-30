@@ -3625,11 +3625,11 @@ export function CogoWorkspace({
                   </g>
                 );
               })}
-              {/* Polygon vertex markers — shown when the user has drawn polygons
-                  but no imported points exist at those corners. Small hollow
-                  circles at each unique vertex so beacon positions are always
-                  visible (client req 2026-10-30). */}
-              {visible.length === 0 && polygons.flatMap((pg) => pg.points).map((v, vi) => {
+              {/* Polygon vertex markers — small hollow circles at each polygon
+                  corner so beacon positions are always visible even when no
+                  imported point was placed at that exact coordinate
+                  (client req 2026-10-30). */}
+              {polygons.flatMap((pg) => pg.points).map((v, vi) => {
                 const [x, y] = toScreen(v.east, v.north);
                 const r = 3.2 * blockCornerScale;
                 return (
