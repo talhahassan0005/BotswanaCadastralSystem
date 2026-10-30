@@ -3584,16 +3584,17 @@ export function CogoWorkspace({
                 Import points, or use "Add point" to place one here
               </text>
             ) : (
-              // Small hollow circle, matching standard survey-diagram
-              // convention (client req 2026-08-31: reference sheets never
-              // use a solid filled dot) — was a solid green fill large
-              // enough that a real subdivision's worth of points (hundreds,
-              // close together) visually merged into one solid mass,
-              // burying the boundary lines and labels underneath. Radius
-              // also shrinks as the canvas gets denser, on the same
-              // reasoning as the label-declutter/plot-line-weight scaling
-              // already applied in General Plan.
-              visible.map((p) => {
+              <>
+              {/* Small hollow circle, matching standard survey-diagram
+                  convention (client req 2026-08-31: reference sheets never
+                  use a solid filled dot) — was a solid green fill large
+                  enough that a real subdivision's worth of points (hundreds,
+                  close together) visually merged into one solid mass,
+                  burying the boundary lines and labels underneath. Radius
+                  also shrinks as the canvas gets denser, on the same
+                  reasoning as the label-declutter/plot-line-weight scaling
+                  already applied in General Plan. */}
+              {visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
                 const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * blockCornerScale;
@@ -3623,7 +3624,26 @@ export function CogoWorkspace({
                     )}
                   </g>
                 );
-              })
+              })}
+              {/* Polygon vertex markers — shown when the user has drawn polygons
+                  but no imported points exist at those corners. Small hollow
+                  circles at each unique vertex so beacon positions are always
+                  visible (client req 2026-10-30). */}
+              {visible.length === 0 && polygons.flatMap((pg) => pg.points).map((v, vi) => {
+                const [x, y] = toScreen(v.east, v.north);
+                const r = 3.2 * blockCornerScale;
+                return (
+                  <g key={`pgv-${vi}`}>
+                    <circle cx={x} cy={y} r={r} fill="white" stroke="#059669" strokeWidth={Math.max(0.6, r * 0.4)} />
+                    {showPointNames && v.name && (
+                      <text x={x + 7 * blockCornerTextScale} y={y - 7 * blockCornerTextScale} fontSize={11 * blockCornerTextScale} className="fill-slate-700 font-medium">
+                        {v.name}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+              </>
             )}
             {/* Starting-point highlight (client req 2026-09-02: "when i join a
                 polygon, the starting point should be highlighted with a
