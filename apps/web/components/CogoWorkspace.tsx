@@ -468,6 +468,11 @@ export function CogoWorkspace({
   const [, setHistVer] = useState(0);
 
   const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
+  // Stable ref so the resultBoundary effect can read the current visible set
+  // without adding it as a dependency (which would re-run the injection on
+  // every point edit, not just when the result itself changes).
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   function snapshot() {
     past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
@@ -2114,7 +2119,12 @@ export function CogoWorkspace({
     setLines((ls) => ls.filter((l) => !l.id.startsWith("cogores-")));
     setPolygons((ps) => ps.filter((p) => !p.id.startsWith("cogores-")));
     setTexts((ts) => ts.filter((t) => !t.id.startsWith("cogores-")));
-    if (!resultBoundary || !resultBoundary.points.length) return;
+    if (!resultBoundary || !resultBoundary.points.length) {
+      // Result cleared — re-frame on user's remaining beacon circles so they
+      // don't appear to vanish (the viewport was zoomed to the polygon area).
+      if (visibleRef.current.length) frameOn(visibleRef.current);
+      return;
+    }
     const byName = new Map(resultBoundary.points.map((p) => [p.name, p]));
     const now = Date.now();
     const newLines: WLine[] = [];
