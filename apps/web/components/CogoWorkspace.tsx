@@ -474,6 +474,15 @@ export function CogoWorkspace({
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
+  // Beacon circles from the last COGO result — kept visible even after
+  // "Clear Result" removes the polygon/lines/labels overlay. For
+  // bearing/distance traverses the import rows have no east/north, so these
+  // are the only circles the user ever sees; clearing the polygon must not
+  // wipe them (client req 2026-10-31).
+  const [cogoResPoints, setCogoResPoints] = useState<{ name: string | null; east: number; north: number }[]>([]);
+  const cogoResPointsRef = useRef(cogoResPoints);
+  cogoResPointsRef.current = cogoResPoints;
+
   function snapshot() {
     past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     if (past.current.length > 100) past.current.shift();
@@ -2120,11 +2129,18 @@ export function CogoWorkspace({
     setPolygons((ps) => ps.filter((p) => !p.id.startsWith("cogores-")));
     setTexts((ts) => ts.filter((t) => !t.id.startsWith("cogores-")));
     if (!resultBoundary || !resultBoundary.points.length) {
-      // Result cleared — re-frame on user's remaining beacon circles so they
-      // don't appear to vanish (the viewport was zoomed to the polygon area).
-      if (visibleRef.current.length) frameOn(visibleRef.current);
+      // Result cleared — re-frame on the saved COGO beacon circles so they
+      // stay centred in the view. Fall back to the import point set if no
+      // prior COGO result exists (coordinate-only imports).
+      const framePts = cogoResPointsRef.current.length
+        ? cogoResPointsRef.current.map((p, i) => ({ id: `cres-${i}`, name: p.name ?? "", east: p.east, north: p.north }))
+        : visibleRef.current;
+      if (framePts.length) frameOn(framePts);
       return;
     }
+    // Save beacon positions from this result — they survive "Clear Result" so
+    // the user always sees their traverse points as circles on the canvas.
+    setCogoResPoints(resultBoundary.points);
     const byName = new Map(resultBoundary.points.map((p) => [p.name, p]));
     const now = Date.now();
     const newLines: WLine[] = [];
@@ -3635,6 +3651,27 @@ export function CogoWorkspace({
                   </g>
                 );
               })}
+              {/* COGO result beacon circles — persist after "Clear Result" so
+                  traverse points stay visible even when the polygon/lines
+                  overlay is removed (client req 2026-10-31). Only rendered
+                  when the point isn't already shown by the visible set (avoids
+                  duplicate circles for coordinate-only imports). */}
+              {cogoResPoints
+                .filter((p) => !visible.some((v) => v.east === p.east && v.north === p.north))
+                .map((p, pi) => {
+                  const [x, y] = toScreen(p.east, p.north);
+                  const r = 3.2 * blockCornerScale;
+                  return (
+                    <g key={`cres-${pi}`}>
+                      <circle cx={x} cy={y} r={r} fill="white" stroke="#059669" strokeWidth={Math.max(0.6, r * 0.4)} />
+                      {showPointNames && p.name && (
+                        <text x={x + 7 * blockCornerTextScale} y={y - 7 * blockCornerTextScale} fontSize={11 * blockCornerTextScale} className="fill-slate-700 font-medium">
+                          {p.name}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
               {/* Polygon vertex markers — small hollow circles at each polygon
                   corner so beacon positions are always visible even when no
                   imported point was placed at that exact coordinate
