@@ -53,13 +53,20 @@ export function parseTopoPoints(text: string): XYZ[] {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
-    const parts = line.split(/[,\t ]+/).filter(Boolean);
+
+    // Prefer comma split (preserves names with spaces like "BTC MH1" or "Road 40").
+    // Fall back to whitespace split only for space/tab-delimited files.
+    const parts = line.includes(",")
+      ? line.split(",").map((s) => s.trim()).filter(Boolean)
+      : line.split(/[\t ]+/).filter(Boolean);
+
     if (parts.length < 3) continue;
 
     let name: string | null = null;
     let nums = parts;
     // Leading token that isn't a number -> it's the point name/ID.
-    if (!isNumeric(parts[0]) && parts.length >= 4) {
+    if (!isNumeric(parts[0])) {
+      if (parts.length < 4) continue; // need name + x + y + z
       name = parts[0];
       nums = parts.slice(1);
     }
