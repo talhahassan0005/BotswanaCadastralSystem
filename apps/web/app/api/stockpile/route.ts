@@ -103,9 +103,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ...base,
       comparison: {
-        fill_m3: round(comp.fill, 3),   // material ADDED since previous survey
-        cut_m3: round(comp.cut, 3),     // material REMOVED since previous survey
-        net_m3: round(comp.net, 3),     // net change (positive = net gain)
+        // volume.ts sign: "cut" = existing ABOVE design (current > previous) = stockpile grew = fill/added
+        //                "fill" = existing BELOW design (current < previous) = stockpile shrank = cut/removed
+        fill_m3: round(comp.cut, 3),    // material ADDED since previous survey (current > previous)
+        cut_m3: round(comp.fill, 3),    // material REMOVED since previous survey (current < previous)
+        net_m3: round(comp.net, 3),     // net change = added - removed (positive = net gain)
         notes: comp.notes,
         previous: {
           points: prevSurface.points.map((p) => ({ name: p.name ?? null, x: round(p.x, 3), y: round(p.y, 3), z: round(p.z, 3) })),
