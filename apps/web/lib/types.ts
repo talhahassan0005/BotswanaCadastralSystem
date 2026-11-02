@@ -159,6 +159,20 @@ export interface TopoResult {
 }
 
 // --- Stockpile volume (Engineering / Mining) ---------------------------------
+export interface StockpileComparison {
+  fill_m3: number;
+  cut_m3: number;
+  net_m3: number;
+  notes: string[];
+  previous: {
+    points: TopoPoint[];
+    triangles: { a: number; b: number; c: number }[];
+    stats: TopoStats;
+    volume_m3: number;
+  };
+  faces: { a: number; b: number; c: number; d: number }[];
+}
+
 export interface StockpileResult {
   points: TopoPoint[];
   triangles: { a: number; b: number; c: number }[];
@@ -171,6 +185,7 @@ export interface StockpileResult {
   height_m: number;
   topPoint: { name: string | null; x: number; y: number; z: number };
   basePoints: { name: string | null; x: number; y: number; z: number }[];
+  comparison?: StockpileComparison;
 }
 
 // --- Volume computations --------------------------------------------------
