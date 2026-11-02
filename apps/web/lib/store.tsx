@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import type { CogoResult, ImportResult, TopoResult, ValidationResult, VolumeResult } from "./types";
+import type { CogoResult, ImportResult, StockpileResult, TopoResult, ValidationResult, VolumeResult } from "./types";
 
 export type Discipline = "Cadastral" | "Engineering" | "Mining" | "GIS";
 
@@ -68,6 +68,10 @@ interface Store {
   setTopoResult: (r: TopoResult | null) => void;
   volumeResult: VolumeResult | null;
   setVolumeResult: (r: VolumeResult | null) => void;
+  stockpileResult: StockpileResult | null;
+  setStockpileResult: (r: StockpileResult | null) => void;
+  stockpileInput: unknown;
+  setStockpileInput: (d: unknown) => void;
   /** Editor drawing — kept here so a project bundle can save/restore it. */
   editorDoc: unknown;
   setEditorDoc: (d: unknown) => void;
@@ -135,6 +139,8 @@ export interface ProjectState {
   validation?: ValidationResult | null;
   topoResult?: TopoResult | null;
   volumeResult?: VolumeResult | null;
+  stockpileResult?: StockpileResult | null;
+  stockpileInput?: unknown;
   editorDoc?: unknown;
   parcelDoc?: unknown;
   sectionalDoc?: unknown;
@@ -180,6 +186,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [topoResult, setTopoResult] = useState<TopoResult | null>(null);
   const [volumeResult, setVolumeResult] = useState<VolumeResult | null>(null);
+  const [stockpileResult, setStockpileResult] = useState<StockpileResult | null>(null);
+  const stockpileInputRef = useRef<unknown>(null);
+  const setStockpileInput = (d: unknown) => { stockpileInputRef.current = d; };
   // Editor drawing is held in a ref (not state): the Editor writes it synchronously
   // so a Save always captures the latest drawing, and it never re-renders the tree.
   const editorDocRef = useRef<unknown>(null);
@@ -232,6 +241,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     validation,
     topoResult,
     volumeResult,
+    stockpileResult,
+    stockpileInput: stockpileInputRef.current,
     editorDoc: editorDocRef.current,
     parcelDoc: parcelDocRef.current,
     sectionalDoc: sectionalDocRef.current,
@@ -252,6 +263,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setValidation(s.validation ?? null);
     setTopoResult(s.topoResult ?? null);
     setVolumeResult(s.volumeResult ?? null);
+    setStockpileResult(s.stockpileResult ?? null);
+    stockpileInputRef.current = s.stockpileInput ?? null;
     editorDocRef.current = s.editorDoc ?? null;
     parcelDocRef.current = s.parcelDoc ?? null;
     sectionalDocRef.current = s.sectionalDoc ?? null;
@@ -277,6 +290,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setValidation(null);
     setTopoResult(null);
     setVolumeResult(null);
+    setStockpileResult(null);
+    stockpileInputRef.current = null;
     editorDocRef.current = null;
     parcelDocRef.current = null;
     sectionalDocRef.current = null;
@@ -320,6 +335,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setValidation(saved.validation ?? null);
       setTopoResult(saved.topoResult ?? null);
       setVolumeResult(saved.volumeResult ?? null);
+      setStockpileResult(saved.stockpileResult ?? null);
+      stockpileInputRef.current = saved.stockpileInput ?? null;
       editorDocRef.current = saved.editorDoc ?? null;
       parcelDocRef.current = saved.parcelDoc ?? null;
       sectionalDocRef.current = saved.sectionalDoc ?? null;
@@ -362,7 +379,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("beforeunload", save);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, importResult, cogoResult, validation, topoResult, volumeResult, cogoPlots, activeTab, started, currentProject]);
+  }, [config, importResult, cogoResult, validation, topoResult, volumeResult, stockpileResult, cogoPlots, activeTab, started, currentProject]);
 
   return (
     <StoreContext.Provider
@@ -379,6 +396,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setTopoResult,
         volumeResult,
         setVolumeResult,
+        stockpileResult,
+        setStockpileResult,
+        stockpileInput: stockpileInputRef.current,
+        setStockpileInput,
         editorDoc: editorDocRef.current,
         setEditorDoc,
         parcelDoc: parcelDocRef.current,

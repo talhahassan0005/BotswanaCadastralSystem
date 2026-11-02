@@ -24,6 +24,7 @@ import { GeneralPlanView } from "@/modules/GeneralPlanView";
 import { SectionalTitle } from "@/modules/SectionalTitle";
 import { SurveyRecord } from "@/modules/SurveyRecord";
 import { Export } from "@/modules/Export";
+import { Stockpile } from "@/modules/Stockpile";
 
 function Workspace() {
   const { activeTab, setActiveTab, loadVersion, resetProject, started } = useStore();
@@ -79,6 +80,7 @@ function Workspace() {
           {activeTab === "traverse" && <Traverse />}
           {activeTab === "topo" && <Topographic />}
           {activeTab === "volume" && <Volume />}
+          {activeTab === "stockpile" && <Stockpile />}
           {activeTab === "editor" && <Editor />}
           {activeTab === "gis" && (
             <div className="space-y-4">

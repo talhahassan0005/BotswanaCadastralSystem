@@ -158,6 +158,21 @@ export interface TopoResult {
   stats: TopoStats;
 }
 
+// --- Stockpile volume (Engineering / Mining) ---------------------------------
+export interface StockpileResult {
+  points: TopoPoint[];
+  triangles: { a: number; b: number; c: number }[];
+  contours: ContourLevel[];
+  interval: number;
+  stats: TopoStats;
+  datum: number;
+  volume_m3: number;
+  baseArea_m2: number;
+  height_m: number;
+  topPoint: { name: string | null; x: number; y: number; z: number };
+  basePoints: { name: string | null; x: number; y: number; z: number }[];
+}
+
 // --- Volume computations --------------------------------------------------
 export type VolumeMethod = "surface" | "section" | "grid" | "contour";
 
