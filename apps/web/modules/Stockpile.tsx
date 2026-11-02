@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
-import type { StockpileResult } from "@/lib/types";
+import type { StockpileResult, TopoPoint } from "@/lib/types";
 import { Button, Card, Field, Input, Select, Stat } from "@/components/ui";
 
 const SAMPLE = `Point,Easting,Northing,RL
@@ -107,6 +107,65 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
   );
 }
 
+/** Change map: triangles coloured red (cut/removed) or green (fill/added). */
+function ChangeCanvas({
+  result,
+}: {
+  result: StockpileResult;
+}) {
+  const comp = result.comparison!;
+  const W = 460, H = 360, PAD = 32;
+  const pts = result.points;
+  const { stats } = result;
+  const sx = stats.bounds.minX, sy = stats.bounds.minY;
+  const sw = stats.bounds.maxX - sx || 1, sh = stats.bounds.maxY - sy || 1;
+  const scale = Math.min((W - PAD * 2) / sw, (H - PAD * 2) / sh);
+  const offX = PAD + ((W - PAD * 2) - sw * scale) / 2;
+  const offY = PAD + ((H - PAD * 2) - sh * scale) / 2;
+  const tx = (x: number) => offX + (x - sx) * scale;
+  const ty = (y: number) => H - (offY + (y - sy) * scale);
+
+  const maxD = Math.max(...comp.faces.map((f) => Math.abs(f.d)), 0.001);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded border border-slate-200 bg-white" style={{ maxHeight: 360 }}>
+      {comp.faces.map((f, i) => {
+        const a = pts[f.a], b = pts[f.b], c = pts[f.c];
+        if (!a || !b || !c) return null;
+        const t = Math.min(Math.abs(f.d) / maxD, 1);
+        // green = fill (added), red = cut (removed)
+        const col = f.d >= 0
+          ? `hsl(140,${Math.round(40 + t * 55)}%,${Math.round(55 - t * 15)}%)`
+          : `hsl(0,${Math.round(40 + t * 55)}%,${Math.round(55 - t * 15)}%)`;
+        return (
+          <polygon
+            key={i}
+            points={`${tx(a.x)},${ty(a.y)} ${tx(b.x)},${ty(b.y)} ${tx(c.x)},${ty(c.y)}`}
+            fill={col} fillOpacity={0.75}
+            stroke="#334155" strokeWidth={0.3} strokeOpacity={0.4}
+          />
+        );
+      })}
+      {/* Previous survey points (grey) */}
+      {comp.previous.points.map((p: TopoPoint, i: number) => (
+        <circle key={`prev-${i}`} cx={tx(p.x)} cy={ty(p.y)} r={2} fill="#94a3b8" fillOpacity={0.6} />
+      ))}
+      {/* Current survey points */}
+      {pts.map((p, i) => (
+        <circle key={`cur-${i}`} cx={tx(p.x)} cy={ty(p.y)} r={2.5} fill="#1e40af" fillOpacity={0.8} />
+      ))}
+      {/* Legend */}
+      <rect x={W - 80} y={8} width={72} height={48} fill="white" fillOpacity={0.85} rx={3} />
+      <rect x={W - 74} y={14} width={10} height={10} fill="hsl(140,70%,45%)" rx={1} />
+      <text x={W - 60} y={23} fontSize={8} fill="#166534">Fill (added)</text>
+      <rect x={W - 74} y={28} width={10} height={10} fill="hsl(0,70%,45%)" rx={1} />
+      <text x={W - 60} y={37} fontSize={8} fill="#991b1b">Cut (removed)</text>
+      <circle cx={W - 69} cy={47} r={3} fill="#1e40af" fillOpacity={0.8} />
+      <text x={W - 60} y={50} fontSize={8} fill="#1e40af">Current</text>
+    </svg>
+  );
+}
+
 /** Isometric 3-D wireframe of the TIN. */
 function IsoCanvas({ result }: { result: StockpileResult }) {
   const W = 460, H = 340;
@@ -160,20 +219,22 @@ function IsoCanvas({ result }: { result: StockpileResult }) {
 export function Stockpile() {
   const { stockpileResult, setStockpileResult, stockpileInput, setStockpileInput } = useStore();
   const init = (stockpileInput ?? {}) as {
-    text?: string; interval?: string; datumMode?: string; manualDatum?: string;
+    text?: string; interval?: string; datumMode?: string; manualDatum?: string; prevText?: string;
   };
   const [text, setText] = useState(init.text ?? "");
   const [interval, setInterval] = useState(init.interval ?? "0.5");
   const [datumMode, setDatumMode] = useState(init.datumMode ?? "auto");
   const [manualDatum, setManualDatum] = useState(init.manualDatum ?? "");
+  const [prevText, setPrevText] = useState(init.prevText ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<"plan" | "3d">("plan");
+  const [view, setView] = useState<"plan" | "3d" | "change">("plan");
   const fileRef = useRef<HTMLInputElement>(null);
+  const prevFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setStockpileInput({ text, interval, datumMode, manualDatum });
-  }, [text, interval, datumMode, manualDatum, setStockpileInput]);
+    setStockpileInput({ text, interval, datumMode, manualDatum, prevText });
+  }, [text, interval, datumMode, manualDatum, prevText, setStockpileInput]);
 
   async function process(src?: string) {
     const payload = (src ?? text).trim();
@@ -187,6 +248,9 @@ export function Stockpile() {
       };
       if (datumMode === "manual" && manualDatum.trim()) {
         body.datum = Number(manualDatum);
+      }
+      if (prevText.trim()) {
+        body.previous = prevText.trim();
       }
       const result = await apiJson<StockpileResult>("/stockpile", body);
       setStockpileResult(result);
@@ -207,6 +271,15 @@ export function Stockpile() {
       setText(content);
       process(content);
     };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function handlePrevFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setPrevText(ev.target?.result as string);
     reader.readAsText(file);
     e.target.value = "";
   }
@@ -245,6 +318,32 @@ export function Stockpile() {
                 placeholder="Paste XYZ points here…"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
+              />
+            </div>
+          </Card>
+
+          <Card title="Previous Survey (optional — for surface comparison)">
+            <div className="space-y-3">
+              <p className="text-sm text-slate-500">
+                Load an earlier survey to compare cut &amp; fill against the current one.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => prevFileRef.current?.click()} disabled={busy}>
+                  Load previous CSV
+                </Button>
+                {prevText.trim() && (
+                  <Button variant="ghost" onClick={() => setPrevText("")} disabled={busy}>
+                    Clear
+                  </Button>
+                )}
+                <input ref={prevFileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handlePrevFile} />
+              </div>
+              <textarea
+                className="w-full rounded-md border border-slate-200 bg-white p-2 font-mono text-xs text-slate-700 focus:border-brand focus:outline-none"
+                rows={5}
+                placeholder="Paste previous survey XYZ points here (optional)…"
+                value={prevText}
+                onChange={(e) => setPrevText(e.target.value)}
               />
             </div>
           </Card>
@@ -324,8 +423,8 @@ export function Stockpile() {
 
               {/* Viewer tabs */}
               <div>
-                <div className="mb-2 flex gap-1">
-                  {(["plan", "3d"] as const).map((v) => (
+                <div className="mb-2 flex gap-1 flex-wrap">
+                  {(["plan", "3d", ...(r.comparison ? ["change" as const] : [])] as ("plan" | "3d" | "change")[]).map((v) => (
                     <button
                       key={v}
                       onClick={() => setView(v)}
@@ -333,12 +432,52 @@ export function Stockpile() {
                         view === v ? "bg-brand text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"
                       }`}
                     >
-                      {v === "plan" ? "Plan View (DSM)" : "3D Wireframe"}
+                      {v === "plan" ? "Plan View (DSM)" : v === "3d" ? "3D Wireframe" : "Change Map"}
                     </button>
                   ))}
                 </div>
-                {view === "plan" ? <PlanCanvas result={r} /> : <IsoCanvas result={r} />}
+                {view === "plan" && <PlanCanvas result={r} />}
+                {view === "3d" && <IsoCanvas result={r} />}
+                {view === "change" && r.comparison && <ChangeCanvas result={r} />}
               </div>
+
+              {/* Surface comparison results */}
+              {r.comparison && (
+                <Card title="Surface Comparison">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <Stat label="Fill (added)" value={`${fmt(r.comparison.fill_m3)} m³`} />
+                      <Stat label="Cut (removed)" value={`${fmt(r.comparison.cut_m3)} m³`} />
+                      <Stat label="Net change" value={`${r.comparison.net_m3 >= 0 ? "+" : ""}${fmt(r.comparison.net_m3)} m³`} />
+                    </div>
+                    <dl className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Previous survey volume</dt>
+                        <dd className="font-medium">{fmt(r.comparison.previous.volume_m3)} m³</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Current survey volume</dt>
+                        <dd className="font-medium">{fmt(r.volume_m3)} m³</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Previous survey points</dt>
+                        <dd className="font-medium">{r.comparison.previous.stats.count}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Triangles compared</dt>
+                        <dd className="font-medium">{r.comparison.faces.length}</dd>
+                      </div>
+                    </dl>
+                    {r.comparison.notes.length > 0 && (
+                      <ul className="space-y-0.5">
+                        {r.comparison.notes.map((n, i) => (
+                          <li key={i} className="text-xs text-slate-500">{n}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </Card>
+              )}
 
               {/* Contour table */}
               <Card title={`Contour Levels (${r.contours.length})`}>
