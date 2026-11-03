@@ -17,6 +17,7 @@ export const TABS = [
   { id: "generalplan", label: "General Plan", module: "General Plan" },
   { id: "sectional", label: "Sectional Title", module: "Sectional Title" },
   { id: "records", label: "Survey Record", module: "Cadastral Survey Record" },
+  { id: "settingout", label: "Setting Out", module: "Setting Out" },
   { id: "gis", label: "GIS Map", module: "GIS Integration" },
   { id: "collab", label: "Surveyors", module: "Surveyor Check-in & Collaboration" },
   { id: "export", label: "Export", module: "Export" },
@@ -32,8 +33,8 @@ export const TABS = [
 // in-page "Go to Parcels" links from Diagrams/Working Plan/General Plan).
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
   Cadastral: ["cogo", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate", "reports"],
-  Engineering: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate", "reports"],
-  Mining: ["cogo", "topo", "volume", "editor", "gis", "collab", "validate", "reports"],
+  Engineering: ["cogo", "topo", "volume", "settingout", "editor", "gis", "collab", "validate", "reports"],
+  Mining: ["cogo", "topo", "volume", "settingout", "editor", "gis", "collab", "validate", "reports"],
   GIS: ["gis", "editor", "topo", "collab"],
 };
 
