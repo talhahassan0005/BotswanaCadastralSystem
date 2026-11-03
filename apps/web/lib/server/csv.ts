@@ -24,6 +24,7 @@ export interface ParsedRow {
   north: number | null;
   bearing: string | null;
   distance: number | null;
+  rl?: number | null;
   status: "valid" | "check" | "error";
   issues: string[];
   pointType?: "beacon" | "wp" | "ref"; // defaults to "beacon"; user re-tags WP / Ref
@@ -46,6 +47,7 @@ const HEADER_ALIASES: Record<string, keyof Omit<ParsedRow, "index" | "status" | 
   north: "north", northing: "north", n: "north", x: "north", "x (m)": "north",
   bearing: "bearing", direction: "bearing", azimuth: "bearing",
   distance: "distance", dist: "distance", length: "distance", side: "distance",
+  rl: "rl", elevation: "rl", elev: "rl", z: "rl", height: "rl",
 };
 
 /** Does a token look like a survey bearing (decimal, dotted DDD.MMSS or DMS)?
@@ -170,7 +172,7 @@ export function parseSurveyCsv(text: string): ParseResult {
       colMap = ["beaconId", "east", "north", "bearing", "distance"];
       detectedColumns.push("(positional: id, east, north, bearing, distance)");
     } else {
-      colMap = ["beaconId", "east", "north"];
+      colMap = maxCols >= 4 ? ["beaconId", "east", "north", "rl"] : ["beaconId", "east", "north"];
       detectedColumns.push(
         maxCols >= 4 ? "(positional: id, east, north [+ elevation/description])" : "(positional: id, east, north)"
       );
@@ -191,6 +193,7 @@ export function parseSurveyCsv(text: string): ParseResult {
       north: null,
       bearing: null,
       distance: null,
+      rl: null,
       status: "valid",
       issues: [],
       pointType: "beacon", // every imported point starts as a plot beacon

@@ -13,6 +13,9 @@ export interface ParsedRow {
   status: "valid" | "check" | "error";
   issues: string[];
   pointType?: PointType;
+  /** Reduced level / elevation (m) — populated when the imported file has a
+   *  4th numeric column (topo / stockpile surveys). Null for cadastral-only files. */
+  rl?: number | null;
   /** Physical marker description, e.g. "12mm Iron Peg" / "Standard Concrete
    *  Pillar" (client req 2026-08-26, Part 31b "Coordinate List" report) —
    *  per-point, separate from the diagram's single summary Beacon

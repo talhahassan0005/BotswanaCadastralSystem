@@ -280,40 +280,40 @@ function IsoCanvas({ result }: { result: StockpileResult }) {
 }
 
 export function Stockpile() {
-  const { stockpileResult, setStockpileResult, stockpileInput, setStockpileInput } = useStore();
+  const { stockpileResult, setStockpileResult, stockpileInput, setStockpileInput, importResult } = useStore();
   const init = (stockpileInput ?? {}) as {
-    text?: string; interval?: string; datumMode?: string; manualDatum?: string; prevText?: string;
+    interval?: string; datumMode?: string; manualDatum?: string;
   };
-  const [text, setText] = useState(init.text ?? "");
   const [interval, setInterval] = useState(init.interval ?? "0.5");
   const [datumMode, setDatumMode] = useState(init.datumMode ?? "auto");
   const [manualDatum, setManualDatum] = useState(init.manualDatum ?? "");
-  const [prevText, setPrevText] = useState(init.prevText ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"plan" | "3d" | "change">("plan");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const prevFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setStockpileInput({ text, interval, datumMode, manualDatum, prevText });
-  }, [text, interval, datumMode, manualDatum, prevText, setStockpileInput]);
+    setStockpileInput({ interval, datumMode, manualDatum });
+  }, [interval, datumMode, manualDatum, setStockpileInput]);
 
-  async function process(src?: string) {
-    const payload = (src ?? text).trim();
+  // Build XYZ points from the already-imported data
+  const importedPoints = (importResult?.rows ?? [])
+    .filter((row) => row.east != null && row.north != null && row.rl != null)
+    .map((row) => ({ name: row.beaconId, x: row.east!, y: row.north!, z: row.rl! }));
+
+  const hasPoints = importedPoints.length >= 3;
+  const hasNoRL = importResult && importResult.rows.length > 0 && importedPoints.length === 0;
+
+  async function process() {
     setError(null);
-    if (!payload) { setError("Load or paste XYZ points first."); return; }
+    if (!hasPoints) { setError("No elevation data found. Import a file with an RL/elevation column first."); return; }
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
-        text: payload,
+        points: importedPoints,
         interval: Number(interval) || 0,
       };
       if (datumMode === "manual" && manualDatum.trim()) {
         body.datum = Number(manualDatum);
-      }
-      if (prevText.trim()) {
-        body.previous = prevText.trim();
       }
       const result = await apiJson<StockpileResult>("/stockpile", body);
       setStockpileResult(result);
@@ -323,28 +323,6 @@ export function Stockpile() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const content = ev.target?.result as string;
-      setText(content);
-      process(content);
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  }
-
-  function handlePrevFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setPrevText(ev.target?.result as string);
-    reader.readAsText(file);
-    e.target.value = "";
   }
 
   const r = stockpileResult;
@@ -361,64 +339,29 @@ export function Stockpile() {
       <div className="grid gap-5 md:grid-cols-2">
         {/* ── Left: input ─────────────────────────────────────────── */}
         <div className="space-y-4">
-          <Card title="Load Points">
+          {/* Imported data status */}
+          <Card title="Survey Data">
             <div className="space-y-3">
-              <p className="text-sm text-slate-500">
-                CSV or tab-delimited with columns: <strong>Name, Easting, Northing, RL</strong> (one point per line).
-              </p>
-              <div className="flex gap-2">
-                <Button onClick={() => fileRef.current?.click()} disabled={busy}>
-                  Load CSV file
-                </Button>
-                <Button variant="ghost" onClick={() => { setText(SAMPLE); }} disabled={busy}>
-                  Load sample
-                </Button>
-                <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFile} />
-              </div>
-              <textarea
-                className="w-full rounded-md border border-slate-200 bg-white p-2 font-mono text-xs text-slate-700 focus:border-brand focus:outline-none"
-                rows={8}
-                placeholder="Paste XYZ points here…"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-              />
-            </div>
-          </Card>
-
-          <Card title="Previous Survey (optional — for surface comparison)">
-            <div className="space-y-3">
-              <p className="text-sm text-slate-500">
-                Load an earlier survey to compare cut &amp; fill against the current one.
-              </p>
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => prevFileRef.current?.click()} disabled={busy}>
-                  Load previous CSV
-                </Button>
-                {prevText.trim() && (
-                  <Button variant="ghost" onClick={() => setPrevText("")} disabled={busy}>
-                    Clear
-                  </Button>
-                )}
-                <input ref={prevFileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handlePrevFile} />
-              </div>
-              <textarea
-                className="w-full rounded-md border border-slate-200 bg-white p-2 font-mono text-xs text-slate-700 focus:border-brand focus:outline-none"
-                rows={5}
-                placeholder="Paste previous survey XYZ points here (optional)…"
-                value={prevText}
-                onChange={(e) => setPrevText(e.target.value)}
-              />
+              {!importResult ? (
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
+                  No file imported. Use the <strong>Data Import</strong> tab to load your survey CSV file first.
+                </div>
+              ) : hasNoRL ? (
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
+                  Imported file has no elevation (RL) column. Re-import a file with a 4th column containing reduced levels.
+                </div>
+              ) : (
+                <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+                  <strong>{importedPoints.length} points</strong> with elevation loaded from <em>{importResult.filename}</em>.
+                </div>
+              )}
             </div>
           </Card>
 
           <Card title="Computation Settings">
             <div className="space-y-3">
               <Field label="Contour interval (m)">
-                <Input
-                  value={interval}
-                  onChange={setInterval}
-                  placeholder="0 = auto"
-                />
+                <Input value={interval} onChange={setInterval} placeholder="0 = auto" />
               </Field>
               <Field label="Base datum">
                 <Select
@@ -432,14 +375,10 @@ export function Stockpile() {
               </Field>
               {datumMode === "manual" && (
                 <Field label="Base RL (m)">
-                  <Input
-                    value={manualDatum}
-                    onChange={setManualDatum}
-                    placeholder="e.g. 101.00"
-                  />
+                  <Input value={manualDatum} onChange={setManualDatum} placeholder="e.g. 101.00" />
                 </Field>
               )}
-              <Button onClick={() => process()} disabled={busy || !text.trim()} className="w-full">
+              <Button onClick={process} disabled={busy || !hasPoints} className="w-full">
                 {busy ? "Processing…" : "Calculate Stockpile Volume"}
               </Button>
               {error && <p className="text-sm text-red-600">{error}</p>}
