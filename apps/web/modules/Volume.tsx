@@ -5,12 +5,14 @@ import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { VolumeMethod, VolumeResult } from "@/lib/types";
 import { Button, Card, Field, Input, Select, Stat } from "@/components/ui";
+import { Stockpile } from "@/modules/Stockpile";
 
-const METHODS: { id: VolumeMethod; label: string; blurb: string }[] = [
+const METHODS: { id: VolumeMethod | "stockpile"; label: string; blurb: string }[] = [
   { id: "surface", label: "Surface / TIN", blurb: "Cut & fill vs a datum level or design surface (stockpiles, earthworks)." },
   { id: "section", label: "Cross-section", blurb: "Average-end-area + prismoidal from section areas (roads, channels)." },
   { id: "grid", label: "Grid / borrow-pit", blurb: "Volume from a regular grid of cut/fill depths." },
   { id: "contour", label: "Contour-area", blurb: "Volume between successive contour rings (dams, reservoirs)." },
+  { id: "stockpile", label: "Stockpile Volume", blurb: "TIN surface · DSM / DTM · Cut & fill comparison between surveys." },
 ];
 
 // Form state lives in the parent so it persists with the project (controlled forms).
@@ -31,8 +33,8 @@ function defaultForms(): VForms {
 
 export function Volume() {
   const { volumeResult, setVolumeResult, volumeInput, setVolumeInput } = useStore();
-  const vi = (volumeInput ?? {}) as { method?: VolumeMethod; forms?: VForms };
-  const [method, setMethod] = useState<VolumeMethod>(vi.method ?? "surface");
+  const vi = (volumeInput ?? {}) as { method?: VolumeMethod | "stockpile"; forms?: VForms };
+  const [method, setMethod] = useState<VolumeMethod | "stockpile">(vi.method ?? "surface");
   const [forms, setForms] = useState<VForms>(vi.forms ?? defaultForms());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,7 +81,9 @@ export function Volume() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{METHODS.find((m) => m.id === method)?.blurb}</p>
 
-      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+      {method === "stockpile" && <Stockpile />}
+
+      {method !== "stockpile" && <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         <div>
           {method === "surface" && <SurfaceForm busy={busy} onRun={run} value={forms.surface} onChange={(v) => setForm("surface", v)} />}
           {method === "section" && <SectionForm busy={busy} onRun={run} value={forms.section} onChange={(v) => setForm("section", v)} />}
@@ -100,7 +104,7 @@ export function Volume() {
             <Results result={volumeResult} />
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
