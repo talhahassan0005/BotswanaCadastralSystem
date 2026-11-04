@@ -101,6 +101,10 @@ export function GisMap() {
   const coordBoxRef = useRef<HTMLDivElement | null>(null);
   const manualLayerRef = useRef<any>(null);
   const rulerLayerRef = useRef<any>(null);
+  const pointsLayerRef = useRef<any>(null);
+  const polysLayerRef = useRef<any>(null);
+  const [showPoints, setShowPoints] = useState(true);
+  const [showPolygons, setShowPolygons] = useState(true);
   // Manually added points live in the COGO work station's own saved doc
   // ("extra" points), so they show up there and in its Points table.
   const docRef = useRef<Record<string, unknown>>((cogoWorkspaceDoc ?? {}) as Record<string, unknown>);
@@ -271,16 +275,20 @@ export function GisMap() {
         L.control.layers({ "Satellite (Esri)": sat, "Streets (OSM)": streets }).addTo(map);
 
         const bounds: [number, number][] = [];
+        const polyGroup = L.layerGroup().addTo(map);
+        const ptGroup = L.layerGroup().addTo(map);
+        pointsLayerRef.current = ptGroup;
+        polysLayerRef.current = polyGroup;
         for (const p of parcels) {
           L.polygon(p.ring, { color: "#facc15", weight: 2, fillColor: "#facc15", fillOpacity: 0.15 })
             .bindTooltip(p.number, { permanent: false })
-            .addTo(map);
+            .addTo(polyGroup);
           bounds.push(...p.ring);
         }
         for (const b of beacons) {
           L.circleMarker([b.lat, b.lon], { radius: 4, color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 1 })
             .bindTooltip(b.id, { permanent: false })
-            .addTo(map);
+            .addTo(ptGroup);
           bounds.push([b.lat, b.lon]);
         }
         if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
@@ -387,6 +395,21 @@ export function GisMap() {
     }
     return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(config.name || "Survey")}</name>${marks.join("")}</Document></kml>`;
   }
+  // Toggle points/polygons layer visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = pointsLayerRef.current;
+    if (!map || !layer) return;
+    if (showPoints) map.addLayer(layer); else map.removeLayer(layer);
+  }, [showPoints, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = polysLayerRef.current;
+    if (!map || !layer) return;
+    if (showPolygons) map.addLayer(layer); else map.removeLayer(layer);
+  }, [showPolygons, mapReady]);
+
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -435,6 +458,19 @@ export function GisMap() {
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
+          {/* Layer visibility toggles */}
+          {(beacons.length > 0 || parcels.length > 0) && (
+            <span className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-2 text-xs text-slate-600">
+              <label className="flex cursor-pointer items-center gap-1">
+                <input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} className="accent-brand" />
+                Points
+              </label>
+              <label className="flex cursor-pointer items-center gap-1">
+                <input type="checkbox" checked={showPolygons} onChange={(e) => setShowPolygons(e.target.checked)} className="accent-brand" />
+                Polygons
+              </label>
+            </span>
+          )}
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="font-medium">Add point by coordinates ({displayLo(src)}):</span>
