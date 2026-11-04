@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Card, Field, Input, Stat } from "@/components/ui";
 
 function deg2rad(d: number) { return (d * Math.PI) / 180; }
@@ -236,53 +236,151 @@ function RoadCentreOffset() {
 }
 
 // ─── Slope Calculation ────────────────────────────────────────────────────────
+interface SlopeRow { from: string; to: string; horizDist: number; vertDiff: number; grade: number; slopeDeg: number; slopeRatio: string; }
+interface SlopePoint { name: string; e: number; n: number; z: number; }
+
+function parseSlopePoints(text: string): SlopePoint[] {
+  const pts: SlopePoint[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const parts = line.includes(",") ? line.split(",").map(s => s.trim()) : line.split(/\s+/);
+    if (parts.length < 4) continue;
+    const name = parts[0];
+    const [e, n, z] = parts.slice(1).map(Number);
+    if ([e, n, z].some(isNaN)) continue;
+    pts.push({ name, e, n, z });
+  }
+  return pts;
+}
+
+function computeSlopeRow(a: SlopePoint, b: SlopePoint): SlopeRow {
+  const horizDist = Math.sqrt((b.e - a.e) ** 2 + (b.n - a.n) ** 2);
+  const vertDiff = b.z - a.z;
+  const rise = horizDist === 0 ? 0 : vertDiff / horizDist;
+  const grade = rise * 100;
+  const slopeDeg = rad2deg(Math.atan(rise));
+  const slopeRatio = horizDist === 0 ? "vertical" : vertDiff === 0 ? "flat" : `1:${fmt(Math.abs(horizDist / vertDiff), 1)}`;
+  return { from: a.name, to: b.name, horizDist, vertDiff, grade, slopeDeg, slopeRatio };
+}
+
 function SlopeCalc() {
+  // Single-pair manual mode
   const [e1, setE1] = useState(""); const [n1, setN1] = useState(""); const [z1, setZ1] = useState("");
   const [e2, setE2] = useState(""); const [n2, setN2] = useState(""); const [z2, setZ2] = useState("");
-  const [result, setResult] = useState<{
-    horizDist: number; vertDiff: number; grade: number; slopeDeg: number; slopeRatio: string; rise: number;
-  } | null>(null);
+  const [single, setSingle] = useState<SlopeRow | null>(null);
 
-  function calculate() {
+  // Multi-point CSV mode
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [multiRows, setMultiRows] = useState<SlopeRow[] | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  function calculateSingle() {
     const [a, b, c, d, e, f] = [e1, n1, z1, e2, n2, z2].map(parseFloat);
     if ([a, b, c, d, e, f].some(isNaN)) return;
-    const horizDist = Math.sqrt((d - a) ** 2 + (e - b) ** 2);
-    const vertDiff = f - c;
-    const rise = horizDist === 0 ? 0 : vertDiff / horizDist;
-    const grade = rise * 100;
-    const slopeDeg = rad2deg(Math.atan(rise));
-    const slopeRatio = horizDist === 0 ? "vertical" : vertDiff === 0 ? "flat" : `1 : ${fmt(Math.abs(horizDist / vertDiff), 1)}`;
-    setResult({ horizDist, vertDiff, grade, slopeDeg, slopeRatio, rise });
+    setSingle(computeSlopeRow(
+      { name: "P1", e: a, n: b, z: c },
+      { name: "P2", e: d, n: e, z: f }
+    ));
+  }
+
+  function loadFile(file: File) {
+    setFileError(null);
+    setMultiRows(null);
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? "";
+      const pts = parseSlopePoints(text);
+      if (pts.length < 2) { setFileError("Need at least 2 points with Name, E, N, Z columns."); return; }
+      const rows: SlopeRow[] = [];
+      for (let i = 0; i < pts.length - 1; i++) rows.push(computeSlopeRow(pts[i], pts[i + 1]));
+      setMultiRows(rows);
+    };
+    reader.readAsText(file);
   }
 
   return (
-    <Card title="Slope Calculation">
-      <div className="space-y-3">
-        <p className="text-sm text-slate-500">Point 1 (From)</p>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Easting"><Input value={e1} onChange={setE1} placeholder="E" /></Field>
-          <Field label="Northing"><Input value={n1} onChange={setN1} placeholder="N" /></Field>
-          <Field label="Elevation (m)"><Input value={z1} onChange={setZ1} placeholder="Z" /></Field>
+    <div className="space-y-4">
+      {/* CSV upload */}
+      <Card title="Slope from File (Name, E, N, Z)">
+        <p className="text-sm text-slate-500 mb-3">Upload a CSV / TXT file with columns: Name, Easting, Northing, Elevation — calculates slope between each consecutive pair of points.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => fileRef.current?.click()}>Browse file</Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.txt"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ""; }}
+          />
+          {fileName && <span className="text-sm text-slate-600">{fileName}</span>}
+          {fileName && <button onClick={() => { setFileName(null); setMultiRows(null); setFileError(null); }} className="text-xs text-red-500 hover:underline">Clear</button>}
         </div>
-        <p className="text-sm text-slate-500">Point 2 (To)</p>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Easting"><Input value={e2} onChange={setE2} placeholder="E" /></Field>
-          <Field label="Northing"><Input value={n2} onChange={setN2} placeholder="N" /></Field>
-          <Field label="Elevation (m)"><Input value={z2} onChange={setZ2} placeholder="Z" /></Field>
+        {fileError && <p className="mt-2 text-sm text-red-600">{fileError}</p>}
+        {multiRows && (
+          <div className="mt-4 overflow-x-auto">
+            <p className="mb-2 text-xs text-slate-500">{multiRows.length} slope segments</p>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-100 dark:bg-slate-800">
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-left">From</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-left">To</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Horiz Dist (m)</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Vert Diff (m)</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Grade %</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Angle</th>
+                  <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Ratio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {multiRows.map((r, i) => (
+                  <tr key={i} className="odd:bg-white even:bg-slate-50 dark:odd:bg-slate-900 dark:even:bg-slate-800">
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 font-medium">{r.from}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 font-medium">{r.to}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.horizDist, 3)}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.vertDiff, 3)}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.grade, 3)}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{toDMS(Math.abs(r.slopeDeg))}</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{r.slopeRatio}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Manual two-point mode */}
+      <Card title="Slope — Two Points (Manual)">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">Point 1 (From)</p>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Easting"><Input value={e1} onChange={setE1} placeholder="E" /></Field>
+            <Field label="Northing"><Input value={n1} onChange={setN1} placeholder="N" /></Field>
+            <Field label="Elevation (m)"><Input value={z1} onChange={setZ1} placeholder="Z" /></Field>
+          </div>
+          <p className="text-sm text-slate-500">Point 2 (To)</p>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Easting"><Input value={e2} onChange={setE2} placeholder="E" /></Field>
+            <Field label="Northing"><Input value={n2} onChange={setN2} placeholder="N" /></Field>
+            <Field label="Elevation (m)"><Input value={z2} onChange={setZ2} placeholder="Z" /></Field>
+          </div>
         </div>
-      </div>
-      <Button onClick={calculate}>Calculate Slope</Button>
-      {result && (
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Stat label="Horiz. Distance" value={`${fmt(result.horizDist, 3)} m`} />
-          <Stat label="Vert. Difference" value={`${fmt(result.vertDiff, 3)} m`} />
-          <Stat label="Grade %" value={`${fmt(result.grade, 3)} %`} />
-          <Stat label="Slope Angle" value={toDMS(Math.abs(result.slopeDeg))} />
-          <Stat label="Slope Ratio" value={result.slopeRatio} />
-          <Stat label="Rise / Run" value={fmt(result.rise, 4)} />
-        </div>
-      )}
-    </Card>
+        <Button onClick={calculateSingle}>Calculate Slope</Button>
+        {single && (
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Stat label="Horiz. Distance" value={`${fmt(single.horizDist, 3)} m`} />
+            <Stat label="Vert. Difference" value={`${fmt(single.vertDiff, 3)} m`} />
+            <Stat label="Grade %" value={`${fmt(single.grade, 3)} %`} />
+            <Stat label="Slope Angle" value={toDMS(Math.abs(single.slopeDeg))} />
+            <Stat label="Slope Ratio" value={single.slopeRatio} />
+            <Stat label="Rise / Run" value={fmt(single.horizDist === 0 ? 0 : single.vertDiff / single.horizDist, 4)} />
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
