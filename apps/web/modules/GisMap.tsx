@@ -9,6 +9,7 @@ import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
 import type { ParcelDoc } from "@/lib/types";
 import type { WPoint } from "@/lib/cogoTools/types";
+import { REF_MARKS } from "@/lib/refmarks";
 
 // Leaflet is loaded from a CDN at runtime (no npm dependency) — keeps the
 // build self-contained. `window.L` is the global Leaflet namespace.
@@ -103,8 +104,10 @@ export function GisMap() {
   const rulerLayerRef = useRef<any>(null);
   const pointsLayerRef = useRef<any>(null);
   const polysLayerRef = useRef<any>(null);
+  const refMarksLayerRef = useRef<any>(null);
   const [showPoints, setShowPoints] = useState(true);
   const [showPolygons, setShowPolygons] = useState(true);
+  const [showRefMarks, setShowRefMarks] = useState(false);
   // Manually added points live in the COGO work station's own saved doc
   // ("extra" points), so they show up there and in its Points table.
   const docRef = useRef<Record<string, unknown>>((cogoWorkspaceDoc ?? {}) as Record<string, unknown>);
@@ -320,6 +323,14 @@ export function GisMap() {
           if (t === "point") addPointRef.current("", en[0], en[1]);
           else setRuler((r) => [...r, { east: en[0], north: en[1], lat: ev.latlng.lat, lon: ev.latlng.lng }]);
         });
+        // Reference marks layer (off by default — 2057 marks)
+        const rmGroup = L.layerGroup();
+        for (const rm of REF_MARKS) {
+          L.circleMarker([rm.lat, rm.lon], { radius: 5, color: "#f97316", weight: 2, fillColor: "#fff7ed", fillOpacity: 0.9 })
+            .bindTooltip(`<strong>${rm.number}</strong><br/>${rm.name}`, { permanent: false })
+            .addTo(rmGroup);
+        }
+        refMarksLayerRef.current = rmGroup;
         manualLayerRef.current = L.layerGroup().addTo(map);
         rulerLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
@@ -338,6 +349,7 @@ export function GisMap() {
       mapRef.current = null;
       manualLayerRef.current = null;
       rulerLayerRef.current = null;
+      refMarksLayerRef.current = null;
       coordBoxRef.current = null;
       if (map) map.remove();
     };
@@ -410,6 +422,13 @@ export function GisMap() {
     if (showPolygons) map.addLayer(layer); else map.removeLayer(layer);
   }, [showPolygons, mapReady]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = refMarksLayerRef.current;
+    if (!map || !layer) return;
+    if (showRefMarks) map.addLayer(layer); else map.removeLayer(layer);
+  }, [showRefMarks, mapReady]);
+
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -471,6 +490,12 @@ export function GisMap() {
               </label>
             </span>
           )}
+          <span className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-2 text-xs text-slate-600">
+            <label className="flex cursor-pointer items-center gap-1">
+              <input type="checkbox" checked={showRefMarks} onChange={(e) => setShowRefMarks(e.target.checked)} className="accent-brand" />
+              Ref Marks
+            </label>
+          </span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="font-medium">Add point by coordinates ({displayLo(src)}):</span>
