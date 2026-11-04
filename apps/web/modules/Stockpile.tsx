@@ -185,19 +185,21 @@ function ChangeCanvas({
 
 /** Isometric 3-D wireframe of the TIN — scroll to zoom, drag to pan. */
 function IsoCanvas({ result }: { result: StockpileResult }) {
-  const W = 460, H = 340;
+  const W = 700, H = 460;
   const { points, triangles, stats, datum } = result;
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // azimuth = horizontal rotation (radians), elevation = tilt (radians)
+  const [azimuth, setAzimuth] = useState(Math.PI / 4);
+  const [elevation, setElevation] = useState(Math.PI / 6);
+  const [tool, setTool] = useState<"orbit" | "pan">("orbit");
   const dragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const COS30 = Math.cos(Math.PI / 6);
-  const SIN30 = Math.sin(Math.PI / 6);
-  const cx = (stats.bounds.minX + stats.bounds.maxX) / 2;
-  const cy = (stats.bounds.minY + stats.bounds.maxY) / 2;
+  const mcx = (stats.bounds.minX + stats.bounds.maxX) / 2;
+  const mcy = (stats.bounds.minY + stats.bounds.maxY) / 2;
   const span = Math.max(
     stats.bounds.maxX - stats.bounds.minX,
     stats.bounds.maxY - stats.bounds.minY,
@@ -205,11 +207,15 @@ function IsoCanvas({ result }: { result: StockpileResult }) {
   ) || 1;
   const sc = Math.min(W, H) * 0.32 / span;
 
-  function iso(x: number, y: number, z: number): [number, number] {
-    const dx = x - cx, dy = y - cy, dz = z - datum;
-    const sx = (dx - dy) * COS30 * sc;
-    const sy = -(dz * sc) + (dx + dy) * SIN30 * sc;
-    return [W / 2 + sx, H * 0.65 + sy];
+  function project(x: number, y: number, z: number): [number, number] {
+    const dx = x - mcx, dy = y - mcy, dz = z - datum;
+    // rotate around Z by azimuth
+    const rx = dx * Math.cos(azimuth) + dy * Math.sin(azimuth);
+    const ry = -dx * Math.sin(azimuth) + dy * Math.cos(azimuth);
+    // project with elevation tilt
+    const sx = rx * sc;
+    const sy = (-dz * Math.cos(elevation) + ry * Math.sin(elevation)) * sc;
+    return [W / 2 + sx, H * 0.6 + sy];
   }
 
   function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
@@ -219,11 +225,8 @@ function IsoCanvas({ result }: { result: StockpileResult }) {
     const mx = ((e.clientX - rect.left) / rect.width) * W;
     const my = ((e.clientY - rect.top) / rect.height) * H;
     setZoom((z) => {
-      const nz = Math.min(Math.max(z * factor, 0.3), 12);
-      setPan((p) => ({
-        x: mx - (mx - p.x) * (nz / z),
-        y: my - (my - p.y) * (nz / z),
-      }));
+      const nz = Math.min(Math.max(z * factor, 0.2), 20);
+      setPan((p) => ({ x: mx - (mx - p.x) * (nz / z), y: my - (my - p.y) * (nz / z) }));
       return nz;
     });
   }
@@ -238,60 +241,87 @@ function IsoCanvas({ result }: { result: StockpileResult }) {
     const dx = e.clientX - lastMouse.current.x;
     const dy = e.clientY - lastMouse.current.y;
     lastMouse.current = { x: e.clientX, y: e.clientY };
-    const rect = svgRef.current!.getBoundingClientRect();
-    const scaleX = W / rect.width;
-    const scaleY = H / rect.height;
-    setPan((p) => ({ x: p.x + dx * scaleX, y: p.y + dy * scaleY }));
+    if (tool === "orbit") {
+      setAzimuth((a) => a + dx * 0.008);
+      setElevation((el) => Math.min(Math.max(el - dy * 0.008, 0.05), Math.PI / 2 - 0.05));
+    } else {
+      const rect = svgRef.current!.getBoundingClientRect();
+      setPan((p) => ({ x: p.x + dx * (W / rect.width), y: p.y + dy * (H / rect.height) }));
+    }
   }
 
   function handleMouseUp() { dragging.current = false; }
 
-  const transform = `translate(${pan.x},${pan.y}) scale(${zoom})`;
+  // Sort triangles back-to-front for correct painter's algorithm
+  const sorted = [...triangles].sort((ta, tb) => {
+    const za = ((points[ta.a]?.z ?? 0) + (points[ta.b]?.z ?? 0) + (points[ta.c]?.z ?? 0)) / 3;
+    const zb = ((points[tb.a]?.z ?? 0) + (points[tb.b]?.z ?? 0) + (points[tb.c]?.z ?? 0)) / 3;
+    return za - zb;
+  });
+
+  const isModified = zoom !== 1 || pan.x !== 0 || pan.y !== 0 || azimuth !== Math.PI / 4 || elevation !== Math.PI / 6;
+  const cursor = tool === "orbit" ? (dragging.current ? "grabbing" : "crosshair") : (dragging.current ? "grabbing" : "grab");
 
   return (
     <div className="relative">
+      {/* Toolbar */}
+      <div className="mb-1 flex items-center gap-2">
+        <button
+          onClick={() => setTool("orbit")}
+          className={`rounded border px-3 py-1 text-xs font-medium ${tool === "orbit" ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+        >
+          Orbit
+        </button>
+        <button
+          onClick={() => setTool("pan")}
+          className={`rounded border px-3 py-1 text-xs font-medium ${tool === "pan" ? "border-brand bg-brand text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+        >
+          Pan
+        </button>
+        {isModified && (
+          <button
+            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setAzimuth(Math.PI / 4); setElevation(Math.PI / 6); }}
+            className="ml-auto rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-50"
+          >
+            Reset view
+          </button>
+        )}
+        <span className="ml-auto text-xs text-slate-400">Scroll = zoom · Orbit = rotate · Pan = move</span>
+      </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         className="w-full rounded border border-slate-200 bg-slate-50"
-        style={{ maxHeight: 340, cursor: dragging.current ? "grabbing" : "grab" }}
+        style={{ height: 460, cursor }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <g transform={transform}>
-          {triangles.map((t, i) => {
+        <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+          {sorted.map((t, i) => {
             const a = points[t.a], b = points[t.b], c = points[t.c];
             if (!a || !b || !c) return null;
-            const [ax, ay] = iso(a.x, a.y, a.z);
-            const [bx, by] = iso(b.x, b.y, b.z);
-            const [cx2, cy2] = iso(c.x, c.y, c.z);
+            const [ax, ay] = project(a.x, a.y, a.z);
+            const [bx, by] = project(b.x, b.y, b.z);
+            const [cx2, cy2] = project(c.x, c.y, c.z);
             const avgZ = (a.z + b.z + c.z) / 3;
             const fill = elevColor(avgZ, stats.minZ, stats.maxZ);
             return (
               <polygon
                 key={i}
                 points={`${ax},${ay} ${bx},${by} ${cx2},${cy2}`}
-                fill={fill} fillOpacity={0.7}
-                stroke="#334155" strokeWidth={0.4} strokeOpacity={0.5}
+                fill={fill} fillOpacity={0.75}
+                stroke="#334155" strokeWidth={0.5} strokeOpacity={0.4}
               />
             );
           })}
         </g>
-        <text x={W / 2} y={H - 6} fontSize={9} fill="#64748b" textAnchor="middle">
-          Scroll to zoom · Drag to pan
+        <text x={W / 2} y={H - 6} fontSize={10} fill="#94a3b8" textAnchor="middle">
+          Isometric 3D view (TIN surface)
         </text>
       </svg>
-      {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-        <button
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
-          className="absolute right-2 top-2 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-50"
-        >
-          Reset view
-        </button>
-      )}
     </div>
   );
 }
