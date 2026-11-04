@@ -216,6 +216,7 @@ export function DataImport() {
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Easting (m)</th>
                   <th className="px-4 py-3">Northing (m)</th>
+                  <th className="px-4 py-3">Elevation (m)</th>
                   <th className="px-4 py-3">Bearing</th>
                   <th className="px-4 py-3">Distance</th>
                   <th className="px-4 py-3">Status</th>
@@ -251,6 +252,7 @@ export function DataImport() {
                     </td>
                     <td className="px-4 py-3">{fmtCoordCell(r.east)}</td>
                     <td className="px-4 py-3">{fmtCoordCell(r.north)}</td>
+                    <td className="px-4 py-3">{r.rl != null ? r.rl.toFixed(3) : "—"}</td>
                     <td className="px-4 py-3">{r.bearing ?? "—"}</td>
                     <td className="px-4 py-3">{r.distance != null ? `${r.distance} m` : "—"}</td>
                     <td className="px-4 py-3">
