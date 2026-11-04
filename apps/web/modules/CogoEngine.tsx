@@ -274,7 +274,7 @@ export function CogoEngine() {
           </div>
         </Card>
 
-        <Card title="Computation Type">
+        {config.discipline === "Cadastral" && <Card title="Computation Type">
           <div className="space-y-3">
             <Field label="Traverse type">
               <Select
@@ -341,7 +341,7 @@ export function CogoEngine() {
             </div>
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        </Card>
+        </Card>}
       </div>
 
       {/* Right results */}
