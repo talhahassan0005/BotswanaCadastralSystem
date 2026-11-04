@@ -33,8 +33,8 @@ export const TABS = [
 // in-page "Go to Parcels" links from Diagrams/Working Plan/General Plan).
 const DISCIPLINE_TABS: Record<Discipline, string[]> = {
   Cadastral: ["cogo", "diagrams", "workingplan", "generalplan", "sectional", "records", "gis", "collab", "validate", "reports"],
-  Engineering: ["topo", "editor", "volume", "settingout", "gis", "collab", "validate", "reports"],
-  Mining: ["topo", "editor", "volume", "settingout", "gis", "collab", "validate", "reports"],
+  Engineering: ["topo", "cogo", "volume", "settingout", "gis", "collab", "validate", "reports"],
+  Mining: ["topo", "cogo", "volume", "settingout", "gis", "collab", "validate", "reports"],
   GIS: ["gis", "editor", "topo", "collab"],
 };
 

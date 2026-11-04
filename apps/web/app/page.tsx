@@ -76,7 +76,12 @@ function Workspace() {
         {/* keyed by loadVersion so opening a project remounts modules with fresh state */}
         <div key={loadVersion}>
           {activeTab === "import" && <DataImport />}
-          {activeTab === "cogo" && <CogoEngine />}
+          {activeTab === "cogo" && (
+            <div className="space-y-6">
+              <CogoEngine />
+              {config.discipline !== "Cadastral" && <Editor />}
+            </div>
+          )}
           {activeTab === "traverse" && <Traverse />}
           {activeTab === "topo" && <Topographic />}
           {activeTab === "volume" && <Volume />}
