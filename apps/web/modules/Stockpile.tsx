@@ -425,7 +425,7 @@ export function Stockpile() {
     interval?: string; datumMode?: string; manualDatum?: string;
   };
   const [interval, setInterval] = useState(init.interval ?? "0.5");
-  const [datumMode, setDatumMode] = useState(init.datumMode ?? "auto");
+  const [datumMode, setDatumMode] = useState(init.datumMode ?? "perimeter");
   const [manualDatum, setManualDatum] = useState(init.manualDatum ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -468,6 +468,7 @@ export function Stockpile() {
       const body: Record<string, unknown> = {
         points: activePoints,
         interval: Number(interval) || 0,
+        datumMode,
       };
       if (datumMode === "manual" && manualDatum.trim()) {
         body.datum = Number(manualDatum);
@@ -554,8 +555,9 @@ export function Stockpile() {
                   value={datumMode}
                   onChange={setDatumMode}
                   options={[
+                    { value: "perimeter", label: "Perimeter base — toe of slope (recommended)" },
                     { value: "auto", label: "Auto (lowest point)" },
-                    { value: "manual", label: "Manual" },
+                    { value: "manual", label: "Manual RL" },
                   ]}
                 />
               </Field>

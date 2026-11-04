@@ -6,6 +6,30 @@ import type { XYZ } from "@/lib/server/delaunay";
 
 export const dynamic = "force-dynamic";
 
+/** Gift-wrapping (Jarvis march) convex hull on XY. Returns indices into pts[]. */
+function convexHull(pts: XYZ[]): number[] {
+  const n = pts.length;
+  if (n < 3) return pts.map((_, i) => i);
+  // Start with leftmost point
+  let start = 0;
+  for (let i = 1; i < n; i++) if (pts[i].x < pts[start].x) start = i;
+  const hull: number[] = [];
+  let cur = start;
+  do {
+    hull.push(cur);
+    let next = (cur + 1) % n;
+    for (let i = 0; i < n; i++) {
+      // Cross product: if pts[i] is more counter-clockwise than pts[next]
+      const cross =
+        (pts[next].x - pts[cur].x) * (pts[i].y - pts[cur].y) -
+        (pts[next].y - pts[cur].y) * (pts[i].x - pts[cur].x);
+      if (cross < 0) next = i;
+    }
+    cur = next;
+  } while (cur !== start && hull.length <= n);
+  return hull;
+}
+
 /**
  * Stockpile volume measurement + surface comparison (Engineering / Mining).
  *
@@ -47,17 +71,41 @@ export async function POST(req: Request) {
 
     // ── Single-surface mode ──────────────────────────────────────────────────
     const autoMin = points.reduce((m, p) => (p.z < m ? p.z : m), Infinity);
-    const datum = body.datum != null && Number.isFinite(Number(body.datum))
+    const manualDatum = body.datum != null && Number.isFinite(Number(body.datum))
       ? Number(body.datum)
-      : autoMin;
+      : null;
 
-    const vol = surfaceVolume({ points, mode: "datum", datum });
+    // datumMode "perimeter": base surface formed by convex-hull boundary points
+    // (the toe-of-slope). Volume = area above that sloped base. This is the
+    // correct surveying method when the stockpile sits on uneven ground.
+    const datumMode: string = body.datumMode ?? "auto";
+    let vol: ReturnType<typeof surfaceVolume>;
+    let datum: number;
+    let baseDesign: XYZ[] | null = null;
+
+    if (datumMode === "perimeter") {
+      const hullIdx = convexHull(points);
+      baseDesign = hullIdx.map((i) => points[i]);
+      // Fallback: if hull is degenerate, use flat auto datum
+      if (baseDesign.length >= 3) {
+        vol = surfaceVolume({ points, mode: "surface", design: baseDesign });
+        datum = round(baseDesign.reduce((s, p) => s + p.z, 0) / baseDesign.length, 3);
+      } else {
+        datum = manualDatum ?? autoMin;
+        vol = surfaceVolume({ points, mode: "datum", datum });
+      }
+    } else if (manualDatum != null) {
+      datum = manualDatum;
+      vol = surfaceVolume({ points, mode: "datum", datum });
+    } else {
+      datum = autoMin;
+      vol = surfaceVolume({ points, mode: "datum", datum });
+    }
 
     const sorted = [...points].sort((a, b) => b.z - a.z);
     const topPoint = sorted[0];
     const tolerance = 0.01;
-    const basePoints = points
-      .filter((p) => p.z <= datum + tolerance)
+    const basePoints = (baseDesign ?? points.filter((p) => p.z <= datum + tolerance))
       .map((p) => ({ name: p.name, x: round(p.x, 3), y: round(p.y, 3), z: round(p.z, 3) }));
 
     const contours = surface.contours.map((c) => ({
