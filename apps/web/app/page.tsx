@@ -13,7 +13,7 @@ import { Topographic } from "@/modules/Topographic";
 import { Volume } from "@/modules/Volume";
 import { Editor } from "@/modules/Editor";
 import { RefMarks } from "@/modules/RefMarks";
-import { GisMap } from "@/modules/GisMap";
+import { GisMap, CoordConverter } from "@/modules/GisMap";
 import { Collaborate } from "@/modules/Collaborate";
 import { AiValidate } from "@/modules/AiValidate";
 import { Reports } from "@/modules/Reports";
@@ -27,7 +27,7 @@ import { Export } from "@/modules/Export";
 import { SettingOut } from "@/modules/SettingOut";
 
 function Workspace() {
-  const { activeTab, setActiveTab, loadVersion, resetProject, started } = useStore();
+  const { activeTab, setActiveTab, loadVersion, resetProject, started, config } = useStore();
   const { user, ready } = useAccount();
 
   // Clear the in-memory project when the signed-in surveyor changes or signs out,
@@ -83,9 +83,19 @@ function Workspace() {
           {activeTab === "settingout" && <SettingOut />}
           {activeTab === "editor" && <Editor />}
           {activeTab === "gis" && (
-            <div className="space-y-4">
-              <GisMap />
-              <RefMarks />
+            <div className="flex gap-4">
+              {/* Left sidebar — coordinate converter */}
+              <div className="w-72 shrink-0 space-y-4">
+                <CoordConverter projectCs={config.coordinateSystem} />
+              </div>
+              {/* Centre — big map */}
+              <div className="min-w-0 flex-1">
+                <GisMap />
+              </div>
+              {/* Right sidebar — reference marks */}
+              <div className="w-80 shrink-0 space-y-4">
+                <RefMarks />
+              </div>
             </div>
           )}
           {activeTab === "collab" && <Collaborate />}

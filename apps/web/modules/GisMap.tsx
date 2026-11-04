@@ -461,7 +461,7 @@ export function GisMap() {
   const hasData = beacons.length > 0 || manualPts.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div>
       <Card title="GIS Map — satellite basemap & survey overlay">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Button onClick={exportKml} disabled={!hasData}>⬇ Export KML</Button>
@@ -520,20 +520,19 @@ export function GisMap() {
             <Button variant="ghost" onClick={() => setRuler([])}>Clear ruler</Button>
           </div>
         )}
-        <div ref={mapDivRef} className="h-[480px] w-full rounded-lg border border-slate-200 bg-slate-100" />
+        <div ref={mapDivRef} className="h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
           {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets via the layers control.
           {!hasData && " Build a parcel or run a closed traverse to see your survey on the map."}
         </p>
       </Card>
-      <CoordConverter projectCs={config.coordinateSystem} />
     </div>
   );
 }
 
 /** Coordinate conversion panel: UTM <-> WGS84 <-> LO (any registered CRS). */
-function CoordConverter({ projectCs }: { projectCs: string }) {
+export function CoordConverter({ projectCs }: { projectCs: string }) {
   const defaultSrc = CRS_LIST.find((c) => projectCs.includes(c.code.replace("Lo", "Lo ")))?.code
     ?? CRS_LIST.find((c) => c.code.startsWith("Lo 25"))?.code
     ?? CRS_LIST[0].code;
