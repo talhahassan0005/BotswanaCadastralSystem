@@ -98,7 +98,7 @@ const SNAP_PX = 12;
 const STORAGE_KEY = "bcs-editor-v2";
 
 export function Editor() {
-  const { topoResult, cogoResult, editorDoc: storeEditorDoc, setEditorDoc } = useStore();
+  const { topoResult, cogoResult, editorDoc: storeEditorDoc, setEditorDoc, config } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
   const idRef = useRef(1000);
@@ -657,7 +657,7 @@ export function Editor() {
     <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
       <div className="space-y-4">
         {/* Tools */}
-        <Card title="Tools">
+        <Card title={config.discipline === "Cadastral" || config.discipline === "GIS" ? "Tools" : "COGO Tools"}>
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             {([
               ["select", "Select"], ["point", "Point"], ["line", "Line"], ["rect", "Rect"],
