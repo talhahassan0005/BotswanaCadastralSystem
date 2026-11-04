@@ -64,63 +64,156 @@ function elevColor(z: number, minZ: number, maxZ: number): string {
 
 /** Simple 2-D plan canvas: points coloured by elevation + contour lines. */
 function PlanCanvas({ result }: { result: StockpileResult }) {
-  const W = 460, H = 360, PAD = 32;
+  const W = 700, H = 520, PAD = 36;
   const { stats, points, contours, datum, topPoint } = result;
   const sx = stats.bounds.minX, sy = stats.bounds.minY;
   const sw = stats.bounds.maxX - sx || 1, sh = stats.bounds.maxY - sy || 1;
-  const scaleX = (W - PAD * 2) / sw;
-  const scaleY = (H - PAD * 2) / sh;
-  const scale = Math.min(scaleX, scaleY);
-  const offX = PAD + ((W - PAD * 2) - sw * scale) / 2;
-  const offY = PAD + ((H - PAD * 2) - sh * scale) / 2;
-  const tx = (x: number) => offX + (x - sx) * scale;
-  const ty = (y: number) => H - (offY + (y - sy) * scale);
+  const baseScale = Math.min((W - PAD * 2) / sw, (H - PAD * 2) / sh);
+  const baseOffX = PAD + ((W - PAD * 2) - sw * baseScale) / 2;
+  const baseOffY = PAD + ((H - PAD * 2) - sh * baseScale) / 2;
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [cursor, setCursor] = useState<{ ex: number; ny: number; rl: number | null } | null>(null);
+  const dragging = useRef(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Map SVG coords → survey coords
+  function svgToSurvey(svgX: number, svgY: number): { ex: number; ny: number } {
+    const sc = baseScale * zoom;
+    const ox = baseOffX * zoom + pan.x;
+    const oy = baseOffY * zoom + pan.y;
+    const ex = sx + (svgX - ox) / sc;
+    const ny = sy + (H * zoom - (svgY - oy + H * (zoom - 1))) / sc;
+    return { ex, ny };
+  }
+
+  // Find nearest point RL for coordinate display
+  function nearestRl(ex: number, ny: number): number | null {
+    let best: number | null = null, bestD = Infinity;
+    for (const p of points) {
+      const d = (p.x - ex) ** 2 + (p.y - ny) ** 2;
+      if (d < bestD) { bestD = d; best = p.z; }
+    }
+    return best;
+  }
+
+  function handleWheel(e: React.WheelEvent<SVGSVGElement>) {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const rect = svgRef.current!.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * W;
+    const my = ((e.clientY - rect.top) / rect.height) * H;
+    setZoom((z) => {
+      const nz = Math.min(Math.max(z * factor, 0.3), 20);
+      setPan((p) => ({ x: mx - (mx - p.x) * (nz / z), y: my - (my - p.y) * (nz / z) }));
+      return nz;
+    });
+  }
+
+  function handleMouseDown(e: React.MouseEvent<SVGSVGElement>) {
+    dragging.current = true;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = svgRef.current!.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * W;
+    const svgY = ((e.clientY - rect.top) / rect.height) * H;
+    const { ex, ny } = svgToSurvey(svgX, svgY);
+    setCursor({ ex, ny, rl: nearestRl(ex, ny) });
+    if (!dragging.current) return;
+    const dx = e.clientX - lastMouse.current.x;
+    const dy = e.clientY - lastMouse.current.y;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+    setPan((p) => ({ x: p.x + dx * (W / rect.width), y: p.y + dy * (H / rect.height) }));
+  }
+
+  function handleMouseUp() { dragging.current = false; }
+  function handleMouseLeave() { dragging.current = false; setCursor(null); }
+
+  const sc = baseScale * zoom;
+  const ox = baseOffX * zoom + pan.x;
+  const oy = H - (baseOffY * zoom + pan.y);
+  const tx = (x: number) => ox + (x - sx) * sc;
+  const ty = (y: number) => oy - (y - sy) * sc;
+  const isModified = zoom !== 1 || pan.x !== 0 || pan.y !== 0;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded border border-slate-200 bg-white" style={{ maxHeight: 360 }}>
-      {/* Contour lines */}
-      {contours.map((c) =>
-        c.segments.map((seg, si) => (
-          <line
-            key={`c${c.level}-${si}`}
-            x1={tx(seg[0][0])} y1={ty(seg[0][1])}
-            x2={tx(seg[1][0])} y2={ty(seg[1][1])}
-            stroke="#94a3b8" strokeWidth={0.8} strokeOpacity={0.7}
-          />
-        ))
+    <div className="relative">
+      {isModified && (
+        <div className="mb-1 flex justify-end">
+          <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+            className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-50">
+            Reset view
+          </button>
+        </div>
       )}
-      {/* Points coloured by elevation */}
-      {points.map((p, i) => {
-        const cx = tx(p.x), cy = ty(p.y);
-        const col = elevColor(p.z, stats.minZ, stats.maxZ);
-        const isBase = p.z <= datum + 0.01;
-        const isTop = p.x === topPoint.x && p.y === topPoint.y;
-        return (
-          <g key={i}>
-            <circle cx={cx} cy={cy} r={isTop ? 6 : isBase ? 4 : 3.5}
-              fill={col} stroke={isTop ? "#dc2626" : isBase ? "#1e40af" : col}
-              strokeWidth={isTop || isBase ? 1.5 : 0} />
-            {p.name && (
-              <text x={cx + 5} y={cy - 4} fontSize={7} fill="#334155">{p.name}</text>
-            )}
-          </g>
-        );
-      })}
-      {/* Legend */}
-      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => {
-        const z = stats.minZ + t * (stats.maxZ - stats.minZ);
-        const col = elevColor(z, stats.minZ, stats.maxZ);
-        return (
-          <g key={i}>
-            <rect x={W - 22} y={PAD + i * 16} width={12} height={12} fill={col} rx={2} />
-            <text x={W - 6} y={PAD + i * 16 + 9} fontSize={7} fill="#475569" textAnchor="end">
-              {fmt(z, 1)}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full rounded border border-slate-200 bg-white"
+        style={{ height: 520, cursor: dragging.current ? "grabbing" : "grab" }}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
+        <g>
+          {/* Contour lines */}
+          {contours.map((c) =>
+            c.segments.map((seg, si) => (
+              <line key={`c${c.level}-${si}`}
+                x1={tx(seg[0][0])} y1={ty(seg[0][1])}
+                x2={tx(seg[1][0])} y2={ty(seg[1][1])}
+                stroke="#94a3b8" strokeWidth={0.8 / zoom} strokeOpacity={0.7} />
+            ))
+          )}
+          {/* Points coloured by elevation */}
+          {points.map((p, i) => {
+            const pcx = tx(p.x), pcy = ty(p.y);
+            const col = elevColor(p.z, stats.minZ, stats.maxZ);
+            const isBase = p.z <= datum + 0.01;
+            const isTop = p.x === topPoint.x && p.y === topPoint.y;
+            const r = (isTop ? 6 : isBase ? 4 : 3.5) / zoom;
+            return (
+              <g key={i}>
+                <circle cx={pcx} cy={pcy} r={r}
+                  fill={col} stroke={isTop ? "#dc2626" : isBase ? "#1e40af" : col}
+                  strokeWidth={isTop || isBase ? 1.5 / zoom : 0} />
+                {p.name && zoom > 1.5 && (
+                  <text x={pcx + 5 / zoom} y={pcy - 4 / zoom} fontSize={7 / zoom} fill="#334155">{p.name}</text>
+                )}
+              </g>
+            );
+          })}
+        </g>
+        {/* Legend — fixed position (not zoomed) */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+          const z = stats.minZ + t * (stats.maxZ - stats.minZ);
+          const col = elevColor(z, stats.minZ, stats.maxZ);
+          return (
+            <g key={i}>
+              <rect x={W - 22} y={PAD + i * 16} width={12} height={12} fill={col} rx={2} />
+              <text x={W - 6} y={PAD + i * 16 + 9} fontSize={7} fill="#475569" textAnchor="end">{fmt(z, 1)}</text>
+            </g>
+          );
+        })}
+        <text x={W - 10} y={PAD - 4} fontSize={7} fill="#475569" textAnchor="end">RL (m)</text>
+        <text x={6} y={H - 6} fontSize={8} fill="#94a3b8">Scroll to zoom · Drag to pan</text>
+        {/* Coordinate readout — bottom right */}
+        {cursor && (
+          <g>
+            <rect x={W - 210} y={H - 24} width={204} height={18} fill="rgba(255,255,255,0.88)" rx={3} />
+            <text x={W - 8} y={H - 10} fontSize={9} fill="#0f172a" textAnchor="end" fontFamily="ui-monospace,monospace">
+              {`E ${cursor.ex.toFixed(2)}  N ${cursor.ny.toFixed(2)}${cursor.rl != null ? `  RL ${cursor.rl.toFixed(3)}` : ""}`}
             </text>
           </g>
-        );
-      })}
-      <text x={W - 10} y={PAD - 4} fontSize={7} fill="#475569" textAnchor="end">RL (m)</text>
-    </svg>
+        )}
+      </svg>
+    </div>
   );
 }
 
