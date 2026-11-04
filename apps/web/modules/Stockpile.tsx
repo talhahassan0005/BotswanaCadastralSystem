@@ -453,6 +453,15 @@ export function Stockpile() {
         <div className="space-y-4">
           {r ? (
             <>
+              {/* Clear button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { setStockpileResult(null); setDirectPoints(null); setDirectFileName(null); if (fileRef.current) fileRef.current.value = ""; }}
+                  className="text-xs font-medium text-red-500 underline hover:text-red-700"
+                >
+                  ✕ Clear results
+                </button>
+              </div>
               {/* Key metrics */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <Stat label="Bulk Volume" value={`${fmt(r.volume_m3)} m³`} />
