@@ -29,7 +29,18 @@ async function excelToCsvText(buf: ArrayBuffer): Promise<string> {
   sheet.eachRow({ includeEmpty: false }, (row) => {
     const cells: string[] = [];
     for (let c = 1; c <= maxCol; c++) {
-      cells.push(csvCell((row.getCell(c).text ?? "").toString().trim()));
+      const cell = row.getCell(c);
+      // Use the raw numeric value when available — avoids locale-specific
+      // text formatting (e.g. European "950,134" for the number 950.134)
+      // which would be mis-parsed by the CSV reader as 950134.
+      const raw = cell.value;
+      const str =
+        typeof raw === "number"
+          ? raw.toString()
+          : raw instanceof Date
+          ? raw.toISOString()
+          : (cell.text ?? "").toString().trim();
+      cells.push(csvCell(str));
     }
     lines.push(cells.join(","));
   });
