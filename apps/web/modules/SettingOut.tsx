@@ -384,11 +384,78 @@ function SlopeCalc() {
   );
 }
 
+// ─── Line Offset ──────────────────────────────────────────────────────────────
+function LineOffset() {
+  const [x1, setX1] = useState(""); const [y1, setY1] = useState("");
+  const [x2, setX2] = useState(""); const [y2, setY2] = useState("");
+  const [offsets, setOffsets] = useState("-5, 5");
+  const [result, setResult] = useState<{ offset: number; p1: { e: number; n: number }; p2: { e: number; n: number } }[] | null>(null);
+
+  function calculate() {
+    const [a, b, c, d] = [x1, y1, x2, y2].map(parseFloat);
+    if ([a, b, c, d].some(isNaN)) return;
+    const dx = c - a, dy = d - b;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return;
+    // Unit perpendicular (rotate 90° right)
+    const px = dy / len, py = -dx / len;
+    const offList = offsets.split(",").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+    setResult(offList.map(off => ({
+      offset: off,
+      p1: { e: a + px * off, n: b + py * off },
+      p2: { e: c + px * off, n: d + py * off },
+    })));
+  }
+
+  return (
+    <Card title="Line Offset">
+      <p className="mb-3 text-sm text-slate-500">Define a base line by two points, then generate parallel offset lines. Negative = left of line direction, positive = right.</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Field label="Start Easting"><Input value={x1} onChange={setX1} placeholder="E1" /></Field>
+        <Field label="Start Northing"><Input value={y1} onChange={setY1} placeholder="N1" /></Field>
+        <Field label="End Easting"><Input value={x2} onChange={setX2} placeholder="E2" /></Field>
+        <Field label="End Northing"><Input value={y2} onChange={setY2} placeholder="N2" /></Field>
+      </div>
+      <Field label="Offsets (m, comma-separated — negative=left, positive=right)">
+        <Input value={offsets} onChange={setOffsets} placeholder="-5, 5" />
+      </Field>
+      <Button onClick={calculate}>Calculate Offsets</Button>
+      {result && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-100 dark:bg-slate-800">
+                <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-left">Offset (m)</th>
+                <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Start E</th>
+                <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">Start N</th>
+                <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">End E</th>
+                <th className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right">End N</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.map((r, i) => (
+                <tr key={i} className="odd:bg-white even:bg-slate-50 dark:odd:bg-slate-900 dark:even:bg-slate-800">
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 font-medium">{r.offset >= 0 ? `+${fmt(r.offset, 3)}` : fmt(r.offset, 3)}</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.p1.e, 4)}</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.p1.n, 4)}</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.p2.e, 4)}</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-1 text-right font-mono">{fmt(r.p2.n, 4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Main SettingOut module ───────────────────────────────────────────────────
 const TOOLS = [
   { id: "chainage", label: "Chainage Calculation" },
   { id: "roadcurve", label: "Road Curve" },
   { id: "centreoffset", label: "Road Centre Offset" },
+  { id: "lineoffset", label: "Line Offset" },
   { id: "slope", label: "Slope" },
 ] as const;
 type ToolId = typeof TOOLS[number]["id"];
@@ -416,6 +483,7 @@ export function SettingOut() {
       {tool === "chainage" && <ChainageCalc />}
       {tool === "roadcurve" && <RoadCurve />}
       {tool === "centreoffset" && <RoadCentreOffset />}
+      {tool === "lineoffset" && <LineOffset />}
       {tool === "slope" && <SlopeCalc />}
     </div>
   );

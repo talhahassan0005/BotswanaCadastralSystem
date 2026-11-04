@@ -6,6 +6,23 @@ import { useStore } from "@/lib/store";
 import type { StockpileResult, TopoPoint } from "@/lib/types";
 import { Button, Card, Field, Input, Select, Stat } from "@/components/ui";
 
+/** Parse Name,E,N,Z (or Name E N Z whitespace) text into XYZ points. */
+function parseXYZ(text: string): { name: string | null; x: number; y: number; z: number }[] {
+  const pts: { name: string | null; x: number; y: number; z: number }[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const parts = line.includes(",") ? line.split(",").map(s => s.trim()) : line.split(/\s+/);
+    if (parts.length < 3) continue;
+    // Try last 3 as numbers (x, y, z)
+    const nums = parts.slice(-3).map(Number);
+    if (nums.some(isNaN)) continue;
+    const name = parts.length >= 4 ? parts[0] : null;
+    pts.push({ name, x: nums[0], y: nums[1], z: nums[2] });
+  }
+  return pts;
+}
+
 const SAMPLE = `Point,Easting,Northing,RL
 P1,1000.00,1000.00,102.10
 P2,1005.00,1000.00,103.50
@@ -291,25 +308,42 @@ export function Stockpile() {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"plan" | "3d" | "change">("plan");
 
+  // Direct file upload (alternative to Data Import)
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [directPoints, setDirectPoints] = useState<{ name: string | null; x: number; y: number; z: number }[] | null>(null);
+  const [directFileName, setDirectFileName] = useState<string | null>(null);
+
+  function loadDirectFile(file: File) {
+    setDirectPoints(null);
+    setDirectFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const pts = parseXYZ((ev.target?.result as string) ?? "");
+      setDirectPoints(pts.length >= 3 ? pts : []);
+    };
+    reader.readAsText(file);
+  }
+
   useEffect(() => {
     setStockpileInput({ interval, datumMode, manualDatum });
   }, [interval, datumMode, manualDatum, setStockpileInput]);
 
-  // Build XYZ points from the already-imported data
+  // Build XYZ points: prefer directly uploaded file, fall back to importResult
   const importedPoints = (importResult?.rows ?? [])
     .filter((row) => row.east != null && row.north != null && row.rl != null)
     .map((row) => ({ name: row.beaconId, x: row.east!, y: row.north!, z: row.rl! }));
 
-  const hasPoints = importedPoints.length >= 3;
-  const hasNoRL = importResult && importResult.rows.length > 0 && importedPoints.length === 0;
+  const activePoints = directPoints ?? importedPoints;
+  const hasPoints = activePoints.length >= 3;
+  const hasNoRL = !directPoints && importResult && importResult.rows.length > 0 && importedPoints.length === 0;
 
   async function process() {
     setError(null);
-    if (!hasPoints) { setError("No elevation data found. Import a file with an RL/elevation column first."); return; }
+    if (!hasPoints) { setError("No elevation data found. Upload a CSV file with Name, E, N, RL columns."); return; }
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
-        points: importedPoints,
+        points: activePoints,
         interval: Number(interval) || 0,
       };
       if (datumMode === "manual" && manualDatum.trim()) {
@@ -339,20 +373,49 @@ export function Stockpile() {
       <div className="grid gap-5 md:grid-cols-2">
         {/* ── Left: input ─────────────────────────────────────────── */}
         <div className="space-y-4">
-          {/* Imported data status */}
-          <Card title="Survey Data">
+          {/* Survey data: direct upload OR from Data Import */}
+          <Card title="Survey Data (Name, E, N, RL)">
             <div className="space-y-3">
-              {!importResult ? (
-                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
-                  No file imported. Use the <strong>Data Import</strong> tab to load your survey CSV file first.
-                </div>
+              {/* Direct upload */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => fileRef.current?.click()}>Upload CSV / TXT</Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.txt"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) loadDirectFile(f); e.target.value = ""; }}
+                />
+                {directFileName && (
+                  <>
+                    <span className="text-sm text-slate-600">{directFileName}</span>
+                    <button onClick={() => { setDirectPoints(null); setDirectFileName(null); }} className="text-xs text-red-500 hover:underline">Clear</button>
+                  </>
+                )}
+              </div>
+
+              {/* Status */}
+              {directPoints !== null ? (
+                directPoints.length < 3 ? (
+                  <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                    File parsed but fewer than 3 valid points found. Check format: Name, Easting, Northing, RL (comma or space separated).
+                  </div>
+                ) : (
+                  <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+                    <strong>{directPoints.length} points</strong> loaded from <em>{directFileName}</em>.
+                  </div>
+                )
               ) : hasNoRL ? (
                 <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
-                  Imported file has no elevation (RL) column. Re-import a file with a 4th column containing reduced levels.
+                  Data Import file has no RL column. Upload a file above with a 4th elevation column.
+                </div>
+              ) : importedPoints.length >= 3 ? (
+                <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
+                  Using <strong>{importedPoints.length} points</strong> from Data Import (<em>{importResult?.filename}</em>). Upload a file above to use different data.
                 </div>
               ) : (
-                <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
-                  <strong>{importedPoints.length} points</strong> with elevation loaded from <em>{importResult.filename}</em>.
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
+                  Upload a CSV/TXT file above, or import data via the Data Import tab first.
                 </div>
               )}
             </div>
