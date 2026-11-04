@@ -90,7 +90,7 @@ export function CogoWorkspace({
   points,
   resultBoundary,
 }: {
-  points: { name?: string | null; east: number; north: number }[];
+  points: { name?: string | null; east: number; north: number; rl?: number | null }[];
   /** A computed traverse/coordinates result (client req 2026-08-21, Part
    *  13a) — when set, its boundary is drawn on the canvas (lines + bearing/
    *  distance labels + closed polygon), the same as a manually click-drawn
@@ -198,6 +198,22 @@ export function CogoWorkspace({
     east: p.east,
     north: p.north,
   }));
+
+  // Auto-populate pointMeta.height from imported RL when points change.
+  useEffect(() => {
+    const hasRl = points.some((p) => p.rl != null);
+    if (!hasRl) return;
+    setPointMeta((prev) => {
+      const next = { ...prev };
+      points.forEach((p, i) => {
+        if (p.rl == null) return;
+        const id = `imp-${i}`;
+        if (!next[id]?.height) next[id] = { ...next[id], height: p.rl.toFixed(3) };
+      });
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points]);
 
   // ---- drafting state: points/lines added/removed in the workspace only ----
   const [draftTool, setDraftTool] = useState<DraftTool>("select");

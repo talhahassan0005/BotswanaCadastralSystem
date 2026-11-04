@@ -68,7 +68,7 @@ export function CogoEngine() {
     () =>
       (importResult?.rows ?? [])
         .filter((r) => r.east != null && r.north != null && (r.pointType ?? "beacon") === "beacon")
-        .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId })),
+        .map((r) => ({ east: r.east as number, north: r.north as number, name: r.beaconId, rl: r.rl ?? null })),
     [importResult]
   );
   // Working points / reference marks that were excluded from the figure.
