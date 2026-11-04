@@ -94,6 +94,58 @@ export function DataImport() {
     }
   }
 
+  // Inline cell editing with confirmation
+  const [editing, setEditing] = useState<{ index: number; field: string; value: string } | null>(null);
+
+  function startEdit(index: number, field: string, current: string) {
+    setEditing({ index, field, value: current });
+  }
+
+  function confirmEdit() {
+    if (!editing || !importResult) { setEditing(null); return; }
+    const { index, field, value } = editing;
+    const confirmed = window.confirm(`Update ${field} for row ${index} to "${value}"?`);
+    if (!confirmed) { setEditing(null); return; }
+    setImportResult({
+      ...importResult,
+      rows: importResult.rows.map((r) => {
+        if (r.index !== index) return r;
+        if (field === "beaconId") return { ...r, beaconId: value || null };
+        const num = parseFloat(value);
+        if (field === "east") return { ...r, east: isNaN(num) ? r.east : num };
+        if (field === "north") return { ...r, north: isNaN(num) ? r.north : num };
+        if (field === "rl") return { ...r, rl: value === "" ? null : isNaN(num) ? r.rl : num };
+        return r;
+      }),
+    });
+    setEditing(null);
+  }
+
+  function EditableCell({ rowIndex, field, display }: { rowIndex: number; field: string; display: string }) {
+    const isActive = editing?.index === rowIndex && editing?.field === field;
+    if (isActive) {
+      return (
+        <input
+          autoFocus
+          value={editing.value}
+          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+          onBlur={confirmEdit}
+          onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(); if (e.key === "Escape") setEditing(null); }}
+          className="w-full rounded border border-brand px-1 py-0.5 text-sm font-mono focus:outline-none"
+        />
+      );
+    }
+    return (
+      <span
+        title="Click to edit"
+        onClick={() => startEdit(rowIndex, field, display === "—" ? "" : display)}
+        className="cursor-pointer rounded px-1 hover:bg-blue-50 hover:text-blue-700"
+      >
+        {display}
+      </span>
+    );
+  }
+
   // Re-tag a point's type (Beacon / Working point / Reference mark / Trig
   // station, Part 31a) for the coordinate list. Every point imports as a
   // beacon; the surveyor changes the rest.
@@ -236,7 +288,7 @@ export function DataImport() {
                     title={r.issues.join(", ")}
                   >
                     <td className="px-4 py-3 text-slate-400">{r.index}</td>
-                    <td className="px-4 py-3 font-medium">{r.beaconId ?? "—"}</td>
+                    <td className="px-4 py-3 font-medium"><EditableCell rowIndex={r.index} field="beaconId" display={r.beaconId ?? "—"} /></td>
                     <td className="px-4 py-3">
                       <select
                         value={r.pointType ?? "beacon"}
@@ -249,9 +301,9 @@ export function DataImport() {
                         <option value="trig">Trig Station</option>
                       </select>
                     </td>
-                    <td className="px-4 py-3">{fmtCoordCell(r.east)}</td>
-                    <td className="px-4 py-3">{fmtCoordCell(r.north)}</td>
-                    <td className="px-4 py-3">{r.rl != null ? r.rl.toFixed(3) : "—"}</td>
+                    <td className="px-4 py-3"><EditableCell rowIndex={r.index} field="east" display={fmtCoordCell(r.east)} /></td>
+                    <td className="px-4 py-3"><EditableCell rowIndex={r.index} field="north" display={fmtCoordCell(r.north)} /></td>
+                    <td className="px-4 py-3"><EditableCell rowIndex={r.index} field="rl" display={r.rl != null ? r.rl.toFixed(3) : "—"} /></td>
                     <td className="px-4 py-3">{r.distance != null ? `${r.distance} m` : "—"}</td>
                     <td className="px-4 py-3">
                       <Badge kind={r.status}>
