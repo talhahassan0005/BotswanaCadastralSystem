@@ -64,6 +64,7 @@ type DraftTool =
   | "zoom-window" | "pan" | "addpoint" | "move"
   | "line" | "polyline" | "curve" | "polygon" | "offset"
   | "query-point" | "query-line" | "query-parcel" | "delete-point" | "delete-line" | "delete-parcel"
+  | "area-adjust"
   // No edit tool active — while a working-tool panel/command bar is open
   // (client req 2026-10-15: "all editing tools must be deactivated").
   | "none";
@@ -261,8 +262,16 @@ export function CogoWorkspace({
   // draft for the point panel's inline rename. ----
   const [pointQueryId, setPointQueryId] = useState<string | null>(null);
   const [pointQueryName, setPointQueryName] = useState("");
+  const [pointQueryEast, setPointQueryEast] = useState("");
+  const [pointQueryNorth, setPointQueryNorth] = useState("");
   const [lineQueryId, setLineQueryId] = useState<string | null>(null);
   const [parcelQueryId, setParcelQueryId] = useState<string | null>(null);
+  const [areaAdjust, setAreaAdjust] = useState<{
+    targetHa: string;
+    step: "pick-poly" | "pick-edge";
+    polyId: string | null;
+    hoverEdge: number | null; // edge index being hovered in pick-edge step
+  } | null>(null);
   // ---- click-to-draw state (Line/Polyline/Curve/Polygon/Offset) ----
   const [draft, setDraft] = useState<DraftPt[]>([]); // vertices placed so far for the active draw tool
   // Line/Polyline/Polygon must only ever join *existing* points — a click
@@ -590,7 +599,7 @@ export function CogoWorkspace({
     if (i === -1) return;
     const nextId = ids[(i + delta + ids.length) % ids.length];
     const p = visible.find((pp) => pp.id === nextId);
-    if (p) { setPointQueryId(nextId); setPointQueryName(p.name); }
+    if (p) { setPointQueryId(nextId); setPointQueryName(p.name); setPointQueryEast(p.east.toFixed(3)); setPointQueryNorth(p.north.toFixed(3)); }
   }
   /** Renames any visible point by id, imported ("imp-...") or drafted alike
    *  — imported points aren't stored in mutable state, so renaming one
@@ -695,11 +704,88 @@ export function CogoWorkspace({
     setTableAnchor(null);
     setSelected(null);
   }
-  function applyPointRename() {
+  function applyPointEdit() {
     if (!pointQueryId) return;
-    const newId = renamePointById(pointQueryId, pointQueryName);
-    if (newId) setPointQueryId(newId);
+    const p = visible.find((pp) => pp.id === pointQueryId);
+    if (!p) return;
+    const newEast = Number(pointQueryEast);
+    const newNorth = Number(pointQueryNorth);
+    const coordsChanged = Number.isFinite(newEast) && Number.isFinite(newNorth) &&
+      (Math.abs(newEast - p.east) > 1e-9 || Math.abs(newNorth - p.north) > 1e-9);
+    const nameChanged = pointQueryName.trim() && pointQueryName.trim() !== p.name;
+    let activeId = pointQueryId;
+    if (coordsChanged) {
+      const id2 = editPointCoordsById(activeId, newEast, newNorth);
+      if (id2) activeId = id2;
+    }
+    if (nameChanged) {
+      const id2 = renamePointById(activeId, pointQueryName);
+      if (id2) activeId = id2;
+    }
+    setPointQueryId(activeId);
   }
+
+  // ---- Area Adjust tool ----
+  /** Returns the index (0-based) of the nearest edge of a polygon to a world
+   *  point, or -1 if the polygon has fewer than 2 vertices. */
+  function nearestPolyEdge(wx: number, wy: number, poly: { points: { east: number; north: number }[] }): number {
+    const pts = poly.points;
+    if (pts.length < 2) return -1;
+    let best = -1, bestDist = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const dE = b.east - a.east, dN = b.north - a.north;
+      const L2 = dE * dE + dN * dN;
+      if (L2 < 1e-12) continue;
+      const t = Math.max(0, Math.min(1, ((wx - a.east) * dE + (wy - a.north) * dN) / L2));
+      const pxE = a.east + t * dE, pxN = a.north + t * dN;
+      const dist = Math.hypot(wx - pxE, wy - pxN);
+      if (dist < bestDist) { bestDist = dist; best = i; }
+    }
+    return best;
+  }
+
+  /** Shift edge `edgeIdx` of polygon `polyId` perpendicularly so the polygon
+   *  reaches `targetM2` m². Both adjacent vertices move; all others stay put.
+   *  Returns the achieved area (m²) or null on failure. */
+  function applyAreaAdjust(polyId: string, edgeIdx: number, targetM2: number): number | null {
+    const poly = polygons.find((p) => p.id === polyId);
+    if (!poly) return null;
+    const pts = poly.points;
+    const n = pts.length;
+    if (n < 3) return null;
+    const a = pts[edgeIdx], b = pts[(edgeIdx + 1) % n];
+    const dE = b.east - a.east, dN = b.north - a.north;
+    const L = Math.hypot(dE, dN);
+    if (L < 1e-9) return null;
+    // Left perpendicular unit vector (outward for CCW winding)
+    const nE = -dN / L, nN = dE / L;
+    // Test area change per unit shift in this direction
+    const testPts = pts.map((v, i) =>
+      i === edgeIdx || i === (edgeIdx + 1) % n
+        ? { ...v, east: v.east + nE, north: v.north + nN }
+        : v
+    );
+    const curSigned = polygonArea(pts.map((v) => ({ east: v.east, north: v.north })));
+    const testSigned = polygonArea(testPts.map((v) => ({ east: v.east, north: v.north })));
+    const areaPerUnit = testSigned - curSigned;
+    if (Math.abs(areaPerUnit) < 1e-9) return null;
+    // Signed target preserves winding direction
+    const signedTarget = curSigned >= 0 ? targetM2 : -targetM2;
+    const d = (signedTarget - curSigned) / areaPerUnit;
+    const shiftE = d * nE, shiftN = d * nN;
+    snapshot();
+    setPolygons((ps) => ps.map((p) => p.id !== polyId ? p : {
+      ...p,
+      points: p.points.map((v, i) =>
+        i === edgeIdx || i === (edgeIdx + 1) % n
+          ? { ...v, east: v.east + shiftE, north: v.north + shiftN }
+          : v
+      ),
+    }));
+    return targetM2;
+  }
+
   function zoomBy(f: number) {
     setView((v) => ({ ...v, zoom: Math.min(50, Math.max(0.01, v.zoom * f)) }));
   }
@@ -876,6 +962,7 @@ export function CogoWorkspace({
     setPointQueryId(null);
     setLineQueryId(null);
     setParcelQueryId(null);
+    if (tool !== "area-adjust") setAreaAdjust(null);
     setDraftTool(tool);
     // Add Point by Coordinates now opens automatically the moment the tool
     // is activated (client req 2026-09-19, sketch marking where it should
@@ -2864,7 +2951,7 @@ export function CogoWorkspace({
         // branch below), same as Box Select.
       } else if (draftTool === "query-point") {
         const hit = nearestVisible(vbx, vby);
-        if (hit) { setPointQueryId(hit.id); setPointQueryName(hit.name); }
+        if (hit) { setPointQueryId(hit.id); setPointQueryName(hit.name); setPointQueryEast(hit.east.toFixed(3)); setPointQueryNorth(hit.north.toFixed(3)); }
       } else if (draftTool === "query-line") {
         const hit = nearestLineHit(vbx, vby);
         if (hit) setLineQueryId(hit.id);
@@ -2872,6 +2959,24 @@ export function CogoWorkspace({
         const [wx, wy] = toWorld(vbx, vby);
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
         if (hit) setParcelQueryId(hit.id);
+      } else if (draftTool === "area-adjust") {
+        const [wx, wy] = toWorld(vbx, vby);
+        if (areaAdjust?.step === "pick-poly") {
+          const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
+          if (hit) setAreaAdjust((s) => s ? { ...s, polyId: hit.id, step: "pick-edge", hoverEdge: null } : s);
+        } else if (areaAdjust?.step === "pick-edge" && areaAdjust.polyId) {
+          const poly = polygons.find((p) => p.id === areaAdjust.polyId);
+          if (poly) {
+            const edgeIdx = nearestPolyEdge(wx, wy, poly);
+            if (edgeIdx >= 0) {
+              const targetHa = Number(areaAdjust.targetHa);
+              if (Number.isFinite(targetHa) && targetHa > 0) {
+                applyAreaAdjust(areaAdjust.polyId, edgeIdx, targetHa * 10_000);
+                setAreaAdjust((s) => s ? { ...s, step: "pick-poly", polyId: null, hoverEdge: null } : s);
+              }
+            }
+          }
+        }
       } else if (draftTool === "delete-point") {
         // Client req 2026-09-24: "also add delete tool for points" —
         // same dedicated single-click erase pattern as Delete Line/Delete
@@ -3033,7 +3138,7 @@ export function CogoWorkspace({
   // finishes a polyline/polygon; Ctrl+Z (while drawing) removes only the
   // last placed vertex.
   useEffect(() => {
-    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !splayOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !gripDrag) return;
+    if (!DRAW_TOOLS.includes(draftTool) && !formTool && !travOpen && !polOpen && !splayOpen && !diagramPicking && !diagramPrompt && !coordEntry && !moveCoordInput && !pointQueryId && !lineQueryId && !parcelQueryId && !areaAdjust && !gripDrag) return;
     function onKey(e: KeyboardEvent) {
       // The Polygon Attributes dialog (client req 2026-09-24) holds the
       // just-finished polygon's vertices in `draft`/pendingPolygonPts
@@ -3059,6 +3164,7 @@ export function CogoWorkspace({
         else if (pointQueryId) setPointQueryId(null);
         else if (lineQueryId) setLineQueryId(null);
         else if (parcelQueryId) setParcelQueryId(null);
+        else if (areaAdjust) setAreaAdjust(null);
         else cancelDraft();
       } else if (e.key === "Enter" && (draftTool === "polyline" || draftTool === "polygon")) {
         e.preventDefault();
@@ -3071,7 +3177,7 @@ export function CogoWorkspace({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftTool, draft, formTool, travOpen, polOpen, splayOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, gripDrag, polygonAttrDialog]);
+  }, [draftTool, draft, formTool, travOpen, polOpen, splayOpen, diagramPicking, diagramPrompt, coordEntry, moveCoordInput, pointQueryId, lineQueryId, parcelQueryId, areaAdjust, gripDrag, polygonAttrDialog]);
 
   // Ctrl+Z (or Cmd+Z) as a real, always-available Undo — Ctrl+Shift+Z /
   // Ctrl+Y as Redo (client req 2026-09-06: "Ctrl+Z should be undo"). Before
@@ -3272,7 +3378,7 @@ export function CogoWorkspace({
           <ToolGroup label="Query & Visibility">
             <DraftButton
               active={draftTool === "query-point"}
-              label="Point Query — click a point for its details, with rename"
+              label="Point Query — click a point for its details, with name and coordinate edit"
               onClick={() => activateDrawTool("query-point")}
               icon={iconQueryPoint}
             />
@@ -3305,6 +3411,12 @@ export function CogoWorkspace({
               label="Delete Parcel — click a parcel to remove that boundary"
               onClick={() => activateDrawTool("delete-parcel")}
               icon={iconDeleteParcel}
+            />
+            <DraftButton
+              active={draftTool === "area-adjust"}
+              label="Area Adjust — shift one side of a parcel to reach a target area"
+              onClick={() => { activateDrawTool("area-adjust"); setAreaAdjust({ targetHa: "", step: "pick-poly", polyId: null, hoverEdge: null }); }}
+              icon={iconAreaAdjust}
             />
             <div className="mx-1 h-5 w-px bg-slate-200" />
             <DraftButton
@@ -4151,7 +4263,7 @@ export function CogoWorkspace({
             </div>
           )}
 
-          {/* Point Query panel (Part 15b) — details + Prev/Next + inline rename. */}
+          {/* Point Query panel (Part 15b) — details + Prev/Next + inline edit (name + coords). */}
           {pointQueryId && (() => {
             const p = visible.find((pp) => pp.id === pointQueryId);
             if (!p) return null;
@@ -4164,23 +4276,41 @@ export function CogoWorkspace({
                 </div>
                 <div className="mb-1.5 grid grid-cols-2 gap-x-2 gap-y-1">
                   <span className="text-slate-500">Point ID</span><span className="truncate font-mono">{p.id}</span>
-                  <span className="text-slate-500">Y</span><span className="font-mono">{p.east.toFixed(3)}</span>
-                  <span className="text-slate-500">X</span><span className="font-mono">{p.north.toFixed(3)}</span>
                   <span className="text-slate-500">Height</span><span>{m.height || "—"}</span>
                   <span className="text-slate-500">SR Number</span><span>{m.sdNumber || "—"}</span>
                 </div>
-                <label className="mb-1.5 block">
+                <label className="mb-1 block">
                   <span className="mb-0.5 block text-slate-500">Name</span>
                   <input
                     value={pointQueryName}
                     onChange={(e) => setPointQueryName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") applyPointRename(); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") applyPointEdit(); }}
                     className="w-full rounded border border-slate-200 px-1.5 py-1"
                   />
                 </label>
+                <div className="mb-1 grid grid-cols-2 gap-1">
+                  <label className="block">
+                    <span className="mb-0.5 block text-slate-500">Y (East)</span>
+                    <input
+                      value={pointQueryEast}
+                      onChange={(e) => setPointQueryEast(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") applyPointEdit(); }}
+                      className="w-full rounded border border-slate-200 px-1.5 py-1 font-mono"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-0.5 block text-slate-500">X (North)</span>
+                    <input
+                      value={pointQueryNorth}
+                      onChange={(e) => setPointQueryNorth(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") applyPointEdit(); }}
+                      className="w-full rounded border border-slate-200 px-1.5 py-1 font-mono"
+                    />
+                  </label>
+                </div>
                 <div className="grid grid-cols-3 gap-1">
                   <button type="button" onClick={() => pointQueryStep(-1)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">◀ Prev</button>
-                  <button type="button" onClick={applyPointRename} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Rename</button>
+                  <button type="button" onClick={applyPointEdit} className="rounded bg-brand px-1.5 py-1 font-semibold text-white">Edit</button>
                   <button type="button" onClick={() => pointQueryStep(1)} className="rounded border border-slate-200 px-1.5 py-1 hover:bg-slate-50">Next ▶</button>
                 </div>
               </div>
@@ -4232,6 +4362,63 @@ export function CogoWorkspace({
                   <span className="text-slate-500">Parent</span><span>{m.parent || "—"}</span>
                   <span className="text-slate-500">Vertices</span><span>{poly.points.length}</span>
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* Area Adjust panel — two-step: pick polygon, then pick the edge to shift. */}
+          {areaAdjust && draftTool === "area-adjust" && (() => {
+            const poly = areaAdjust.polyId ? polygons.find((p) => p.id === areaAdjust.polyId) : null;
+            const curM2 = poly ? Math.abs(polygonArea(poly.points.map((v) => ({ east: v.east, north: v.north })))) : null;
+            const targetHaNum = Number(areaAdjust.targetHa);
+            const targetValid = Number.isFinite(targetHaNum) && targetHaNum > 0;
+            return (
+              <div className="absolute right-2 top-2 z-10 w-60 rounded border border-brand bg-white p-2 text-xs shadow-md">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">Area Adjust</span>
+                  <button type="button" onClick={() => { setAreaAdjust(null); activateDrawTool("select"); }} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+                </div>
+                <label className="mb-2 block">
+                  <span className="mb-0.5 block text-slate-500">Target area (ha)</span>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={areaAdjust.targetHa}
+                    onChange={(e) => setAreaAdjust((s) => s ? { ...s, targetHa: e.target.value } : s)}
+                    placeholder="e.g. 2.2000"
+                    className="w-full rounded border border-slate-200 px-1.5 py-1 font-mono focus:border-brand focus:outline-none"
+                  />
+                </label>
+                {curM2 != null && (
+                  <div className="mb-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                    <span className="text-slate-500">Current area</span>
+                    <span className="font-mono">{(curM2 / 10_000).toFixed(4)} ha</span>
+                    {targetValid && (
+                      <>
+                        <span className="text-slate-500">Adjustment</span>
+                        <span className={`font-mono ${targetHaNum * 10_000 > curM2 ? "text-green-700" : "text-red-600"}`}>
+                          {((targetHaNum * 10_000 - curM2) / 10_000 >= 0 ? "+" : "")}{((targetHaNum * 10_000 - curM2) / 10_000).toFixed(4)} ha
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className={`mb-2 rounded px-2 py-1.5 text-xs ${areaAdjust.step === "pick-poly" ? "bg-brand/10 text-brand-dark" : "bg-amber-50 text-amber-700"}`}>
+                  {areaAdjust.step === "pick-poly"
+                    ? "Step 1: Click inside the parcel to select it"
+                    : !targetValid
+                    ? "Enter a target area above, then click an edge to shift"
+                    : "Step 2: Click the edge (side) to shift"}
+                </div>
+                {areaAdjust.step === "pick-edge" && (
+                  <button
+                    type="button"
+                    onClick={() => setAreaAdjust((s) => s ? { ...s, step: "pick-poly", polyId: null } : s)}
+                    className="w-full rounded border border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50"
+                  >
+                    Re-select parcel
+                  </button>
+                )}
               </div>
             );
           })()}
@@ -4985,6 +5172,14 @@ function iconDeleteParcel(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <path d="M4 6l8-2 8 3-3 11-11 1z" fill={c} fillOpacity="0.12" />
       <path d="M8 8l8 8M16 8l-8 8" strokeWidth="1.8" stroke="#dc2626" />
+    </svg>
+  );
+}
+function iconAreaAdjust(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <path d="M3 18l5-10 5 6 3-4 5 8z" fill={c} fillOpacity="0.12" strokeLinejoin="round" />
+      <path d="M16 6h2m2 0h-2m0 0V4m0 2v2" strokeWidth="1.6" stroke="#2563eb" />
     </svg>
   );
 }
