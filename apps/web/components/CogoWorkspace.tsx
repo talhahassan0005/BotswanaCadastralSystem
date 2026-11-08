@@ -478,6 +478,11 @@ export function CogoWorkspace({
   const arcIdRef = useRef(1);
   const polyIdRef = useRef(1);
   const textIdRef = useRef(1);
+  // Maps an "imp-N" id to the replacement id already created this render
+  // cycle (from a rename or coord edit), so a second same-cycle edit on the
+  // same imported point updates the existing replacement instead of adding a
+  // second point (the duplicate-on-table-edit bug).
+  const impReplacementRef = useRef<Map<string, string>>(new Map());
   type HistEntry = { extra: WPoint[]; hidden: Set<string>; lines: WLine[]; arcs: WArc[]; polygons: WPolygon[]; texts: WText[] };
   const past = useRef<HistEntry[]>([]);
   const future = useRef<HistEntry[]>([]);
@@ -509,6 +514,7 @@ export function CogoWorkspace({
     if (!past.current.length) return;
     future.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     const prev = past.current.pop()!;
+    impReplacementRef.current.clear();
     setExtra(prev.extra);
     setHidden(prev.hidden);
     setLines(prev.lines);
@@ -522,6 +528,7 @@ export function CogoWorkspace({
     if (!future.current.length) return;
     past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
     const next = future.current.pop()!;
+    impReplacementRef.current.clear();
     setExtra(next.extra);
     setHidden(next.hidden);
     setLines(next.lines);
@@ -600,8 +607,16 @@ export function CogoWorkspace({
     if (id.startsWith("imp-")) {
       const orig = basePoints.find((p) => p.id === id);
       if (!orig) return null;
+      const existingId = impReplacementRef.current.get(id);
+      if (existingId) {
+        // A replacement was already created this render cycle (e.g. coord edit
+        // fired before this rename) — update it in place, no new point.
+        setExtra((e) => e.map((p) => p.id === existingId ? { ...p, name } : p));
+        return existingId;
+      }
       setHidden((h) => new Set(h).add(id));
       const newId = `renamed-${Date.now()}`;
+      impReplacementRef.current.set(id, newId);
       setExtra((e) => [...e, { id: newId, name, east: orig.east, north: orig.north }]);
       return newId;
     }
@@ -621,8 +636,17 @@ export function CogoWorkspace({
     if (id.startsWith("imp-")) {
       const orig = basePoints.find((p) => p.id === id);
       if (!orig) return null;
+      const existingId = impReplacementRef.current.get(id);
+      if (existingId) {
+        // A replacement was already created this render cycle (e.g. a rename
+        // or the other coord column fired first) — update it in place instead
+        // of adding a second point (the duplicate-on-table-edit bug).
+        setExtra((e) => e.map((p) => p.id === existingId ? { ...p, east, north } : p));
+        return existingId;
+      }
       setHidden((h) => new Set(h).add(id));
       const newId = `moved-${Date.now()}`;
+      impReplacementRef.current.set(id, newId);
       setExtra((e) => [...e, { id: newId, name: orig.name, east, north }]);
       return newId;
     }
