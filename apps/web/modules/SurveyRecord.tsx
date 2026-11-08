@@ -426,7 +426,7 @@ export function SurveyRecord() {
         </Card>
       )}
 
-      {doc === "comparison" && (
+      {(doc === "comparison" || doc === "consistency") && (
         <Card title="Plot to check">
           <div className="max-w-xs">
             <Field label="Query plot number">
@@ -465,6 +465,40 @@ export function SurveyRecord() {
           )}
           {doc === "consistency" && (
             <div className="space-y-5">
+              {/* Single plot (queried or active figure) consistency */}
+              {!consistencyLines && (
+                <p className="rounded-lg bg-amber-50 px-4 py-3 text-amber-700">
+                  No figure loaded yet — type a plot number already drawn/joined in the Cadastral workstation into &quot;Query plot number&quot; above, or open the Diagrams tab and pick a plot there.
+                </p>
+              )}
+              {consistencyLines && fig && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-sm font-bold text-slate-800">{queriedPlot ? `Plot ${queriedPlot.number}` : lotName}</h2>
+                      <label data-noprint className="flex items-center gap-1.5 text-xs text-slate-600">
+                        Decimal places
+                        <select
+                          value={consistencyDecimals}
+                          onChange={(e) => setConsistencyDecimals(Number(e.target.value) as 3 | 4)}
+                          className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs focus:border-brand focus:outline-none"
+                        >
+                          <option value={3}>3</option>
+                          <option value={4}>4</option>
+                        </select>
+                      </label>
+                    </div>
+                    <Button variant="ghost" onClick={downloadConsistency}>Download as .txt</Button>
+                  </div>
+                  <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
+                    {["Consistency Report", "", lotName, "", ...consistencyLines].join("\n")}
+                    {"\n"}
+                    {declaredArea.trim()
+                      ? `The area is ${Number(declaredArea).toFixed(2)} (${fig.area_m2.toFixed(2)}) square metres.`
+                      : `The area is ${fig.area_m2.toFixed(2)} square metres.`}
+                  </pre>
+                </div>
+              )}
               {/* Per-leg bearing/distance vs. recorded-coordinate misclosure
                   check, run for every saved plot at once (client req
                   2026-09-23/24). */}
