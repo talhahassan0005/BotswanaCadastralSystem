@@ -142,6 +142,12 @@ export function tDist(n: number): string {
 /** Standard surveying scale denominators, ascending. The figure is drawn at
  *  one of these so the printed "SCALE 1:N" can be measured with a scale rule. */
 export const STD_SCALES = [100, 125, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000];
+/** Smallest acceptable long edge of the drawn figure, in VB units (10 = 1mm
+ *  of paper). Deliberately low: the point is to catch a figure box that has
+ *  collapsed to a sliver, NOT to push ordinary sheets onto bigger paper. */
+const MIN_FIG_SPAN = 250; // 25mm
+/** Paper sizes smallest-first — the order an automatic upgrade walks. */
+export const PAPER_ORDER = ["A4", "A3", "A2", "A1"] as const;
 /** Side row-label: "AB" for single-letter beacons (the official SG
  *  convention), but bare concatenation of longer point names is
  *  unreadable ("25A225A1" — is that 25A2→25A1, or something else?), so
@@ -566,19 +572,29 @@ export function computeDiagramLayout(
   const spanN = Math.max(maxN - minN, 1e-6);
   // Draw at the actual chosen scale (client req 2026-08-21, Part 14) — the
   // Largest sc that still fits the polygon inside the figure box.
-  const autoSc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
+  const autoSc = Math.max(Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN), 1e-9);
   // The sheet must draw at a real surveying scale so the printed "SCALE 1:N"
   // stays measurable with a scale rule — snap to the tightest standard
-  // denominator that still fits rather than an arbitrary auto-fit ratio.
-  const bestStd = STD_SCALES.find((n) => 10000 / n <= autoSc) ?? Math.ceil(10000 / autoSc);
+  // denominator that still fits. If NONE fits, the page is simply too small
+  // for this lot; never invent a non-standard denominator (that produced
+  // absurd labels like "1:243,706"), let figureFits drive a paper upgrade.
+  const bestStd = STD_SCALES.find((n) => 10000 / n <= autoSc);
   const reqSc = meta.scale > 0 ? 10000 / meta.scale : 0;
   // Honour the entered scale when it fits and still fills most of the box;
   // otherwise snap to bestStd so the figure never sits tiny in white space.
-  const effScale = reqSc > 0 && reqSc <= autoSc && reqSc >= autoSc * 0.7 ? meta.scale : bestStd;
+  const effScale =
+    reqSc > 0 && reqSc <= autoSc && reqSc >= autoSc * 0.7
+      ? meta.scale
+      : bestStd ?? STD_SCALES[STD_SCALES.length - 1];
   const sc = 10000 / effScale;
   const dw = spanE * sc, dh = spanN * sc;
   const offX = fig.x + (fig.w - dw) / 2;
   const offY = fig.y + (fig.h - dh) / 2;
+  // Is the figure actually usable on this paper size? A standard scale has to
+  // fit AND the drawing has to be big enough to read — with many beacons the
+  // coordinate table can squeeze the figure box down to a ~13mm sliver on A4,
+  // which no scale can rescue. Drives the automatic paper upgrade below.
+  const figureFits = bestStd !== undefined && Math.max(dw, dh) >= MIN_FIG_SPAN;
   const toX = (e: number) => offX + (e - minE) * sc;
   const toY = (north: number) => offY + (maxN - north) * sc;
   const cx = toX(avg(es)), cy = toY(avg(nsv));
@@ -682,7 +698,7 @@ export function computeDiagramLayout(
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
-    sc, effScale, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
+    sc, effScale, figureFits, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
     landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, certLines, certFs, surveyorFit,
@@ -699,4 +715,35 @@ export type DiagramLayout = ReturnType<typeof computeDiagramLayout>;
 export function currentMonthYear(upper = true): string {
   const s = new Date().toLocaleString("en-GB", { month: "long", year: "numeric" });
   return upper ? s.toUpperCase() : s;
+}
+
+/** Lay the sheet out, moving up to a larger paper size when the boundary will
+ *  not draw legibly on the chosen one (client req 2026-11-10).
+ *
+ *  A lot with many beacons makes the co-ordinate table tall enough to squeeze
+ *  the figure box down to a sliver — Lot 91050's 29 beacons leave about 13mm
+ *  of figure height on A4, where the boundary cannot be drawn at any standard
+ *  scale. Rather than emit a tiny figure (or an invented denominator like
+ *  "1:243,706"), step up A4 -> A3 -> A2 -> A1 and use the first size the
+ *  figure genuinely fits on. Never steps DOWN, so an explicit larger choice
+ *  is always respected. The result carries `effPaperSize`/`paperUpgraded` so
+ *  the UI can tell the user the sheet grew. */
+export function computeDiagramLayoutAuto(
+  meta: DiagramMeta,
+  rawPoints: DiagramPoint[],
+  rawSides: DiagramSide[],
+  extraPoints: DiagramPoint[] = []
+) {
+  const chosen = meta.paperSize ?? "A4";
+  const start = Math.max(0, PAPER_ORDER.indexOf(chosen as (typeof PAPER_ORDER)[number]));
+  let last = computeDiagramLayout({ ...meta, paperSize: chosen }, rawPoints, rawSides, extraPoints);
+  for (let i = start; i < PAPER_ORDER.length; i++) {
+    const paperSize = PAPER_ORDER[i];
+    const L = computeDiagramLayout({ ...meta, paperSize }, rawPoints, rawSides, extraPoints);
+    last = L;
+    if (L.figureFits) return { ...L, effPaperSize: paperSize, paperUpgraded: paperSize !== chosen };
+  }
+  // Nothing fits even at A1 — keep the largest attempt rather than failing.
+  const biggest = PAPER_ORDER[PAPER_ORDER.length - 1];
+  return { ...last, effPaperSize: biggest, paperUpgraded: biggest !== chosen };
 }

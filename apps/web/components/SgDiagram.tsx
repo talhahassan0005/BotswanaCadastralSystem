@@ -4,7 +4,7 @@ import { forwardRef, useLayoutEffect, useRef, useState, type MouseEvent, type Po
 import { clampWords, clampToLines, fitFontSize } from "@/lib/wrapSvgText";
 import { declutterLabels } from "@/lib/labelLayout";
 import {
-  computeDiagramLayout,
+  computeDiagramLayoutAuto,
   annexNameY,
   avg,
   fmtCoord,
@@ -332,7 +332,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // truth shared with the DXF export (client req 2026-08-26, Part 34).
   // Destructuring back the same names the old inline computation used
   // keeps the JSX below completely unchanged.
-  const L = computeDiagramLayout(meta, rawPoints, rawSides, extraPoints ?? []);
+  const L = computeDiagramLayoutAuto(meta, rawPoints, rawSides, extraPoints ?? []);
   const blocksLive = !!onBlockOffset && !drawMode;
   const block = (id: string, ox: number, oy: number, children: ReactNode) => (
     <MovableBlock id={id} ox={ox} oy={oy} off={blockOffsets?.[id]} interactive={blocksLive} selected={selBlock === id} onSelect={setSelBlock} onChange={onBlockOffset}>
