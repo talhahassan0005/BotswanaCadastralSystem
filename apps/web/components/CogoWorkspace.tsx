@@ -497,7 +497,12 @@ export function CogoWorkspace({
   const future = useRef<HistEntry[]>([]);
   const [, setHistVer] = useState(0);
 
-  const visible = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
+  const _visibleRaw = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
+  // Deduplicate by exact coordinate — extra (edited) points take precedence over base.
+  // Removes leftover duplicate pairs that were saved before the impReplacementRef fix.
+  const _visibleSeen = new Map<string, number>();
+  _visibleRaw.forEach((p, i) => _visibleSeen.set(`${p.east},${p.north}`, i));
+  const visible = _visibleRaw.filter((_, i) => _visibleSeen.get(`${_visibleRaw[i].east},${_visibleRaw[i].north}`) === i);
   // Stable ref so the resultBoundary effect can read the current visible set
   // without adding it as a dependency (which would re-run the injection on
   // every point edit, not just when the result itself changes).
@@ -774,7 +779,10 @@ export function CogoWorkspace({
     const signedTarget = curSigned >= 0 ? targetM2 : -targetM2;
     const d = (signedTarget - curSigned) / areaPerUnit;
     const shiftE = d * nE, shiftN = d * nN;
+    const aNewE = a.east + shiftE, aNewN = a.north + shiftN;
+    const bNewE = b.east + shiftE, bNewN = b.north + shiftN;
     snapshot();
+    // Shift the two polygon edge vertices
     setPolygons((ps) => ps.map((p) => p.id !== polyId ? p : {
       ...p,
       points: p.points.map((v, i) =>
@@ -783,6 +791,26 @@ export function CogoWorkspace({
           : v
       ),
     }));
+    // Also shift any visible beacons sitting at those exact coordinates
+    function shiftBeacon(origE: number, origN: number, newE: number, newN: number) {
+      const vp = visible.find((v) => v.east === origE && v.north === origN);
+      if (!vp) return;
+      if (vp.id.startsWith("imp-")) {
+        const existingId = impReplacementRef.current.get(vp.id);
+        if (existingId) {
+          setExtra((e) => e.map((p) => p.id === existingId ? { ...p, east: newE, north: newN } : p));
+        } else {
+          setHidden((h) => new Set(h).add(vp.id));
+          const newId = `moved-${Date.now()}`;
+          impReplacementRef.current.set(vp.id, newId);
+          setExtra((e) => [...e, { id: newId, name: vp.name, east: newE, north: newN }]);
+        }
+      } else {
+        setExtra((e) => e.map((p) => p.id === vp.id ? { ...p, east: newE, north: newN } : p));
+      }
+    }
+    shiftBeacon(a.east, a.north, aNewE, aNewN);
+    shiftBeacon(b.east, b.north, bNewE, bNewN);
     return targetM2;
   }
 
