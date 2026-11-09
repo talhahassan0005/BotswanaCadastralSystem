@@ -599,6 +599,32 @@ export function CogoWorkspace({
     setCanvasSelection(new Set());
     setSelected(null);
   }
+  function selectSimilar() {
+    const refId = selected ?? (canvasSelection.size >= 1 ? [...canvasSelection][0] : null);
+    if (!refId) return;
+    const ref = visible.find((p) => p.id === refId);
+    if (!ref) return;
+    const name = (ref.name ?? "").trim();
+    let matcher: (p: { id: string; name?: string | null }) => boolean;
+    if (/^[A-Z]{1,2}$/.test(name)) {
+      // Standard lettered cadastral beacons: A-Z, AA-AZ (1-2 uppercase letters)
+      matcher = (p) => /^[A-Z]{1,2}$/.test((p.name ?? "").trim());
+    } else if (/^[A-Za-z]{2,}\d/i.test(name)) {
+      // Named prefix + number (BP1234, RM123, etc.) — match same alpha prefix
+      const prefix = (name.match(/^[A-Za-z]+/)?.[0] ?? "").toUpperCase();
+      matcher = (p) => (p.name ?? "").toUpperCase().startsWith(prefix);
+    } else if (/^\d+$/.test(name)) {
+      // Pure numeric names
+      matcher = (p) => /^\d+$/.test((p.name ?? "").trim());
+    } else {
+      // Fallback: same ID-prefix group (imp-, new-, moved-, etc.)
+      const prefix = refId.split("-")[0];
+      matcher = (p) => p.id.startsWith(prefix + "-");
+    }
+    const matching = new Set(visible.filter(matcher).map((p) => p.id));
+    setCanvasSelection(matching);
+    setSelected(null);
+  }
   // ---- Point Query panel (Part 15b) ----
   function pointQueryStep(delta: 1 | -1) {
     if (!pointQueryId) return;
@@ -3360,6 +3386,12 @@ export function CogoWorkspace({
               icon={iconClearSelection}
             />
             <DraftButton
+              label="Select Similar — select all points in the same group as the selected point"
+              onClick={selectSimilar}
+              disabled={!selected && !canvasSelection.size}
+              icon={iconSelectSimilar}
+            />
+            <DraftButton
               label={`Delete selected${canvasSelection.size > 1 ? ` (${canvasSelection.size})` : ""}`}
               onClick={deleteSelected}
               disabled={!selected && !canvasSelection.size}
@@ -5159,6 +5191,17 @@ function iconClearSelection(c: string) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
       <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.5" opacity="0.5" />
       <path d="M8 8l8 8M16 8l-8 8" strokeWidth="2" />
+    </svg>
+  );
+}
+function iconSelectSimilar(c: string) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="6" cy="12" r="2.2" fill={c} stroke="none" />
+      <circle cx="12" cy="6" r="2.2" fill={c} stroke="none" />
+      <circle cx="18" cy="12" r="2.2" fill={c} stroke="none" />
+      <circle cx="12" cy="18" r="2.2" fill={c} stroke="none" />
+      <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 2" />
     </svg>
   );
 }
