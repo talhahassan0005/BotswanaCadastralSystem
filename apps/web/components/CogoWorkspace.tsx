@@ -498,11 +498,14 @@ export function CogoWorkspace({
   const [, setHistVer] = useState(0);
 
   const _visibleRaw = [...basePoints.filter((p) => !hidden.has(p.id)), ...extra];
-  // Deduplicate by exact coordinate — extra (edited) points take precedence over base.
-  // Removes leftover duplicate pairs that were saved before the impReplacementRef fix.
-  const _visibleSeen = new Map<string, number>();
-  _visibleRaw.forEach((p, i) => _visibleSeen.set(`${p.east},${p.north}`, i));
-  const visible = _visibleRaw.filter((_, i) => _visibleSeen.get(`${_visibleRaw[i].east},${_visibleRaw[i].north}`) === i);
+  // Deduplicate by coordinate (epsilon 1e-4 m) — extra (edited) points take precedence.
+  // Removes leftover duplicate pairs saved before the impReplacementRef fix.
+  const _DEDUP_EPS = 1e-4;
+  const visible = _visibleRaw.filter((p, i) =>
+    !_visibleRaw.slice(i + 1).some(
+      (q) => Math.abs(q.east - p.east) < _DEDUP_EPS && Math.abs(q.north - p.north) < _DEDUP_EPS
+    )
+  );
   // Stable ref so the resultBoundary effect can read the current visible set
   // without adding it as a dependency (which would re-run the injection on
   // every point edit, not just when the result itself changes).
@@ -3857,7 +3860,9 @@ export function CogoWorkspace({
                   imported point was placed at that exact coordinate
                   (client req 2026-10-30). */}
               {polygons.flatMap((pg) => pg.points).map((v, vi) => {
-                if (visible.some((vp) => vp.east === v.east && vp.north === v.north)) return null;
+                const EPS = 1e-4; // sub-millimetre tolerance for float-path differences
+                if (visible.some((vp) => Math.abs(vp.east - v.east) < EPS && Math.abs(vp.north - v.north) < EPS)) return null;
+                if (cogoResPoints.some((vp) => Math.abs(vp.east - v.east) < EPS && Math.abs(vp.north - v.north) < EPS)) return null;
                 const [x, y] = toScreen(v.east, v.north);
                 const r = 2.4 * blockCornerScale;
                 return (
