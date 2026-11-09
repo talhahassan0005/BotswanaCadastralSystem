@@ -70,6 +70,7 @@ export interface DiagramMeta {
   annexName?: string;        // optional name printed above "Registrar of Deeds"
   certLine?: string;         // optional manual override for the certification line
   situateLine?: string;      // optional manual override for the "Situate at…" line
+  beaconLabelScale?: number; // multiplier for figure beacon label font size (default 1.0)
   // Client req 2026-10-22, WhatsApp voice note "where do i change paper
   // size" + "sometimes points are too many and everything do not fit in A4
   // page... now we will have to fit in A3 or A2": the frame, the top

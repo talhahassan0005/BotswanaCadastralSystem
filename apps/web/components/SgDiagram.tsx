@@ -725,9 +725,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           const dl = Math.hypot(dx, dy) || 1;
           dx /= dl; dy /= dl;
           if (rotInsidePoly(bx + dx * 10, by + dy * 10)) { dx = -dx; dy = -dy; }
-          return { id: p.name || `#${i}`, x: bx, y: by, text: p.name ?? "", fontSize: FS_BEACON_HEAD, preferDx: dx * 40, preferDy: dy * 40 };
+          const bcnLabelFS = FS_BEACON_HEAD * (meta.beaconLabelScale ?? 1);
+          return { id: p.name || `#${i}`, x: bx, y: by, text: p.name ?? "", fontSize: bcnLabelFS, preferDx: dx * 40 * (meta.beaconLabelScale ?? 1), preferDy: dy * 40 * (meta.beaconLabelScale ?? 1) };
         });
         const placements = declutterLabels(candidates);
+        const bcnLabelFS = FS_BEACON_HEAD * (meta.beaconLabelScale ?? 1);
+        const bcnR = 5 * Math.max(0.5, meta.beaconLabelScale ?? 1);
         return points.map((p, i) => {
           const bx = fx(p.east, p.north), by = fy(p.east, p.north);
           const pl = placements[i];
@@ -736,7 +739,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           const isSel = onLabelPointerDown && p.name === selectedLabel;
           return (
             <g key={`bcn${i}`}>
-              <circle cx={bx} cy={by} r={5} fill="white" stroke="black" strokeWidth={1.2} />
+              <circle cx={bx} cy={by} r={bcnR} fill="white" stroke="black" strokeWidth={1.2} />
               {pl.leader && <line x1={bx} y1={by} x2={lx} y2={ly} stroke="#999" strokeWidth={0.5} />}
               {!pl.hidden && p.name && (
                 <g
@@ -748,12 +751,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 >
                   {isSel && (
                     <rect
-                      x={lx - FS_BEACON_HEAD * 0.8} y={ly - FS_BEACON_HEAD}
-                      width={FS_BEACON_HEAD * 1.6} height={FS_BEACON_HEAD * 1.2}
+                      x={lx - bcnLabelFS * 0.8} y={ly - bcnLabelFS}
+                      width={bcnLabelFS * 1.6} height={bcnLabelFS * 1.2}
                       fill="none" stroke="#2563eb" strokeWidth={1} strokeDasharray="4 2"
                     />
                   )}
-                  <text x={lx} y={ly + 4} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">{p.name}</text>
+                  <text x={lx} y={ly + 4} textAnchor="middle" fontSize={bcnLabelFS} fontWeight="medium">{p.name}</text>
                 </g>
               )}
             </g>

@@ -227,6 +227,7 @@ export function Diagrams() {
     beaconDescription: defaultBeaconDescription(fig?.points ?? []),
     certLine: "",
     situateLine: "",
+    beaconLabelScale: 1,
     areaHa: fig?.area_ha ?? 0,
     boreholeNo: "",
     boreholeE: 0,
@@ -1789,6 +1790,21 @@ export function Diagrams() {
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
                   <Field label="Scale 1:N"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+                  <Field label="Beacon label size">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range" min={0.4} max={2} step={0.05}
+                        value={meta.beaconLabelScale ?? 1}
+                        onChange={(e) => setMeta((m) => ({ ...m, beaconLabelScale: parseFloat(e.target.value) }))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs w-10 text-right">{((meta.beaconLabelScale ?? 1) * 100).toFixed(0)}%</span>
+                      <button
+                        className="text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                        onClick={() => setMeta((m) => ({ ...m, beaconLabelScale: 1 }))}
+                      >Reset</button>
+                    </div>
+                  </Field>
                   {/* Client req 2026-10-22, voice note "where do i change
                       paper size" + "sometimes points are too many and
                       everything do not fit in A4 page... now we will have
