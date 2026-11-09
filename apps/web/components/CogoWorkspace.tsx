@@ -1898,7 +1898,7 @@ export function CogoWorkspace({
     const es = poly.points.map((p) => p.east), ns = poly.points.map((p) => p.north);
     const spanE = Math.max(...es) - Math.min(...es);
     const spanN = Math.max(...ns) - Math.min(...ns);
-    const usableW_mm = 96, usableH_mm = 83;
+    const usableW_mm = 90, usableH_mm = 65;
     const sByWidth = spanE > 0 ? (spanE * 1000) / usableW_mm : 0;
     const sByHeight = spanN > 0 ? (spanN * 1000) / usableH_mm : 0;
     const raw = Math.max(sByWidth, sByHeight, 1);

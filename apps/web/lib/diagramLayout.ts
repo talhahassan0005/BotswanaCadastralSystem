@@ -547,7 +547,7 @@ export function computeDiagramLayout(
   const figTop = SPLIT ? FRAME_Y + 80 * PAGE_SCALE : localityY + 44 * PAGE_SCALE;
   const figBottom = SPLIT
     ? FRAME_BOTTOM - 60 * PAGE_SCALE
-    : Math.max(figTop + 400 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
+    : Math.min(figTop + 600 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
   // Reserve the extra margin on the LEFT of the figure box, not the right
   // (client req 2026-08-22) — the north arrow sits on the left side.
   const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
