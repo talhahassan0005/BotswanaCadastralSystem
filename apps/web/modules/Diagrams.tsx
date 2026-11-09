@@ -226,6 +226,7 @@ export function Diagrams() {
     parentDiagram: "",
     beaconDescription: defaultBeaconDescription(fig?.points ?? []),
     certLine: "",
+    situateLine: "",
     areaHa: fig?.area_ha ?? 0,
     boreholeNo: "",
     boreholeE: 0,
@@ -1776,6 +1777,15 @@ export function Diagrams() {
                   )}
                   <Field label="Situate at (location)"><Input value={meta.location} onChange={onLocation} placeholder="e.g. CHARLESHILL" /></Field>
                   <Field label="Tribal / administrative area"><Input value={meta.tribalArea} onChange={set("tribalArea")} /></Field>
+                  <Field label="Situate line (leave blank for auto)">
+                    <textarea
+                      value={meta.situateLine ?? ""}
+                      onChange={(e) => setMeta((m) => ({ ...m, situateLine: e.target.value }))}
+                      placeholder="e.g. Situate at Gaborone in the Gaborone Administrative District"
+                      rows={2}
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs"
+                    />
+                  </Field>
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
                   <Field label="Scale 1:N"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>

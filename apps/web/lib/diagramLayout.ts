@@ -69,6 +69,7 @@ export interface DiagramMeta {
   parentDiagramNo?: string;  // "The immediate parent diagram is annexed to No."
   annexName?: string;        // optional name printed above "Registrar of Deeds"
   certLine?: string;         // optional manual override for the certification line
+  situateLine?: string;      // optional manual override for the "Situate at…" line
   // Client req 2026-10-22, WhatsApp voice note "where do i change paper
   // size" + "sometimes points are too many and everything do not fit in A4
   // page... now we will have to fit in A3 or A2": the frame, the top
@@ -429,11 +430,13 @@ export function computeDiagramLayout(
       return withParens;
     });
   const toTitleCase = (s: string) => s.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-  const situateLines = wrapSvgWords(
-    ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)],
-    tw - 80 * PAGE_SCALE,
-    FS_BEACON_HEAD
-  );
+  const situateLines = meta.situateLine
+    ? wrapSvgWords(meta.situateLine.trim().split(/\s+/), tw - 80 * PAGE_SCALE, FS_BEACON_HEAD)
+    : wrapSvgWords(
+        ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)],
+        tw - 80 * PAGE_SCALE,
+        FS_BEACON_HEAD
+      );
   // A little extra breathing room between each of this block's sub-sections
   // (client req 2026-08-26: "cale ke niche thori space add karo... sub ke
   // thori thori" — a bit of space below "CALLED", between the lines after
