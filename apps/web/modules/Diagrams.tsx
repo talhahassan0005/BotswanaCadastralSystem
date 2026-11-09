@@ -1178,7 +1178,7 @@ export function Diagrams() {
         dsmApprovedY, dosY1, dosY2, dosLineY,
         arrowX, arrowY,
         bdHeadingY, bdLinesY0, beaconLines, BD_LH, localityY, localityY_left,
-        fig,
+        fig: layoutFig,
         figureLines, LEGAL_LH, landCalledLines, parentLineGroups, situateLines,
         landCalledY0, parentY0, situateY0, legalY0, deductionsY, certY1, certLines, surveyorFit, leftColW, rightColW,
         annTop, annBottom, annC1, annC2,
@@ -1303,7 +1303,7 @@ export function Diagrams() {
       {
         // Scale: for Split A3 near the bottom of the left (figure) page;
         // for every other size just above the legal-description block.
-        const scaleY = SPLIT ? fig.y + fig.h - 50 : legalY0 - 40;
+        const scaleY = SPLIT ? layoutFig.y + layoutFig.h - 50 : legalY0 - 40;
         applyBlock("legal", VB_W / 2, scaleY);
         if (meta.scale > 0) {
           text(VB_W / 2, scaleY, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
@@ -1413,7 +1413,7 @@ export function Diagrams() {
       ],
       polylines: [
         ...(points.length >= 2
-          ? [{ pts: points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north }; }), closed: fig?.type === "closed", layer: "BOUNDARY" }]
+          ? [{ pts: points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north }; }), closed: fullMeta.closed, layer: "BOUNDARY" }]
           : []),
         ...sheetLines,
       ],
