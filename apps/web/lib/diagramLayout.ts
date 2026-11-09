@@ -353,7 +353,7 @@ export function computeDiagramLayout(
   const xPt = xDirR;                        // point-letter column
   const xPtR = xPt + 6.6 * PAGE_SCALE * MM;
   const xY = xPtR;                          // Y coordinate column
-  const xYR = xY + 25.5 * PAGE_SCALE * MM;
+  const xYR = xY + 22.5 * PAGE_SCALE * MM;
   const xX = xYR;                           // X coordinate column
   const xXR = xX + 27.0 * PAGE_SCALE * MM;
   // Shifted a bit left of the exact Part 23 boundary (client req
