@@ -547,6 +547,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         <clipPath id="bdClip">
           <rect x={tx} y={tableBottom} width={(SPLIT ? xXR : xDsm) - tx} height={9999} />
         </clipPath>
+        {/* Clip the figure (polygon + beacons + labels + annotations) so a
+            rotated/tall boundary never overflows into the legal-text block */}
+        <clipPath id="figClip">
+          <rect x={0} y={0} width={VB_W} height={figBottom + 20} />
+        </clipPath>
       </defs>
       {block("beaconDesc", tx + 4, bdHeadingY, (
         <g clipPath="url(#bdClip)">
@@ -679,6 +684,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       ))}
 
       {/* ===================== FIGURE ===================== */}
+      <g clipPath="url(#figClip)">
       {parcels && parcels.length > 0 ? (
         parcels.map((pc, i) => {
           const ring = pc.points.map((p) => `${fx(p.east, p.north)},${fy(p.east, p.north)}`).join(" ");
@@ -886,6 +892,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           </text>
         </g>
       ))}
+
+      </g>{/* end figClip */}
 
       {/* ===================== RIGHT PAGE group 2: legal + cert + annex ===================== */}
       {/* For Split A3 this group is offset to the right page; for every
