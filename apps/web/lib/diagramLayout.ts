@@ -150,20 +150,19 @@ export function sideLabel(from: string | null, to: string | null): string {
   const f = from ?? "", t = to ?? "";
   return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f} ${t}`;
 }
-/** Sequential boundary letter — A, B, ... Z, AA, AB, ... (client req
- *  2026-08-23: the diagram must letter the boundary A, B, C, ... on the
- *  official sheet regardless of what the underlying survey data calls
- *  those points, e.g. "25A2"/"M1" — same as every SG reference sample).
+/** Sequential boundary letter — A, B, ... Z, then A1, B1, ... Z1, then
+ *  A2, B2, ... (client req 2026-11-10: the run past Z used to read
+ *  AA, AB, AC which is hard to tell apart from a real two-letter beacon
+ *  name; a numbered cycle is unambiguous).
+ *  (client req 2026-08-23: the diagram must letter the boundary A, B, C, ...
+ *  on the official sheet regardless of what the underlying survey data
+ *  calls those points, e.g. "25A2"/"M1" — same as every SG reference sample.)
  *  I and O are skipped to avoid confusion with 1 and 0 (client req 2026-10-25). */
 const _BL = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // 24 letters — skips I and O
 export function boundaryLetter(i: number): string {
   const BASE = _BL.length; // 24
-  let n = i, s = "";
-  do {
-    s = _BL[n % BASE] + s;
-    n = Math.floor(n / BASE) - 1;
-  } while (n >= 0);
-  return s;
+  const cycle = Math.floor(i / BASE);
+  return _BL[i % BASE] + (cycle > 0 ? String(cycle) : "");
 }
 /** Area line: small plots in SQUARE METRES, larger in HECTARES (SG convention). */
 export function areaText(areaHa: number): string {
