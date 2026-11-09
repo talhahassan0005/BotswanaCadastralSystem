@@ -1191,7 +1191,7 @@ export function Diagrams() {
         gpNo, srNo, dsmFile, comp, degreeSquare, lirNo,
         gpNoX, srNoX, dsmFileX, compX, degreeSquareX, lirNoX,
         annexedTo, annexedDate, annexedFavour, annexNameLines, ANNEX_NAME_LH, parentDiagramNo,
-        SPLIT, DETAILS_DX,
+        SPLIT, DETAILS_DX, effScale,
       } = L;
 
       // ===================== Outer frame border(s) =====================
@@ -1312,7 +1312,7 @@ export function Diagrams() {
         const scaleY = SPLIT ? layoutFig.y + layoutFig.h - 50 : legalY0 - 40;
         applyBlock("legal", VB_W / 2, scaleY);
         if (meta.scale > 0) {
-          text(VB_W / 2, scaleY, `SCALE 1:${meta.scale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
+          text(VB_W / 2, scaleY, `SCALE 1:${effScale.toLocaleString()}`, FS_BEACON_HEAD, "middle");
         }
         applyBlock(null);
       }

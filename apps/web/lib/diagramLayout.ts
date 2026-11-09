@@ -139,6 +139,9 @@ export function tCoord(n: number): string {
 export function tDist(n: number): string {
   return n.toFixed(2);
 }
+/** Standard surveying scale denominators, ascending. The figure is drawn at
+ *  one of these so the printed "SCALE 1:N" can be measured with a scale rule. */
+export const STD_SCALES = [100, 125, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000];
 /** Side row-label: "AB" for single-letter beacons (the official SG
  *  convention), but bare concatenation of longer point names is
  *  unreadable ("25A225A1" — is that 25A2→25A1, or something else?), so
@@ -563,11 +566,17 @@ export function computeDiagramLayout(
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
   // Draw at the actual chosen scale (client req 2026-08-21, Part 14) — the
-  // Auto-fit scale — the maximum sc that fits the polygon in the figure box.
+  // Largest sc that still fits the polygon inside the figure box.
   const autoSc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
-  // When a scale is set, use it but never let the polygon overflow the figure
-  // box (cap at autoSc). Falls back to auto-fit when scale is 0 or unset.
-  const sc = meta.scale > 0 ? Math.min(10000 / meta.scale, autoSc) : autoSc;
+  // The sheet must draw at a real surveying scale so the printed "SCALE 1:N"
+  // stays measurable with a scale rule — snap to the tightest standard
+  // denominator that still fits rather than an arbitrary auto-fit ratio.
+  const bestStd = STD_SCALES.find((n) => 10000 / n <= autoSc) ?? Math.ceil(10000 / autoSc);
+  const reqSc = meta.scale > 0 ? 10000 / meta.scale : 0;
+  // Honour the entered scale when it fits and still fills most of the box;
+  // otherwise snap to bestStd so the figure never sits tiny in white space.
+  const effScale = reqSc > 0 && reqSc <= autoSc && reqSc >= autoSc * 0.7 ? meta.scale : bestStd;
+  const sc = 10000 / effScale;
   const dw = spanE * sc, dh = spanN * sc;
   const offX = fig.x + (fig.w - dw) / 2;
   const offY = fig.y + (fig.h - dh) / 2;
@@ -674,7 +683,7 @@ export function computeDiagramLayout(
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
-    sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
+    sc, effScale, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
     landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, cert, certLines, certFs, surveyorFit,

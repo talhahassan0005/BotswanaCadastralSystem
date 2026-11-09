@@ -356,7 +356,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
     figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
-    sc, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
+    sc, effScale, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
     landCalledY0, parentY0, parentTotalLines, situateY0, deductionsY, certY1, leftColW, rightColW, certLines, certFs, surveyorFit,
@@ -679,7 +679,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           description when dragged. */}
       {meta.scale > 0 && block("legal", VB_W / 2, SPLIT ? figBottom - 50 : legalY0 - 40, (
         <text x={VB_W / 2} y={SPLIT ? figBottom - 50 : legalY0 - 40} textAnchor="middle" fontSize={FS_BEACON_HEAD} fontWeight="medium">
-          Scale 1:{meta.scale.toLocaleString()}
+          Scale 1:{effScale.toLocaleString()}
         </text>
       ))}
 
