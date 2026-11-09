@@ -556,11 +556,10 @@ export function computeDiagramLayout(
   // (client req 2026-08-22) — the north arrow sits on the left side.
   const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
   const pad = 60 * PAGE_SCALE;
-  // Figure bounds include any extra (non-traverse) marks so they stay visible.
-  const bE = [...es, ...(extraPoints ?? []).map((p) => p.east)];
-  const bN = [...nsv, ...(extraPoints ?? []).map((p) => p.north)];
-  const minE = Math.min(...bE), maxE = Math.max(...bE);
-  const minN = Math.min(...bN), maxN = Math.max(...bN);
+  // Centering and scale are based on the main polygon only so a distant
+  // reference mark does not shrink/offset the boundary into one corner.
+  const minE = Math.min(...es), maxE = Math.max(...es);
+  const minN = Math.min(...nsv), maxN = Math.max(...nsv);
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
   // Draw at the actual chosen scale (client req 2026-08-21, Part 14) — the
@@ -675,7 +674,7 @@ export function computeDiagramLayout(
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
-    figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
+    figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
     sc, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,

@@ -355,7 +355,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
-    figTop, figBottom, fig, pad, bE, bN, minE, maxE, minN, maxN, spanE, spanN,
+    figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     sc, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
