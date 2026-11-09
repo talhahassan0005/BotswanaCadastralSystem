@@ -1057,6 +1057,8 @@ export function Diagrams() {
   function downloadDxf() {
     const notes: ImportedDrawing["texts"] = [];
     const sheetLines: ImportedDrawing["polylines"] = [];
+    let _metresPerUnit = 1;
+    let _letteredPoints: { name: string | null; east: number; north: number }[] = [];
     const t = transformRef.current;
     // The exported DXF now matches whatever the live preview is rotated/
     // flipped to (client req 2026-08-28: "DXF main rotation working nahi
@@ -1080,6 +1082,7 @@ export function Diagrams() {
       const o = t.toWorld(0, 0);
       const u = t.toWorld(1, 0);
       const metresPerUnit = Math.hypot(u.east - o.east, u.north - o.north) || 1e-6;
+      _metresPerUnit = metresPerUnit;
       // A block the user moved/resized on the sheet: the same translate +
       // scale-about-anchor as SgDiagram's MovableBlock, applied while that
       // block's text/lines are written (null = untouched sheet geometry).
@@ -1167,6 +1170,7 @@ export function Diagrams() {
       // (Part 23). Destructured field names that would otherwise shadow
       // this component's own `points`/`sides`/`fig` are aliased.
       const L = computeDiagramLayout(fullMeta, points, sides, extraPoints);
+      _letteredPoints = L.points;
       const {
         points: letteredPoints, sides: letteredSides,
         VB_W,
@@ -1406,18 +1410,34 @@ export function Diagrams() {
       text(lirNoX, annTop + 290, lirNo, fitFontSize(lirNo, annC2ValueW(lirNoX), FS_BEACON_HEAD));
     }
 
+    // Scale-aware sizes: _metresPerUnit ≈ realScale/10000 so these stay
+    // proportional at any diagram scale (1:1,000 through 1:10,000+).
+    const beaconR = _metresPerUnit * 10;         // 1 mm on paper
+    const beaconLabelH = _metresPerUnit * 30;    // 3 mm on paper
+
+    const beaconCircles = _letteredPoints.map((lp) => {
+      const w = toExportWorld(lp.east, lp.north);
+      return { x: w.east, y: w.north, r: beaconR, layer: "BEACONS" };
+    });
+
+    const beaconLabels: ImportedDrawing["texts"] = _letteredPoints.map((lp) => {
+      const w = toExportWorld(lp.east, lp.north);
+      return { x: w.east, y: w.north + beaconR * 2, text: lp.name ?? "?", height: beaconLabelH, layer: "BEACON_LABELS", anchor: "middle" as const };
+    });
+
     const drawing: ImportedDrawing = {
       points: [
-        ...points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north, label: p.name ?? undefined, layer: "BEACONS" }; }),
+        ..._letteredPoints.map((lp) => { const w = toExportWorld(lp.east, lp.north); return { x: w.east, y: w.north, layer: "BEACONS" }; }),
         ...extraPoints.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north, label: p.name ?? undefined, layer: "REFERENCE" }; }),
       ],
+      circles: beaconCircles,
       polylines: [
         ...(points.length >= 2
           ? [{ pts: points.map((p) => { const w = toExportWorld(p.east, p.north); return { x: w.east, y: w.north }; }), closed: fullMeta.closed, layer: "BOUNDARY" }]
           : []),
         ...sheetLines,
       ],
-      texts: notes,
+      texts: [...notes, ...beaconLabels],
     };
     const dxf = writeDxf(drawing);
     const blob = new Blob([dxf], { type: "application/dxf" });

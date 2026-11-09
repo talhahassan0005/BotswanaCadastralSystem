@@ -11,6 +11,7 @@
 export interface ImportedDrawing {
   points: { x: number; y: number; label?: string; layer?: string }[];
   polylines: { pts: { x: number; y: number }[]; closed: boolean; layer?: string }[];
+  circles?: { x: number; y: number; r: number; layer?: string }[];
   /** `anchor` mirrors SVG's text-anchor ("start" is DXF's default left
    *  justification, so it's left unset there) — needed so a DXF export of a
    *  template with centred/right-aligned labels (e.g. table headers, right-
@@ -226,6 +227,7 @@ export function writeDxf(d: ImportedDrawing): string {
     if (p.label) layers.add(dxfLayer(p.layer ?? "LABELS"));
   }
   for (const l of d.polylines) layers.add(dxfLayer(l.layer ?? "LINES"));
+  for (const c of d.circles ?? []) layers.add(dxfLayer(c.layer ?? "CIRCLES"));
   for (const t of d.texts) layers.add(dxfLayer(t.layer ?? "TEXT"));
 
   // $EXTMIN/$EXTMAX: some viewers zoom-to-extents from these on open
@@ -281,6 +283,9 @@ export function writeDxf(d: ImportedDrawing): string {
       e(0, "VERTEX"); e(5, nextHandle()); e(8, dxfLayer(l.layer ?? "LINES")); e(10, v.x); e(20, v.y); e(30, 0);
     }
     e(0, "SEQEND"); e(5, nextHandle());
+  }
+  for (const c of d.circles ?? []) {
+    e(0, "CIRCLE"); e(5, nextHandle()); e(8, dxfLayer(c.layer ?? "CIRCLES")); e(10, c.x); e(20, c.y); e(30, 0); e(40, c.r);
   }
   for (const t of d.texts) {
     e(0, "TEXT"); e(5, nextHandle()); e(8, dxfLayer(t.layer ?? "TEXT")); e(10, t.x); e(20, t.y); e(30, 0); e(40, t.height); e(7, "Arial");
