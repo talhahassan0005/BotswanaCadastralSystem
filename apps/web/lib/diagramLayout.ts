@@ -145,7 +145,7 @@ export function tDist(n: number): string {
  *  those get a separator instead (client req 2026-08-22). */
 export function sideLabel(from: string | null, to: string | null): string {
   const f = from ?? "", t = to ?? "";
-  return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f}-${t}`;
+  return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f} ${t}`;
 }
 /** Sequential boundary letter — A, B, ... Z, AA, AB, ... (client req
  *  2026-08-23: the diagram must letter the boundary A, B, C, ... on the
