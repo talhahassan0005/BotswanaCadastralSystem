@@ -3775,7 +3775,7 @@ export function CogoWorkspace({
               {visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
-                const r = (visible.length > 400 ? 1.4 : visible.length > 100 ? 2.2 : 3.2) * blockCornerScale;
+                const r = (visible.length > 400 ? 1.0 : visible.length > 100 ? 1.6 : 2.4) * blockCornerScale;
                 // Point-name labels never shrank with density the way the dot
                 // radius above already does (client req 2026-09-01: "cadastral
                 // per mess show ho raha hai jese... genral plan per... wasey ku
@@ -3790,10 +3790,10 @@ export function CogoWorkspace({
                 return (
                   <g key={p.id}>
                     <circle
-                      cx={x} cy={y} r={isSel ? 6 : r}
-                      fill={isSel ? "#dc2626" : "white"}
-                      stroke={isSel ? "none" : "#059669"}
-                      strokeWidth={isSel ? 0 : Math.max(0.6, r * 0.4)}
+                      cx={x} cy={y} r={r}
+                      fill="white"
+                      stroke={isSel ? "#2563eb" : "#059669"}
+                      strokeWidth={isSel ? Math.max(1, r * 0.7) : Math.max(0.6, r * 0.4)}
                     />
                     {showPointNames && (
                       <text x={x + nameOff} y={y - nameOff} fontSize={nameFS} className="fill-slate-700 font-medium">
@@ -3812,7 +3812,7 @@ export function CogoWorkspace({
                 .filter((p) => !visible.some((v) => v.east === p.east && v.north === p.north))
                 .map((p, pi) => {
                   const [x, y] = toScreen(p.east, p.north);
-                  const r = 3.2 * blockCornerScale;
+                  const r = 2.4 * blockCornerScale;
                   return (
                     <g key={`cres-${pi}`}>
                       <circle cx={x} cy={y} r={r} fill="white" stroke="#059669" strokeWidth={Math.max(0.6, r * 0.4)} />
@@ -3829,8 +3829,9 @@ export function CogoWorkspace({
                   imported point was placed at that exact coordinate
                   (client req 2026-10-30). */}
               {polygons.flatMap((pg) => pg.points).map((v, vi) => {
+                if (visible.some((vp) => vp.east === v.east && vp.north === v.north)) return null;
                 const [x, y] = toScreen(v.east, v.north);
-                const r = 3.2 * blockCornerScale;
+                const r = 2.4 * blockCornerScale;
                 return (
                   <g key={`pgv-${vi}`}>
                     <circle cx={x} cy={y} r={r} fill="white" stroke="#059669" strokeWidth={Math.max(0.6, r * 0.4)} />
