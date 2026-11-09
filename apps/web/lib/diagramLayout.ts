@@ -563,11 +563,11 @@ export function computeDiagramLayout(
   const spanE = Math.max(maxE - minE, 1e-6);
   const spanN = Math.max(maxN - minN, 1e-6);
   // Draw at the actual chosen scale (client req 2026-08-21, Part 14) — the
-  // Always auto-fit the polygon to fill the available figure box.
-  // meta.scale is label-only (the "SCALE 1:N" text printed on the sheet).
-  // A fixed rendering scale caused small lots to appear tiny or pushed into
-  // a corner when the declared scale didn't match the figure box dimensions.
-  const sc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
+  // Auto-fit scale — the maximum sc that fits the polygon in the figure box.
+  const autoSc = Math.min((fig.w - 2 * pad) / spanE, (fig.h - 2 * pad) / spanN);
+  // When a scale is set, use it but never let the polygon overflow the figure
+  // box (cap at autoSc). Falls back to auto-fit when scale is 0 or unset.
+  const sc = meta.scale > 0 ? Math.min(10000 / meta.scale, autoSc) : autoSc;
   const dw = spanE * sc, dh = spanN * sc;
   const offX = fig.x + (fig.w - dw) / 2;
   const offY = fig.y + (fig.h - dh) / 2;
