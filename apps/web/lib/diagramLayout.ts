@@ -224,7 +224,10 @@ export function computeDiagramLayout(
   meta: DiagramMeta,
   rawPoints: DiagramPoint[],
   rawSides: DiagramSide[],
-  extraPoints: DiagramPoint[] = []
+  extraPoints: DiagramPoint[] = [],
+  /** Vertical drag applied to the "legal" text block, in VB units. A positive
+   *  (downward) move grows the figure box by the same amount. */
+  legalDy = 0
 ) {
   // The diagram always letters the boundary A, B, C, ... on the printed
   // sheet, ignoring whatever the survey data actually calls each point
@@ -557,9 +560,20 @@ export function computeDiagramLayout(
   // it, so it can fill the full frame height.  For every other size the
   // figure sits below the beacon-description + locality block.
   const figTop = SPLIT ? FRAME_Y + 80 * PAGE_SCALE : localityY + 44 * PAGE_SCALE;
+  // Dragging the legal block DOWN hands its vacated space to the figure
+  // (client req 2026-11-10: "it was fitting well earlier on a scale of
+  // 1:5000. I just had to move text"). Without this the figure box — and so
+  // the clip that keeps the boundary off the legal text — stayed anchored to
+  // the undragged legal position, clipping a figure the surveyor had already
+  // made room for. Only downward moves grow the box; never past the frame.
+  const legalShift = Math.max(0, legalDy);
   const figBottom = SPLIT
     ? FRAME_BOTTOM - 60 * PAGE_SCALE
-    : Math.min(figTop + 600 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
+    : Math.min(
+        figTop + 600 * PAGE_SCALE + legalShift,
+        legalY0 + legalShift - 40 * PAGE_SCALE,
+        FRAME_BOTTOM - 40 * PAGE_SCALE
+      );
   // Reserve the extra margin on the LEFT of the figure box, not the right
   // (client req 2026-08-22) — the north arrow sits on the left side.
   const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
@@ -579,13 +593,12 @@ export function computeDiagramLayout(
   // for this lot; never invent a non-standard denominator (that produced
   // absurd labels like "1:243,706"), let figureFits drive a paper upgrade.
   const bestStd = STD_SCALES.find((n) => 10000 / n <= autoSc);
-  const reqSc = meta.scale > 0 ? 10000 / meta.scale : 0;
-  // Honour the entered scale when it fits and still fills most of the box;
-  // otherwise snap to bestStd so the figure never sits tiny in white space.
-  const effScale =
-    reqSc > 0 && reqSc <= autoSc && reqSc >= autoSc * 0.7
-      ? meta.scale
-      : bestStd ?? STD_SCALES[STD_SCALES.length - 1];
+  // An entered scale is honoured EXACTLY (client req 2026-11-10: "I want it
+  // in A4 .. it was fitting well earlier on a scale of 1:5000. I just had to
+  // move text") — the surveyor sets the scale deliberately and makes room by
+  // dragging the legal text, so the sheet must not quietly re-scale to fit
+  // the computed box. Only an unset/invalid scale auto-fits.
+  const effScale = meta.scale > 0 ? meta.scale : bestStd ?? STD_SCALES[STD_SCALES.length - 1];
   const sc = 10000 / effScale;
   const dw = spanE * sc, dh = spanN * sc;
   const offX = fig.x + (fig.w - dw) / 2;
@@ -717,33 +730,3 @@ export function currentMonthYear(upper = true): string {
   return upper ? s.toUpperCase() : s;
 }
 
-/** Lay the sheet out, moving up to a larger paper size when the boundary will
- *  not draw legibly on the chosen one (client req 2026-11-10).
- *
- *  A lot with many beacons makes the co-ordinate table tall enough to squeeze
- *  the figure box down to a sliver — Lot 91050's 29 beacons leave about 13mm
- *  of figure height on A4, where the boundary cannot be drawn at any standard
- *  scale. Rather than emit a tiny figure (or an invented denominator like
- *  "1:243,706"), step up A4 -> A3 -> A2 -> A1 and use the first size the
- *  figure genuinely fits on. Never steps DOWN, so an explicit larger choice
- *  is always respected. The result carries `effPaperSize`/`paperUpgraded` so
- *  the UI can tell the user the sheet grew. */
-export function computeDiagramLayoutAuto(
-  meta: DiagramMeta,
-  rawPoints: DiagramPoint[],
-  rawSides: DiagramSide[],
-  extraPoints: DiagramPoint[] = []
-) {
-  const chosen = meta.paperSize ?? "A4";
-  const start = Math.max(0, PAPER_ORDER.indexOf(chosen as (typeof PAPER_ORDER)[number]));
-  let last = computeDiagramLayout({ ...meta, paperSize: chosen }, rawPoints, rawSides, extraPoints);
-  for (let i = start; i < PAPER_ORDER.length; i++) {
-    const paperSize = PAPER_ORDER[i];
-    const L = computeDiagramLayout({ ...meta, paperSize }, rawPoints, rawSides, extraPoints);
-    last = L;
-    if (L.figureFits) return { ...L, effPaperSize: paperSize, paperUpgraded: paperSize !== chosen };
-  }
-  // Nothing fits even at A1 — keep the largest attempt rather than failing.
-  const biggest = PAPER_ORDER[PAPER_ORDER.length - 1];
-  return { ...last, effPaperSize: biggest, paperUpgraded: biggest !== chosen };
-}

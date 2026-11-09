@@ -18,7 +18,7 @@ import {
   type ManualText,
   type BlockOffset,
 } from "@/components/SgDiagram";
-import { computeDiagramLayoutAuto, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
+import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
 import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
@@ -927,24 +927,6 @@ export function Diagrams() {
     closed: fig?.type === "closed",
   };
 
-  // Grow the sheet when the boundary cannot be drawn legibly on the chosen
-  // paper size (client req 2026-11-10 — Lot 91050's 29 beacons leave a ~13mm
-  // figure box on A4). Written back into meta so the preview, the printed
-  // @page size and the Paper size dropdown all agree. Never shrinks, so an
-  // explicit larger choice is kept.
-  const autoPaper = useMemo(
-    () =>
-      points.length
-        ? computeDiagramLayoutAuto(fullMeta, points, sides, extraPoints).effPaperSize
-        : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [points, sides, extraPoints, meta.paperSize, meta.scale, fullMeta.areaHa, fullMeta.closed]
-  );
-  useEffect(() => {
-    if (autoPaper && autoPaper !== (meta.paperSize ?? "A4")) {
-      setMeta((m) => ({ ...m, paperSize: autoPaper }));
-    }
-  }, [autoPaper, meta.paperSize]);
 
   // Tribal-lease sketch carries its own (Land Board) field set.
   const [leaseMeta, setLeaseMeta] = useState<Omit<LeaseMeta, "areaM2" | "coordinateSystem">>(di.leaseMeta ?? {
@@ -1190,7 +1172,7 @@ export function Diagrams() {
       // the boundary A, B, C... exactly the way the printed sheet does
       // (Part 23). Destructured field names that would otherwise shadow
       // this component's own `points`/`sides`/`fig` are aliased.
-      const L = computeDiagramLayoutAuto(fullMeta, points, sides, extraPoints);
+      const L = computeDiagramLayout(fullMeta, points, sides, extraPoints);
       _letteredPoints = L.points;
       const {
         points: letteredPoints, sides: letteredSides,
