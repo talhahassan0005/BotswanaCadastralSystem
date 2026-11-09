@@ -2863,15 +2863,16 @@ export function CogoWorkspace({
           }
         }
       } else if (draftTool === "addpoint") {
-        const v = resolveVertex(vbx, vby);
-        if (!v.existingId) {
-          const name = `New${idRef.current}`;
-          const newId = `new-${Date.now()}-${idRef.current}`;
-          idRef.current += 1;
-          snapshot();
-          setExtra((e) => [...e, { id: newId, name, east: v.east, north: v.north }]);
-          setRename({ east: v.east, north: v.north, value: name, targetId: newId });
-        }
+        // Always place at raw cursor position — snap threshold does NOT
+        // block new-point creation (user must be able to place adjacent to
+        // an existing point). Snap highlight is visual feedback only.
+        const [wx, wy] = toWorld(vbx, vby);
+        const name = `New${idRef.current}`;
+        const newId = `new-${Date.now()}-${idRef.current}`;
+        idRef.current += 1;
+        snapshot();
+        setExtra((e) => [...e, { id: newId, name, east: wx, north: wy }]);
+        setRename({ east: wx, north: wy, value: name, targetId: newId });
       } else if (draftTool === "move") {
         if (!moving) {
           const hit = nearestVisible(vbx, vby);
@@ -3237,6 +3238,13 @@ export function CogoWorkspace({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, extra, hidden, lines, arcs, polygons, texts]);
+
+  // ID of the visible point the cursor is currently snapping to — used to
+  // highlight that point instead of rendering a separate overlapping ring.
+  const snapHitId: string | null =
+    (draftTool === "addpoint" || draftTool === "move" || DRAW_TOOLS.includes(draftTool)) && cursor
+      ? (snapPoint(...toScreen(cursor.e, cursor.n))?.id ?? null)
+      : null;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -3806,6 +3814,7 @@ export function CogoWorkspace({
               {visible.map((p) => {
                 const [x, y] = toScreen(p.east, p.north);
                 const isSel = p.id === selected || canvasSelection.has(p.id) || (tablesOpen && tableTab === "points" && tableSelected.has(p.id));
+                const isSnap = !isSel && p.id === snapHitId;
                 const r = (visible.length > 400 ? 1.0 : visible.length > 100 ? 1.6 : 2.4) * blockCornerScale;
                 // Point-name labels never shrank with density the way the dot
                 // radius above already does (client req 2026-09-01: "cadastral
@@ -3821,10 +3830,10 @@ export function CogoWorkspace({
                 return (
                   <g key={p.id}>
                     <circle
-                      cx={x} cy={y} r={r}
+                      cx={x} cy={y} r={isSnap ? r * 1.8 : r}
                       fill="white"
-                      stroke={isSel ? "#2563eb" : "#059669"}
-                      strokeWidth={isSel ? Math.max(1, r * 0.7) : Math.max(0.6, r * 0.4)}
+                      stroke={isSel ? "#2563eb" : isSnap ? "#f59e0b" : "#059669"}
+                      strokeWidth={isSel ? Math.max(1, r * 0.7) : isSnap ? Math.max(1.4, r * 0.9) : Math.max(0.6, r * 0.4)}
                     />
                     {showPointNames && (
                       <text x={x + nameOff} y={y - nameOff} fontSize={nameFS} className="fill-slate-700 font-medium">
@@ -3981,14 +3990,7 @@ export function CogoWorkspace({
               const [x, y] = toScreen(cursor.e, cursor.n);
               return <circle data-debug-pointer cx={x} cy={y} r={2} fill="#d946ef" style={{ pointerEvents: "none" }} />;
             })()}
-            {/* Snap highlight: ring around the existing point the cursor would snap to. */}
-            {(draftTool === "addpoint" || draftTool === "move" || DRAW_TOOLS.includes(draftTool)) && cursor && (() => {
-              const [sx, sy] = toScreen(cursor.e, cursor.n);
-              const hit = snapPoint(sx, sy);
-              if (!hit) return null;
-              const [x, y] = toScreen(hit.east, hit.north);
-              return <circle cx={x} cy={y} r={9} fill="none" stroke="#059669" strokeWidth={1.6} />;
-            })()}
+            {/* Snap highlight: handled by snapHitId → isSnap in visible.map above (amber circle, no extra ring). */}
             {/* Traverse panel (Part 6b): faint dashed preview of the leg being
                 typed, updating live on every keystroke — before Add Leg commits it. */}
             {travOpen && travFrom && travPreview && (() => {
