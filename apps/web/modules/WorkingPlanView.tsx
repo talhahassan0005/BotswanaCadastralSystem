@@ -880,11 +880,9 @@ export function WorkingPlanView() {
           {!diagramLotName && (
             <Field label="Lot / parcel name"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
           )}
-          {!gpTribalArea && (
-            <Field label="Tribal territory / area">
-              <Input value={meta.tribalArea} onChange={set("tribalArea")} />
-            </Field>
-          )}
+          <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
+            <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
+          </Field>
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
           <Field label="Paper size">
             <select
