@@ -97,12 +97,13 @@ function formatLotName(plotNumber: string): string {
  *  15 names (client req 2026-08-26) — a beacon-heavy plot's full name list
  *  otherwise wraps across several lines and reads as clutter; the field
  *  stays freely editable afterward if the surveyor wants the exact full list. */
-const BEACON_DESCRIPTION_NAME_LIMIT = 15;
-function defaultBeaconDescription(pts: { name: string | null }[]): string {
-  const names = pts.map((p) => p.name).filter(Boolean);
-  if (!names.length) return "ALL : 12mm Iron peg";
-  const shown = names.length > BEACON_DESCRIPTION_NAME_LIMIT ? [...names.slice(0, BEACON_DESCRIPTION_NAME_LIMIT), "…"] : names;
-  return `${shown.join(",")} : 12mm Iron peg`;
+/** Beacons are nearly always all the same type, so the sheet defaults to a
+ *  single "ALL" row (client req 2026-11-12, Ted: "Default should be all").
+ *  Enumerating every name produced an unreadable block —
+ *  "x1,x2,x3,…,x15,… - 12mm Iron peg". The surveyor unticks "All" to list
+ *  individual beacons when a lot genuinely mixes beacon types. */
+function defaultBeaconDescription(): string {
+  return "ALL : 12mm Iron peg";
 }
 
 export function Diagrams() {
@@ -224,7 +225,7 @@ export function Diagrams() {
     gpNo: "",
     degreeSquare: "",
     parentDiagram: "",
-    beaconDescription: defaultBeaconDescription(fig?.points ?? []),
+    beaconDescription: defaultBeaconDescription(),
     certLine: "",
     situateLine: "",
     beaconLabelScale: 1,
@@ -955,7 +956,7 @@ export function Diagrams() {
       ...m,
       ...(p?.number ? { lotName: formatLotName(p.number) } : {}),
       scale: suggested,
-      beaconDescription: defaultBeaconDescription(fig?.points ?? []),
+      beaconDescription: defaultBeaconDescription(),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selParcelId]);
@@ -1841,7 +1842,7 @@ export function Diagrams() {
                               const others = lines.filter((l) => !l.trim().toUpperCase().startsWith("ALL")).join("\n").trim();
                               const next = e.target.checked
                                 ? (others ? `${allDesc}\n${others}` : allDesc)
-                                : (others || defaultBeaconDescription(fig?.points ?? []));
+                                : (others || defaultBeaconDescription());
                               setMeta((m) => ({ ...m, beaconDescription: next }));
                             }}
                             className="w-4 h-4 cursor-pointer"
