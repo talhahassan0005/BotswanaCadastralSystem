@@ -872,7 +872,14 @@ export function WorkingPlanView() {
             here too, pre-emptively — this card has just as many fields,
             now squeezed into the same narrow sidebar). */}
         <div className="grid grid-cols-1 gap-3">
-          <Field label="Lot / parcel name (auto from Diagram if set)"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
+          {/* Fields the Diagram already supplies are hidden rather than shown
+              read-only (client req 2026-11-12, Ted: "information that comes
+              from survey diagram don't necessarily have to appear — remove
+              from the panel"). They still render on the plan itself; the
+              input only reappears when there is no Diagram value to inherit. */}
+          {!diagramLotName && (
+            <Field label="Lot / parcel name"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
+          )}
           <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
             <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
           </Field>
@@ -916,11 +923,15 @@ export function WorkingPlanView() {
           </Field>
           <Field label="Reference marks"><Input value={meta.referenceMarkDescription} onChange={set("referenceMarkDescription")} /></Field>
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
-          <Field label="Placed beacons (auto from Diagram if set)"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
+          {!diagramBeaconDesc && (
+            <Field label="Placed beacons"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
+          )}
           <Field label="Found beacons"><Input value={meta.foundBeaconDescription ?? ""} onChange={set("foundBeaconDescription")} placeholder="e.g. All Found Beacons: 20mm Iron Peg" /></Field>
-          <Field label={diagramSurveyDate ? "Date of survey (from Diagram)" : "Date of survey"}>
-            <Input value={effectiveMeta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} readOnly={!!diagramSurveyDate} placeholder="e.g. 15 June 2026" />
-          </Field>
+          {!diagramSurveyDate && (
+            <Field label="Date of survey">
+              <Input value={meta.dateOfSurvey ?? ""} onChange={set("dateOfSurvey")} placeholder="e.g. 15 June 2026" />
+            </Field>
+          )}
         </div>
         <p className="mt-2 text-xs text-slate-400">
           Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Lot name, placed-beacon description and date of survey mirror what's entered under Diagrams.
