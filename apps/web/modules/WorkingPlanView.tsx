@@ -880,9 +880,11 @@ export function WorkingPlanView() {
           {!diagramLotName && (
             <Field label="Lot / parcel name"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
           )}
-          <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
-            <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
-          </Field>
+          {!gpTribalArea && (
+            <Field label="Tribal territory / area">
+              <Input value={meta.tribalArea} onChange={set("tribalArea")} />
+            </Field>
+          )}
           <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
           <Field label="Paper size">
             <select
@@ -918,9 +920,11 @@ export function WorkingPlanView() {
           </div>
           <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
           <Field label="Checked from"><Input value={meta.checkedFrom} onChange={set("checkedFrom")} /></Field>
-          <Field label={gpCoordinateSystem ? "Coordinate system (from General Plan)" : "Coordinate system"}>
-            <Input value={effectiveMeta.coordinateSystem} onChange={set("coordinateSystem")} readOnly={!!gpCoordinateSystem} />
-          </Field>
+          {!gpCoordinateSystem && (
+            <Field label="Coordinate system">
+              <Input value={meta.coordinateSystem} onChange={set("coordinateSystem")} />
+            </Field>
+          )}
           <Field label="Reference marks"><Input value={meta.referenceMarkDescription} onChange={set("referenceMarkDescription")} /></Field>
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
           {!diagramBeaconDesc && (
@@ -933,9 +937,6 @@ export function WorkingPlanView() {
             </Field>
           )}
         </div>
-        <p className="mt-2 text-xs text-slate-400">
-          Land Surveyor is taken automatically from the project surveyor{config.surveyor ? ` (${config.surveyor})` : ` — set it in ${cogoTabLabel(config.discipline)} ▸ Project Details`}. Lot name, placed-beacon description and date of survey mirror what's entered under Diagrams.
-        </p>
 
         {/* Multi-plot sheet (client req 2026-08-26, Part 33a) — draw several
             numbered plots from the Cadastral work station on one sheet, e.g.
