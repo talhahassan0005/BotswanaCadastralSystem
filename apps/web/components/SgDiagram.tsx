@@ -355,7 +355,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
-    figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
+    figTop, figBottom, figClipBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     sc, effScale, dw, dh, offX, offY, toX, toY, SPLIT, SHEET_W, DETAILS_DX,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
     arrowX, arrowY,
@@ -548,9 +548,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           <rect x={tx} y={tableBottom} width={(SPLIT ? xXR : xDsm) - tx} height={9999} />
         </clipPath>
         {/* Clip the figure (polygon + beacons + labels + annotations) so a
-            rotated/tall boundary never overflows into the legal-text block */}
+            rotated/tall boundary never overflows into the legal-text block.
+            Uses figClipBottom, which grows when the legal block is dragged
+            down — the sketch itself does not move, it is simply allowed to
+            draw into the space the text vacated. */}
         <clipPath id="figClip">
-          <rect x={0} y={0} width={VB_W} height={figBottom + 20} />
+          <rect x={0} y={0} width={VB_W} height={figClipBottom + 20} />
         </clipPath>
       </defs>
       {block("beaconDesc", tx + 4, bdHeadingY, (

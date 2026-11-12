@@ -560,20 +560,23 @@ export function computeDiagramLayout(
   // it, so it can fill the full frame height.  For every other size the
   // figure sits below the beacon-description + locality block.
   const figTop = SPLIT ? FRAME_Y + 80 * PAGE_SCALE : localityY + 44 * PAGE_SCALE;
-  // Dragging the legal block DOWN hands its vacated space to the figure
-  // (client req 2026-11-10: "it was fitting well earlier on a scale of
-  // 1:5000. I just had to move text"). Without this the figure box — and so
-  // the clip that keeps the boundary off the legal text — stayed anchored to
-  // the undragged legal position, clipping a figure the surveyor had already
-  // made room for. Only downward moves grow the box; never past the frame.
+  // The box the figure is CENTRED in. Deliberately independent of legalDy:
+  // dragging the legal text must never move the sketch (client req
+  // 2026-11-13 — the two are separate elements and one must not drag the
+  // other). It also keeps the auto-fit scale stable while text is moved.
   const legalShift = Math.max(0, legalDy);
   const figBottom = SPLIT
     ? FRAME_BOTTOM - 60 * PAGE_SCALE
-    : Math.min(
-        figTop + 600 * PAGE_SCALE + legalShift,
-        legalY0 + legalShift - 40 * PAGE_SCALE,
-        FRAME_BOTTOM - 40 * PAGE_SCALE
-      );
+    : Math.min(figTop + 600 * PAGE_SCALE, legalY0 - 40 * PAGE_SCALE);
+  // How far down the figure may DRAW. Dragging the legal block down hands
+  // its vacated space to the figure (client req 2026-11-10: "it was fitting
+  // well earlier on a scale of 1:5000. I just had to move text") — so the
+  // boundary the surveyor made room for is no longer clipped. This extends
+  // the clip ONLY; the centring box above is untouched, so the sketch stays
+  // exactly where it is.
+  const figClipBottom = SPLIT
+    ? figBottom
+    : Math.min(figBottom + legalShift, FRAME_BOTTOM - 40 * PAGE_SCALE);
   // Reserve the extra margin on the LEFT of the figure box, not the right
   // (client req 2026-08-22) — the north arrow sits on the left side.
   const fig = { x: tx + 300 * PAGE_SCALE, y: figTop, w: tw - 300 * PAGE_SCALE - 60 * PAGE_SCALE, h: figBottom - figTop };
@@ -709,7 +712,7 @@ export function computeDiagramLayout(
     midTop, es, nsv, figureLetters, figureLines, LEGAL_LH, landCalled, landCalledLines,
     parentLineGroups, situateLines, legalBlockH, legalY0,
     beaconEntries, BD_BEACON_COL, BD_DASH_COL, beaconLines, BD_LH, bdHeadingY, bdLinesY0, bdBlockBottom, localityY, localityY_left,
-    figTop, figBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
+    figTop, figBottom, figClipBottom, fig, pad, minE, maxE, minN, maxN, spanE, spanN,
     SPLIT, SHEET_W, DETAILS_DX,
     sc, effScale, figureFits, dw, dh, offX, offY, toX, toY, cx, cy, polyPoints, screenPts, insidePoly,
     dsmBoxTop, dsmApprovedY, dosY1, dosY2, dosLineY,
