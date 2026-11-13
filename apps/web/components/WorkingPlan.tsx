@@ -46,6 +46,9 @@ export interface WorkingPlanMeta {
   checkedFrom: string;        // "WP1"
   referenceMarkDescription: string;   // "All Reference Marks: 20mm Iron Peg in Concrete"
   workingStationDescription: string;  // "WP1: 12mm Iron Peg"
+  /** e.g. "DSMROOF: 1.2M Standard pillar". Blank hides the whole
+   *  TRIGONOMETRIC STATIONS row (client req 2026-11-13). */
+  trigStationDescription?: string;
   placedBeaconDescription: string;    // "ALL: 12mm Iron Peg"
   /** "FOUND BEACONS:" description (client req 2026-08-26, Part 33e) — a
    *  subdivision survey typically has both newly-placed beacons and
@@ -99,6 +102,10 @@ interface Props {
   /** Working stations (Data Import type "Working pt") — shown in the inset
    *  alongside the reference marks (client req 2026-10-21: "Where is WP1"). */
   workingStations?: WorkingPlanPoint[];
+  /** Trigonometric stations (Data Import type "Trig Station") — shown in the
+   *  inset with their own sign, a triangle with a dot inside (client req
+   *  2026-11-13). They were filtered out of the sheet entirely before. */
+  trigStations?: WorkingPlanPoint[];
   /** The same hand-drawn extension lines and text notes added under
    *  Diagrams (client req 2026-08-26: "I want to see these edits also
    *  appearing at the working plan") — read-only here, anchored in the same
@@ -281,6 +288,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     plots,
     refMarks,
     workingStations,
+    trigStations,
     manualAnnotations,
     manualTexts,
     labelOffsets,
@@ -672,6 +680,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const insetMarks = [
     ...(refMarks ?? []).map((m) => ({ ...m, kind: "ref" as const })),
     ...(workingStations ?? []).map((m) => ({ ...m, kind: "wp" as const })),
+    ...(trigStations ?? []).map((m) => ({ ...m, kind: "trig" as const })),
   ];
   const hasRefs = insetMarks.length > 0;
   const lotFit = hasRefs
@@ -704,8 +713,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   const refDots = insetMarks.map((r, i) => {
     const a = refAngles.find((p) => p.i === i)!.a;
     const x = insetCx + Math.cos(a) * ringRx, y = insetCy + Math.sin(a) * ringRy;
-    const wp = r.kind === "wp";
-    return { x, y, kind: r.kind, label: r.name || (wp ? "WP" : "RM"), id: `${wp ? "wp" : "rm"}:${r.name || i}` };
+    const fallback = r.kind === "wp" ? "WP" : r.kind === "trig" ? "TRIG" : "RM";
+    const prefix = r.kind === "wp" ? "wp" : r.kind === "trig" ? "trig" : "rm";
+    return { x, y, kind: r.kind, label: r.name || fallback, id: `${prefix}:${r.name || i}` };
   });
   const insetPolygonsAll = activePlots.map((plot) => {
     const pts = plot.points.map((p) => ({ x: raX(p.east, p.north), y: raY(p.east, p.north) }));
@@ -1119,8 +1129,22 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         </text>
         <text x={26} y={descTop + 16} fontWeight="bold">REFERENCE MARKS</text>
         <text x={26} y={descTop + 28}>{meta.referenceMarkDescription}</text>
-        <text x={26} y={descTop + 44} fontWeight="bold">WORKING STATION</text>
-        <text x={26} y={descTop + 56}>{meta.workingStationDescription}</text>
+        {/* Trig stations only appear when the survey actually used one
+            (client req 2026-11-13) — the rows below shift down to make
+            room, so a survey without one keeps the original spacing. */}
+        {meta.trigStationDescription?.trim() ? (
+          <>
+            <text x={26} y={descTop + 44} fontWeight="bold">TRIGONOMETRIC STATIONS</text>
+            <text x={26} y={descTop + 56}>{meta.trigStationDescription}</text>
+            <text x={26} y={descTop + 72} fontWeight="bold">WORKING STATION</text>
+            <text x={26} y={descTop + 84}>{meta.workingStationDescription}</text>
+          </>
+        ) : (
+          <>
+            <text x={26} y={descTop + 44} fontWeight="bold">WORKING STATION</text>
+            <text x={26} y={descTop + 56}>{meta.workingStationDescription}</text>
+          </>
+        )}
       </g>
       ))}
 
@@ -1170,7 +1194,18 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           const boxW = d.label.length * fs * 0.62 + 4;
           return (
             <g key={d.id}>
-              {d.kind === "wp" ? (
+              {d.kind === "trig" ? (
+                // Trig station: triangle with a dot inside (client req
+                // 2026-11-13: "the symble for Trig is triangle with a
+                // circle/big dot inside").
+                <>
+                  <polygon
+                    points={`${d.x},${d.y - 4} ${d.x - 3.6},${d.y + 2.6} ${d.x + 3.6},${d.y + 2.6}`}
+                    fill="white" stroke={REF_RED} strokeWidth={0.8}
+                  />
+                  <circle cx={d.x} cy={d.y + 0.8} r={1.1} fill={REF_RED} />
+                </>
+              ) : d.kind === "wp" ? (
                 // Working station: circle with a dot in the middle (client req
                 // 2026-10-21 — the triangle is the trig sign, not a working point).
                 <>

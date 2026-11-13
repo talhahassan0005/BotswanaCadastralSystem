@@ -141,6 +141,16 @@ export function WorkingPlanView() {
         .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
     [importResult]
   );
+  // Trig stations (Data Import type "Trig Station") — drawn in the inset
+  // with their own triangle-and-dot sign (client req 2026-11-13). The type
+  // already existed on import but never reached this sheet.
+  const trigStations = useMemo(
+    () =>
+      (importResult?.rows ?? [])
+        .filter((r) => r.east != null && r.north != null && r.pointType === "trig")
+        .map((r) => ({ name: r.beaconId, east: r.east as number, north: r.north as number })),
+    [importResult]
+  );
   // Working stations (Data Import type "Working pt") — shown in the inset
   // too (client req 2026-10-21: "Where is WP1").
   const workingStations = useMemo(
@@ -758,6 +768,12 @@ export function WorkingPlanView() {
       const w = toExportWorld(r.east, r.north);
       beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "WORKING_STATION" });
     }
+    // Trig stations get their own layer so the DXF carries them too — they
+    // are on the sheet now, so leaving them out would make the two disagree.
+    for (const r of trigStations) {
+      const w = toExportWorld(r.east, r.north);
+      beaconPoints.push({ x: w.east, y: w.north, label: r.name ?? undefined, layer: "TRIG_STATION" });
+    }
     // Coordinate grid exactly as on the sheet (client req 2026-10-21: the
     // DXF must open already looking like the client's hand-fixed version) —
     // lines on GRID, labels on GRID_TEXT; the sheet's rotate(-90) labels are
@@ -926,6 +942,18 @@ export function WorkingPlanView() {
           )}
           <Field label="Reference marks"><Input value={meta.referenceMarkDescription} onChange={set("referenceMarkDescription")} /></Field>
           <Field label="Working station"><Input value={meta.workingStationDescription} onChange={set("workingStationDescription")} /></Field>
+          {/* Only offered once a trig station is tagged on Data Import
+              (client req 2026-11-13). Blank leaves the TRIGONOMETRIC
+              STATIONS row off the sheet entirely. */}
+          {trigStations.length > 0 && (
+            <Field label="Trig stations">
+              <Input
+                value={meta.trigStationDescription ?? ""}
+                onChange={set("trigStationDescription")}
+                placeholder="e.g. DSMROOF: 1.2M Standard pillar"
+              />
+            </Field>
+          )}
           {!diagramBeaconDesc && (
             <Field label="Placed beacons"><Input value={meta.placedBeaconDescription} onChange={set("placedBeaconDescription")} /></Field>
           )}
@@ -1057,6 +1085,7 @@ export function WorkingPlanView() {
             refMarks={refMarks}
             onGridLayout={(g) => { gridLayoutRef.current = g; }}
             workingStations={workingStations}
+            trigStations={trigStations}
             manualAnnotations={diagramAnnotations}
             manualTexts={diagramTexts}
             labelOffsets={labelOffsets}
