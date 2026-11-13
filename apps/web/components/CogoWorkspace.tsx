@@ -327,6 +327,26 @@ export function CogoWorkspace({
   const [pointMeta, setPointMeta] = useState<Record<string, PointMeta>>(savedDoc.pointMeta ?? {});
   const [lineMeta, setLineMeta] = useState<Record<string, LineMeta>>(savedDoc.lineMeta ?? {});
   const [polygonMeta, setPolygonMeta] = useState<Record<string, PolygonMeta>>(savedDoc.polygonMeta ?? {});
+  /** Plot numbers belonging to polygons that still exist.
+   *
+   *  polygonMeta is keyed by polygon id and is deliberately NOT cleared when
+   *  a polygon is deleted — undo restores the polygon and needs its meta
+   *  still there. But the duplicate-plot-number check read the whole map, so
+   *  a deleted polygon kept its number reserved and the dialog refused it
+   *  forever (client req 2026-11-13: "i have deleted this plot number from
+   *  the beacons, why does it still say it has been used?"). Filtering to
+   *  live polygons here fixes that without disturbing undo, and it also
+   *  frees numbers in projects already saved with orphaned meta. */
+  function usedPlotNumbers(exceptId?: string | null): Set<string> {
+    const live = new Set(polygons.map((p) => p.id));
+    const used = new Set<string>();
+    for (const [pid, m] of Object.entries(polygonMeta)) {
+      if (!live.has(pid) || pid === exceptId) continue;
+      const n = m.position?.trim();
+      if (n) used.add(n);
+    }
+    return used;
+  }
   // Just Lot Number + (read-only) Area — the "ID / Erf" field was dropped
   // per client req 2026-08-24 ("I think we don't need that part, lets just
   // use Lot Number").
@@ -1154,10 +1174,7 @@ export function CogoWorkspace({
     }
     // Duplicate plot number check
     if (position.trim()) {
-      const existingId = Object.entries(polygonMeta).find(
-        ([pid, m]) => m.position?.trim() === position.trim() && pid !== id
-      )?.[0];
-      if (existingId) {
+      if (usedPlotNumbers(id).has(position.trim())) {
         window.alert(`Plot number "${position.trim()}" is already used. Please enter a unique plot number.`);
         return;
       }
@@ -1456,8 +1473,7 @@ export function CogoWorkspace({
     }
     // Duplicate plot number check
     if (plotNumber) {
-      const alreadyUsed = Object.values(polygonMeta).some((m) => m.position?.trim() === plotNumber);
-      if (alreadyUsed) {
+      if (usedPlotNumbers().has(plotNumber)) {
         window.alert(`Plot number "${plotNumber}" is already used. Please enter a unique plot number.`);
         return;
       }
