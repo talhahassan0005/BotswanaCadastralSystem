@@ -66,6 +66,11 @@ export interface WorkingPlanMeta {
   gridSpacingM?: number;
   /** Paper size for print/PDF. Defaults to A4 portrait when absent. */
   paperSize?: "A4" | "A4L" | "A3" | "A3L";
+  /** Multiplier on BOTH the beacon circle radius and the beacon name font
+   *  size (client req 2026-11-13: "add option to reduce all beacon size and
+   *  name size"). Both already shrink automatically with beacon density;
+   *  this scales that result. 1 = unchanged. */
+  beaconScale?: number;
 }
 
 /** The sheet's coordinate grid exactly as drawn (sheet units, labels incl.
@@ -932,7 +937,8 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           req 2026-08-31) so a real multi-plot sheet's hundreds of shared
           corner beacons stay individually distinguishable. */}
       {(() => {
-      const beaconR = allPoints.length > 400 ? 1.4 : allPoints.length > 150 ? 2 : 2.8;
+      const bScale = meta.beaconScale ?? 1;
+      const beaconR = (allPoints.length > 400 ? 1.4 : allPoints.length > 150 ? 2 : 2.8) * bScale;
       // At real multi-plot density (client req 2026-08-31: "white dots ko
       // remove karo") hundreds of small hollow circles packed this tight
       // still read as visual noise/texture even shrunk — the polygon edges
@@ -945,7 +951,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       // labelOffsets scale (from the existing drag-to-resize handles) still
       // multiplies on top, so a label someone already resized by hand keeps
       // that correction relative to the new smaller base.
-      const baseFS = allPoints.length > 400 ? 4.5 : allPoints.length > 150 ? 6.5 : 10;
+      const baseFS = (allPoints.length > 400 ? 4.5 : allPoints.length > 150 ? 6.5 : 10) * bScale;
       return allPoints.map((p, i) => {
         const bx = fx(p.east, p.north), by = fy(p.east, p.north);
         const id = p.name || `#${i}`;

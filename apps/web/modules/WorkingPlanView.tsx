@@ -717,7 +717,7 @@ export function WorkingPlanView() {
     // each ring as a 36-point polygon around the beacon's live screen
     // position, radii matching the sheet's own beaconR/beaconR*2.4).
     if (doubleCircles.length) {
-      const beaconR = allBeacons.length > 400 ? 1.4 : allBeacons.length > 150 ? 2 : 2.8;
+      const beaconR = (allBeacons.length > 400 ? 1.4 : allBeacons.length > 150 ? 2 : 2.8) * (meta.beaconScale ?? 1);
       for (const p of allBeacons) {
         if (!p.name || !doubleCircles.includes(p.name)) continue;
         const c = t!.toScreenLive ? t!.toScreenLive(p.east, p.north) : t!.toScreen(p.east, p.north);
@@ -901,6 +901,35 @@ export function WorkingPlanView() {
               At 1:{meta.scale} the plot is larger than the sheet — use 1:{minScale} or larger.
             </p>
           )}
+          {/* Beacon size control (client req 2026-11-13: "add option to
+              reduce all beacon size and name size") — one slider drives both
+              the circle radius and the name font size on the sheet. */}
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Beacon &amp; name size</span>
+              <span className="text-xs tabular-nums text-slate-500">{Math.round((meta.beaconScale ?? 1) * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => setMeta((m) => ({ ...m, beaconScale: 1 }))}
+                className="ml-auto border border-gray-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+              >
+                Reset
+              </button>
+            </div>
+            <input
+              type="range"
+              min={40}
+              max={200}
+              step={5}
+              value={Math.round((meta.beaconScale ?? 1) * 100)}
+              onChange={(e) => setMeta((m) => ({ ...m, beaconScale: Number(e.target.value) / 100 }))}
+              className="w-full"
+            />
+          </div>
+          {/* "Observed from" sits above the grid-spacing buttons (client req
+              2026-11-13: "Move 'Yard' option a little bit up. i am failing to
+              click 100 & 200") — the input crowded the 100/200 buttons. */}
+          <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
           <div>
             <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
             <div className="flex gap-1">
@@ -916,7 +945,6 @@ export function WorkingPlanView() {
               ))}
             </div>
           </div>
-          <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
           <Field label="Checked from"><Input value={meta.checkedFrom} onChange={set("checkedFrom")} /></Field>
           {!gpCoordinateSystem && (
             <Field label="Coordinate system">
