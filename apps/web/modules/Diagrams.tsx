@@ -476,7 +476,34 @@ export function Diagrams() {
   // make all that text movable") — beacon description, locality, north
   // arrow, legal description, certificate lines, surveyor name.
   const [blockOffsets, setBlockOffsets] = useState<Record<string, BlockOffset>>(di.blockOffsets ?? {});
-  const setBlockOffset = (id: string, v: BlockOffset) => setBlockOffsets((m) => ({ ...m, [id]: v }));
+  /** Blocks that make up the sheet's written information — everything the
+   *  client circled as "all that information": the data table, beacon
+   *  description, locality heading, legal description, certificate and
+   *  surveyor name. The north arrow is deliberately NOT one of these; it
+   *  belongs beside the boundary, not with the text. */
+  const INFO_BLOCK_IDS = ["table", "beaconDesc", "locality", "legal", "cert", "surveyor"];
+  /** Drag the written information as one group (client req 2026-11-13:
+   *  "shift all that information as a block / group without shifting the
+   *  diagram / polygon ... move everything a bit upwards for the polygon to
+   *  fit nicely"). Moving each block one at a time to free space for the
+   *  figure was the only way before. Off by default, so a single block can
+   *  still be nudged on its own. */
+  const [moveInfoAsGroup, setMoveInfoAsGroup] = useState(false);
+  const setBlockOffset = (id: string, v: BlockOffset) =>
+    setBlockOffsets((m) => {
+      if (!moveInfoAsGroup || !INFO_BLOCK_IDS.includes(id)) return { ...m, [id]: v };
+      // Apply this drag step to every other information block, so they keep
+      // their relative positions (and any individual nudges already made).
+      const prev = m[id] ?? { dx: 0, dy: 0 };
+      const ddx = v.dx - prev.dx, ddy = v.dy - prev.dy;
+      const next: Record<string, BlockOffset> = { ...m, [id]: v };
+      for (const other of INFO_BLOCK_IDS) {
+        if (other === id) continue;
+        const o = m[other] ?? { dx: 0, dy: 0, scale: 1 };
+        next[other] = { ...o, dx: o.dx + ddx, dy: o.dy + ddy };
+      }
+      return next;
+    });
   // Per-point label drag offsets — same pattern as WorkingPlanView.tsx.
   const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number }>>(di.labelOffsets ?? {});
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
@@ -1825,6 +1852,32 @@ export function Diagrams() {
                         onClick={() => setMeta((m) => ({ ...m, beaconLabelScale: 1 }))}
                       >Reset</button>
                     </div>
+                  </Field>
+                  {/* Client req 2026-11-13: move the table, beacon
+                      description, legal block, certificate and surveyor name
+                      together, so the figure can be given room without
+                      repositioning each one. The boundary never moves —
+                      these are render-time offsets the layout doesn't read. */}
+                  <Field label="Move sheet text">
+                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={moveInfoAsGroup}
+                        onChange={(e) => setMoveInfoAsGroup(e.target.checked)}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                      Drag all text as one group (polygon stays put)
+                    </label>
+                    {blockOffsets && Object.keys(blockOffsets).length > 0 && (
+                      <button
+                        className="mt-1 text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                        onClick={() => setBlockOffsets((m) => {
+                          const next = { ...m };
+                          for (const id of INFO_BLOCK_IDS) delete next[id];
+                          return next;
+                        })}
+                      >Reset text positions</button>
+                    )}
                   </Field>
                   {/* Client req 2026-10-22, voice note "where do i change
                       paper size" + "sometimes points are too many and
