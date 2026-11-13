@@ -315,6 +315,10 @@ function OpenModal({
 }) {
   const [rows, setRows] = useState<ProjectRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Deleting a project is irreversible, so it is confirmed first (client req
+  // 2026-11-13: "when deleting a project, the sistem must ask if i am sure").
+  const [confirmDelete, setConfirmDelete] = useState<ProjectRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function refresh() {
     setError(null);
@@ -341,13 +345,52 @@ function OpenModal({
             <span className="text-xs text-slate-400">{new Date(r.updated_at).toLocaleDateString()}</span>
             <button
               className="text-xs text-red-500 hover:text-red-700"
-              onClick={async () => { await deleteProject(r.id); refresh(); }}
+              onClick={() => setConfirmDelete(r)}
             >
               delete
             </button>
           </div>
         ))}
       </div>
+
+      <Modal
+        open={!!confirmDelete}
+        onClose={() => { if (!deleting) setConfirmDelete(null); }}
+        title="Delete project"
+      >
+        <p className="text-sm text-slate-700">
+          Delete <span className="font-semibold">{confirmDelete?.name}</span>?
+        </p>
+        <p className="mt-1 text-sm text-slate-500">
+          This permanently removes the project and everything saved in it. It cannot be undone.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => setConfirmDelete(null)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={async () => {
+              if (!confirmDelete) return;
+              setDeleting(true);
+              const { error: delErr } = await deleteProject(confirmDelete.id);
+              setDeleting(false);
+              setConfirmDelete(null);
+              if (delErr) setError(delErr);
+              else refresh();
+            }}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete project"}
+          </button>
+        </div>
+      </Modal>
     </Modal>
   );
 }
