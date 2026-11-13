@@ -45,9 +45,9 @@ const DEFAULT_TO_BLOCK = "The Director\nDepartment of Surveys and Mapping\nP/Bag
 // scratch each time.
 const DEFAULT_METHOD_TEXT = `The survey was carried out by the use of [equipment, e.g. Leica GS-14] system.
 
-The survey was started on working station [WP]. This point was occupied by a HERE FIX method, observations to Stations ([tie stations]) were tied to this point (see working plan or field book). Thereafter, calibration was made using all the observed stations. The base stayed at working station [WP] for the first observation to the plot beacons. The base was then moved to Station [station], in order to carry out double polar observations to the beacons of the plots. The coordinates were computed by the use of the in-built Datum and Map software. This was obtained by matching the known local coordinates and those of WGS84.
+The survey was started on working station [WP]. This point was occupied by a HERE FIX method, observations to Reference Marks ([tie stations]) were tied to this point (see working plan or field book). Thereafter, calibration was made using all the observed Reference Marks. The base stayed at working station [WP] for the first observation to the plot beacons. The base was then moved to Station [station], in order to carry out double polar observations to the beacons of the plots. The coordinates were computed by the use of the in-built Datum and Map software. This was obtained by matching the known local coordinates and those of WGS84.
 
-The final Transformation parameters calculated using all Known Stations ([tie stations]) were then used to transform WGS84 coordinates to Local Grid. The transformation parameters are attached to the field book.
+The final Transformation parameters calculated using all Known Reference Marks ([tie stations]) were then used to transform WGS84 coordinates to Local Grid. The transformation parameters are attached to the field book.
 
 All double polar and checking data were within acceptable limits.`;
 
@@ -671,17 +671,21 @@ function SubmissionLetter({
   surveyor: string;
 }) {
   const toLines = toBlock.split("\n").filter(Boolean);
+  // Spacing is inline, not Tailwind's space-y-4 (client req 2026-11-13:
+  // "increase spacing") — the print popup doesn't load Tailwind's
+  // stylesheet, so the class did nothing there and the letter printed with
+  // every line crammed together. Same reason the checklist below is inline.
   return (
-    <div className="space-y-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px", lineHeight: 1.7 }}>
       <div>
         {toLines.map((line, i) => (
           <div key={i}>{i === 0 ? `To: ${line}` : line}</div>
         ))}
       </div>
       <div>Date {date}</div>
-      <p>Dear Sir/Madam:</p>
-      <p className="font-semibold text-slate-800">Re: SUBMISSION OF LOT {lotNumber.toUpperCase()}</p>
-      <p>
+      <p style={{ margin: 0 }}>Dear Sir/Madam:</p>
+      <p className="font-semibold text-slate-800" style={{ margin: 0 }}>Re: SUBMISSION OF LOT {lotNumber.toUpperCase()}</p>
+      <p style={{ margin: 0 }}>
         Herewith, please find enclosed, compilation Record in respect of Lot {lotNumber}
         {tribalArea ? ` in the ${tribalArea}` : ""}. The record consists of:
       </p>
@@ -689,12 +693,12 @@ function SubmissionLetter({
           down") — inline styles, not Tailwind classes, so the compact layout
           survives the print popup too, which doesn't load Tailwind's
           stylesheet (see printDoc() above). */}
-      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: "32px", rowGap: "4px" }}>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: "32px", rowGap: "10px" }}>
         {checklist.filter((c) => c.checked && c.text.trim()).map((c, i) => (
           <li key={i}>☑ {c.text}</li>
         ))}
       </ul>
-      <p>Yours Faithfully</p>
+      <p style={{ margin: 0 }}>Yours Faithfully</p>
       <div className="sign space-y-1 pt-8">
         <hr className="sep w-56 border-slate-300" />
         <div className="font-semibold text-slate-800">{surveyor}</div>
