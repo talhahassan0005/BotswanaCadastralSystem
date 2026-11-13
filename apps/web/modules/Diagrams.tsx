@@ -1764,7 +1764,13 @@ export function Diagrams() {
       </div>
       <p className="-mt-2 text-sm text-slate-500">{KINDS.find((k) => k.id === kind)?.blurb}</p>
 
-      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      {/* Three columns for the sheet kinds that have editing tools (client
+          req 2026-11-13: "put all new tools that i requested to be on the
+          right side ... Tools to appear on the right are editing tools:
+          Changing paper size, changing beacon size, joint parcels, add
+          text, Scale"). The left column keeps the sheet's written details;
+          the right column is everything that changes how it is drawn. */}
+      <div className={`grid gap-5 ${isLease || isBorehole ? "lg:grid-cols-[320px_1fr]" : "lg:grid-cols-[320px_1fr_260px]"}`}>
         <div className="space-y-4">
           {isLease ? (
             <Card title="Tribal Lease Details">
@@ -1831,74 +1837,6 @@ export function Diagrams() {
                   </Field>
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
-                  <Field label="Scale 1:N">
-                    <Input
-                      type="number"
-                      value={meta.scale}
-                      onChange={(v) => setMeta((m) => ({ ...m, scale: Number(v) || 0, scaleUserSet: true }))}
-                    />
-                  </Field>
-                  <Field label="Beacon label size">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range" min={0.4} max={2} step={0.05}
-                        value={meta.beaconLabelScale ?? 1}
-                        onChange={(e) => setMeta((m) => ({ ...m, beaconLabelScale: parseFloat(e.target.value) }))}
-                        className="flex-1"
-                      />
-                      <span className="text-xs w-10 text-right">{((meta.beaconLabelScale ?? 1) * 100).toFixed(0)}%</span>
-                      <button
-                        className="text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
-                        onClick={() => setMeta((m) => ({ ...m, beaconLabelScale: 1 }))}
-                      >Reset</button>
-                    </div>
-                  </Field>
-                  {/* Client req 2026-11-13: move the table, beacon
-                      description, legal block, certificate and surveyor name
-                      together, so the figure can be given room without
-                      repositioning each one. The boundary never moves —
-                      these are render-time offsets the layout doesn't read. */}
-                  <Field label="Move sheet text">
-                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={moveInfoAsGroup}
-                        onChange={(e) => setMoveInfoAsGroup(e.target.checked)}
-                        className="w-4 h-4 cursor-pointer"
-                      />
-                      Drag all text as one group (polygon stays put)
-                    </label>
-                    {blockOffsets && Object.keys(blockOffsets).length > 0 && (
-                      <button
-                        className="mt-1 text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
-                        onClick={() => setBlockOffsets((m) => {
-                          const next = { ...m };
-                          for (const id of INFO_BLOCK_IDS) delete next[id];
-                          return next;
-                        })}
-                      >Reset text positions</button>
-                    )}
-                  </Field>
-                  {/* Client req 2026-10-22, voice note "where do i change
-                      paper size" + "sometimes points are too many and
-                      everything do not fit in A4 page... now we will have
-                      to fit in A3 or A2": the whole template (table band,
-                      columns, fonts, spacing) scales up by the true A-series
-                      ratio on A3/A2, not just a bigger blank page around the
-                      same cramped A4 layout — see diagramLayout.ts's
-                      PAGE_SCALE. */}
-                  <Field label="Paper size">
-                    <Select
-                      value={meta.paperSize ?? "A4"}
-                      onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" || v === "A1" ? v : "A4") }))}
-                      options={[
-                        { value: "A4", label: "A4 (210 × 297mm)" },
-                        { value: "A3", label: "A3 landscape (420 × 297mm) — two A4 pages: diagram | table + details" },
-                        { value: "A2", label: "A2 landscape (594 × 420mm) — two A3 pages: diagram | table + details" },
-                        { value: "A1", label: "A1 landscape (841 × 594mm) — two A2 pages: diagram | table + details" },
-                      ]}
-                    />
-                  </Field>
                   {!isBorehole && (() => {
                     const allDesc = "ALL - 12mm Iron peg";
                     const lines = meta.beaconDescription.split(/\n/);
@@ -1945,42 +1883,6 @@ export function Diagrams() {
                   )}
                 </div>
               </Card>
-              {!isBorehole && (
-                <Card title="Adjoining Parcels">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant={drawingAnnotation ? "primary" : "ghost"}
-                      onClick={() => { setDrawingAnnotation((v) => !v); setPendingPoint(null); }}
-                    >
-                      {drawingAnnotation ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Draw Extension Line"}
-                    </Button>
-                    {selectedAnnotationId && (
-                      <Button variant="ghost" onClick={deleteSelectedAnnotation}>Delete Selected Line</Button>
-                    )}
-                  </div>
-                </Card>
-              )}
-              {!isBorehole && (
-                <Card title="Custom Text">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant={addingText ? "primary" : "ghost"}
-                      onClick={() => setAddingText((v) => !v)}
-                    >
-                      {addingText ? "Click where it should go…" : "Add Text"}
-                    </Button>
-                    {selectedTextId && texts.some((x) => x.id === selectedTextId) && (
-                      <Button variant="ghost" onClick={copySelectedText}>Copy Selected Text</Button>
-                    )}
-                    {selectedTextId && (
-                      <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
-                    )}
-                    {Object.keys(blockOffsets).length > 0 && (
-                      <Button variant="ghost" onClick={() => setBlockOffsets({})}>Reset moved text</Button>
-                    )}
-                  </div>
-                </Card>
-              )}
               <Card title="Registration">
                 <div className="space-y-3">
                   <Field label="D.S.M No."><Input value={meta.dsmNo} onChange={set("dsmNo")} /></Field>
@@ -2189,6 +2091,105 @@ export function Diagrams() {
             )}
           </p>
         </Card>
+
+        {/* ---------- Editing tools (right of the sheet) ---------- */}
+        {!isLease && !isBorehole && (
+          <div className="space-y-4">
+            <Card title="Editing Tools">
+              <div className="space-y-3">
+                <Field label="Paper size">
+                  <Select
+                    value={meta.paperSize ?? "A4"}
+                    onChange={(v) => setMeta((m) => ({ ...m, paperSize: (v === "A3" || v === "A2" || v === "A1" ? v : "A4") }))}
+                    options={[
+                      { value: "A4", label: "A4 (210 × 297mm)" },
+                      { value: "A3", label: "A3 landscape — diagram | table" },
+                      { value: "A2", label: "A2 landscape — diagram | table" },
+                      { value: "A1", label: "A1 landscape — diagram | table" },
+                    ]}
+                  />
+                </Field>
+                <Field label="Scale 1:N">
+                  <Input
+                    type="number"
+                    value={meta.scale}
+                    onChange={(v) => setMeta((m) => ({ ...m, scale: Number(v) || 0, scaleUserSet: true }))}
+                  />
+                </Field>
+                <Field label="Beacon label size">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range" min={0.4} max={2} step={0.05}
+                      value={meta.beaconLabelScale ?? 1}
+                      onChange={(e) => setMeta((m) => ({ ...m, beaconLabelScale: parseFloat(e.target.value) }))}
+                      className="flex-1"
+                    />
+                    <span className="text-xs w-10 text-right">{((meta.beaconLabelScale ?? 1) * 100).toFixed(0)}%</span>
+                    <button
+                      className="text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      onClick={() => setMeta((m) => ({ ...m, beaconLabelScale: 1 }))}
+                    >Reset</button>
+                  </div>
+                </Field>
+                <Field label="Shift frame">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={moveInfoAsGroup}
+                      onChange={(e) => setMoveInfoAsGroup(e.target.checked)}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                    Drag all text as one group (polygon stays put)
+                  </label>
+                  {Object.keys(blockOffsets).length > 0 && (
+                    <button
+                      className="mt-1 text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      onClick={() => setBlockOffsets((m) => {
+                        const next = { ...m };
+                        for (const id of INFO_BLOCK_IDS) delete next[id];
+                        return next;
+                      })}
+                    >Reset text positions</button>
+                  )}
+                </Field>
+              </div>
+            </Card>
+
+            <Card title="Joint Parcels">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={drawingAnnotation ? "primary" : "ghost"}
+                  onClick={() => { setDrawingAnnotation((v) => !v); setPendingPoint(null); }}
+                >
+                  {drawingAnnotation ? (pendingPoint ? "Click the end point…" : "Click the start point…") : "Draw Extension Line"}
+                </Button>
+                {selectedAnnotationId && (
+                  <Button variant="ghost" onClick={deleteSelectedAnnotation}>Delete Selected Line</Button>
+                )}
+              </div>
+            </Card>
+
+            <Card title="Custom Text">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={addingText ? "primary" : "ghost"}
+                  onClick={() => setAddingText((v) => !v)}
+                >
+                  {addingText ? "Click where it should go…" : "Add Text"}
+                </Button>
+                {selectedTextId && texts.some((x) => x.id === selectedTextId) && (
+                  <Button variant="ghost" onClick={copySelectedText}>Copy Selected Text</Button>
+                )}
+                {selectedTextId && (
+                  <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
+                )}
+                {Object.keys(blockOffsets).length > 0 && (
+                  <Button variant="ghost" onClick={() => setBlockOffsets({})}>Reset moved text</Button>
+                )}
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );
