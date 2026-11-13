@@ -18,7 +18,7 @@ E,93298.45,2465297.17,212.13.20,128.22
 F,93230.08,2465188.69,182.04.30,668.48`;
 
 export function DataImport() {
-  const { importResult, setImportResult, setActiveTab, config } = useStore();
+  const { importResult, setImportResult, setActiveTab, config, setConfig } = useStore();
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -300,6 +300,29 @@ export function DataImport() {
                         <option value="ref">Ref mark</option>
                         <option value="trig">Trig Station</option>
                       </select>
+                      {/* Which reference mark the survey was checked from
+                          (client req 2026-11-13: "Lets Specify it here").
+                          Shown on ref-mark rows only; picking one here is
+                          what prints in the Working Plan's "...and checked
+                          from Y" line. Click again to clear. */}
+                      {r.pointType === "ref" && r.beaconId && (
+                        <label
+                          className="mt-1 flex cursor-pointer items-center gap-1 text-[11px] text-slate-500"
+                          title="Use this reference mark in the Working Plan's “checked from” line"
+                        >
+                          <input
+                            type="radio"
+                            name="checkFromBeacon"
+                            checked={config.checkFromBeacon === String(r.beaconId)}
+                            onChange={() => setConfig({ checkFromBeacon: String(r.beaconId) })}
+                            onClick={() => {
+                              if (config.checkFromBeacon === String(r.beaconId)) setConfig({ checkFromBeacon: undefined });
+                            }}
+                            className="h-3 w-3 cursor-pointer"
+                          />
+                          Checked from
+                        </label>
+                      )}
                     </td>
                     <td className="px-4 py-3"><EditableCell rowIndex={r.index} field="east" display={fmtCoordCell(r.east)} /></td>
                     <td className="px-4 py-3"><EditableCell rowIndex={r.index} field="north" display={fmtCoordCell(r.north)} /></td>

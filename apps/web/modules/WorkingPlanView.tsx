@@ -285,7 +285,10 @@ export function WorkingPlanView() {
   // first working point; Checked from = 2nd ref mark (the station the base
   // moved to, same as the Method's [station]; 1st if only one). Only replaces an
   // empty field or one still on the old fixed default, never a user edit.
-  const firstRefName = refMarks[1]?.name || refMarks[0]?.name || "";
+  // A mark ticked "Checked from" on the Data Import table wins outright
+  // (client req 2026-11-13). Without one this keeps the old guess — the 2nd
+  // imported ref mark, or the only one.
+  const firstRefName = config.checkFromBeacon || refMarks[1]?.name || refMarks[0]?.name || "";
   const firstWpName = workingStations[0]?.name || "";
   useEffect(() => {
     setMeta((m) => {
@@ -301,6 +304,10 @@ export function WorkingPlanView() {
         if (firstWpName && (!m.observedFrom?.trim() || m.observedFrom === "WP1")) next.observedFrom = firstWpName;
         if (firstRefName && (!m.checkedFrom?.trim() || m.checkedFrom === "TLO8")) next.checkedFrom = firstRefName;
       }
+      // Ticking a mark on the import table is an explicit choice, so it
+      // overrides both branches above — the rules there only fill a blank
+      // or a stale default and would otherwise ignore the new pick.
+      if (config.checkFromBeacon) next.checkedFrom = config.checkFromBeacon;
       if (firstWpName && (!m.workingStationDescription?.trim() || m.workingStationDescription === "WP1: 12mm Iron Peg")) next.workingStationDescription = `${firstWpName}: 12mm Iron Peg`;
       return next.observedFrom === m.observedFrom && next.checkedFrom === m.checkedFrom && next.workingStationDescription === m.workingStationDescription ? m : next;
     });

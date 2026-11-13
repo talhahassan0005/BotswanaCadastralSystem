@@ -39,6 +39,12 @@ export interface ProjectConfig {
   /** True once the user has clicked "Run COGO Computation" in this project —
    *  only then do later imports auto-compute (client req 2026-10-22). */
   cogoRunOnce?: boolean;
+  /** Beacon id of the reference mark the survey was checked from — chosen
+   *  on the Data Import table (client req 2026-11-13: "Lets Specify it
+   *  here"). Drives the Working Plan's "...and checked from Y" line, which
+   *  otherwise just took whichever ref mark happened to be imported second
+   *  and had to be retyped by hand to change. */
+  checkFromBeacon?: string;
   /** Opt in to putting a saved COGO result back on the canvas when the
    *  project is reopened (client req 2026-11-13: "the system should not
    *  automatically run Cogo computation. I should do it manually unless i
