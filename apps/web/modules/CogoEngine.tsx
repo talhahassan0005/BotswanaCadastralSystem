@@ -322,11 +322,30 @@ export function CogoEngine() {
               </div>
             </Field>
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex items-center gap-2">
             <Button onClick={run} disabled={running} loading={running}>
               {running ? "Computing…" : "Run COGO Computation"}
             </Button>
+            {/* Always available, not only once a result exists (client req
+                2026-11-13: "there should also be a clear button") — clears
+                the result and the boundary it drew on the canvas. */}
+            <Button variant="ghost" onClick={() => { setCogoResult(null); setError(null); }} disabled={running}>
+              Clear
+            </Button>
           </div>
+          {/* Computation is manual by default; this opts into putting a saved
+              result back on the canvas when the project is reopened (client
+              req 2026-11-13: "I should do it manually unless i ask it to do
+              automatically"). */}
+          <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={!!config.cogoAutoRun}
+              onChange={(e) => setConfig({ cogoAutoRun: e.target.checked })}
+              className="h-4 w-4 cursor-pointer"
+            />
+            Restore the computed result automatically when this project is reopened
+          </label>
           {coordinateOnly && (
             <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
               The figure is built from the <strong>plot beacons</strong> only

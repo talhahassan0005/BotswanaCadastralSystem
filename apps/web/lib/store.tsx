@@ -39,6 +39,13 @@ export interface ProjectConfig {
   /** True once the user has clicked "Run COGO Computation" in this project —
    *  only then do later imports auto-compute (client req 2026-10-22). */
   cogoRunOnce?: boolean;
+  /** Opt in to putting a saved COGO result back on the canvas when the
+   *  project is reopened (client req 2026-11-13: "the system should not
+   *  automatically run Cogo computation. I should do it manually unless i
+   *  ask it to do automatically"). Off by default — reopening a project
+   *  used to redraw the computed boundary with nobody pressing Run, which
+   *  reads as the system computing by itself. */
+  cogoAutoRun?: boolean;
   /** Shared display-only rotation (degrees, 0-360; client req 2026-08-28) —
    *  a pure view rotation applied consistently across COGO, Diagrams,
    *  Working Plan and General Plan, like an image editor's rotate control.
@@ -257,9 +264,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   const hydrate = (s: ProjectState) => {
-    setConfigState({ ...DEFAULT_CONFIG, ...(s.config ?? {}) });
+    const cfg = { ...DEFAULT_CONFIG, ...(s.config ?? {}) };
+    setConfigState(cfg);
     setImportResult(s.importResult ?? null);
-    setCogoResult(s.cogoResult ?? null);
+    // Only restore a computed result when automatic runs are switched on —
+    // see Config.cogoAutoRun (client req 2026-11-13).
+    setCogoResult(cfg.cogoAutoRun ? (s.cogoResult ?? null) : null);
     setValidation(s.validation ?? null);
     setTopoResult(s.topoResult ?? null);
     setVolumeResult(s.volumeResult ?? null);
@@ -329,9 +339,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const raw = window.localStorage.getItem(AUTOSAVE_KEY);
       if (!raw) return;
       const saved: AutosavedSession = JSON.parse(raw);
-      setConfigState({ ...DEFAULT_CONFIG, ...(saved.config ?? {}) });
+      const savedCfg = { ...DEFAULT_CONFIG, ...(saved.config ?? {}) };
+      setConfigState(savedCfg);
       setImportResult(saved.importResult ?? null);
-      setCogoResult(saved.cogoResult ?? null);
+      // Only restore a computed result when automatic runs are switched on —
+      // see Config.cogoAutoRun (client req 2026-11-13).
+      setCogoResult(savedCfg.cogoAutoRun ? (saved.cogoResult ?? null) : null);
       setValidation(saved.validation ?? null);
       setTopoResult(saved.topoResult ?? null);
       setVolumeResult(saved.volumeResult ?? null);
