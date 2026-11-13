@@ -902,68 +902,10 @@ export function WorkingPlanView() {
           <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
             <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
           </Field>
-          <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
-          <Field label="Paper size">
-            <select
-              value={meta.paperSize ?? "A4"}
-              onChange={(e) => setMeta((m) => ({ ...m, paperSize: e.target.value as WorkingPlanMeta["paperSize"] }))}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-            >
-              <option value="A4">A4 portrait (210 × 297 mm)</option>
-              <option value="A4L">A4 landscape (297 × 210 mm)</option>
-              <option value="A3">A3 portrait (297 × 420 mm)</option>
-              <option value="A3L">A3 landscape (420 × 297 mm)</option>
-            </select>
-          </Field>
-          {minScale != null && meta.scale > 0 && meta.scale < minScale && (
-            <p className="-mt-1 text-xs text-amber-600 md:col-span-2">
-              At 1:{meta.scale} the plot is larger than the sheet — use 1:{minScale} or larger.
-            </p>
-          )}
-          {/* Beacon size control (client req 2026-11-13: "add option to
-              reduce all beacon size and name size") — one slider drives both
-              the circle radius and the name font size on the sheet. */}
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500">Beacon &amp; name size</span>
-              <span className="text-xs tabular-nums text-slate-500">{Math.round((meta.beaconScale ?? 1) * 100)}%</span>
-              <button
-                type="button"
-                onClick={() => setMeta((m) => ({ ...m, beaconScale: 1 }))}
-                className="ml-auto border border-gray-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                Reset
-              </button>
-            </div>
-            <input
-              type="range"
-              min={40}
-              max={200}
-              step={5}
-              value={Math.round((meta.beaconScale ?? 1) * 100)}
-              onChange={(e) => setMeta((m) => ({ ...m, beaconScale: Number(e.target.value) / 100 }))}
-              className="w-full"
-            />
-          </div>
           {/* "Observed from" sits above the grid-spacing buttons (client req
               2026-11-13: "Move 'Yard' option a little bit up. i am failing to
               click 100 & 200") — the input crowded the 100/200 buttons. */}
           <Field label="Observed from"><Input value={meta.observedFrom} onChange={set("observedFrom")} /></Field>
-          <div>
-            <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
-            <div className="flex gap-1">
-              {[25, 50, 100, 200].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
-                  className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
           {/* Pick the reference mark that prints in "All beacons observed
               from X and checked from Y" (client req 2026-11-13: "I am having
               a challenge to specify the reference mark that will appear
@@ -1159,6 +1101,76 @@ export function WorkingPlanView() {
         </div>
         </div>
       </Card>
+      </div>
+
+      {/* ---------- Editing tools, right of the sheet ---------- */}
+      {/* Client req 2026-11-13: "tools to appear on the right in working
+          plan are also editing tools: Portrate/Land Scape, Grid marks,
+          Scale, beacon name size, add text, polygon extension". The left
+          sidebar keeps the sheet's written details; everything that
+          changes how it is drawn lives here. */}
+      <div className="flex flex-col gap-4 lg:w-64 lg:flex-shrink-0">
+        <Card title="Editing Tools">
+          <div className="flex flex-col gap-3">
+            <Field label="Paper size">
+              <select
+                value={meta.paperSize ?? "A4"}
+                onChange={(e) => setMeta((m) => ({ ...m, paperSize: e.target.value as WorkingPlanMeta["paperSize"] }))}
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value="A4">A4 portrait (210 × 297 mm)</option>
+                <option value="A4L">A4 landscape (297 × 210 mm)</option>
+                <option value="A3">A3 portrait (297 × 420 mm)</option>
+                <option value="A3L">A3 landscape (420 × 297 mm)</option>
+              </select>
+            </Field>
+            <Field label="Scale 1:"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+            {minScale != null && meta.scale > 0 && meta.scale < minScale && (
+              <p className="-mt-1 text-xs text-amber-600">
+                At 1:{meta.scale} the plot is larger than the sheet — use 1:{minScale} or larger.
+              </p>
+            )}
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-500">Grid mark spacing (metres)</div>
+              <div className="flex gap-1">
+                {[25, 50, 100, 200].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setMeta((m) => ({ ...m, gridSpacingM: n }))}
+                    className={`px-3 py-1.5 text-sm font-medium ${meta.gridSpacingM === n ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* One slider drives both the beacon circle radius and the
+                beacon name font size (client req 2026-11-13). */}
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-500">Beacon &amp; name size</span>
+                <span className="text-xs tabular-nums text-slate-500">{Math.round((meta.beaconScale ?? 1) * 100)}%</span>
+                <button
+                  type="button"
+                  onClick={() => setMeta((m) => ({ ...m, beaconScale: 1 }))}
+                  className="ml-auto border border-gray-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Reset
+                </button>
+              </div>
+              <input
+                type="range"
+                min={40}
+                max={200}
+                step={5}
+                value={Math.round((meta.beaconScale ?? 1) * 100)}
+                onChange={(e) => setMeta((m) => ({ ...m, beaconScale: Number(e.target.value) / 100 }))}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );
