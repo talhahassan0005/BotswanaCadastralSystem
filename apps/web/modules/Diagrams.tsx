@@ -194,6 +194,11 @@ export function Diagrams() {
     blockOffsets?: Record<string, BlockOffset>;
     labelOffsets?: Record<string, { dx: number; dy: number }>;
     lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }> }>;
+    /** Which lot the saved annotations/texts/offsets belong to. Without it
+     *  a reopened project looked like a lot SWITCH the moment the lot id
+     *  resolved, and the switch handler replaced the restored edits with an
+     *  empty set (client req 2026-11-13: "today i cant find my edits"). */
+    activeLotKey?: string;
   };
   // Per-lot edit stash — each lot (identified by its key, see activeLotKey
   // below) gets its own independent set of annotations, texts and
@@ -523,7 +528,11 @@ export function Diagrams() {
   // The key that identifies the currently-loaded lot — COGO lots get a
   // "cogo:" prefix so they never collide with Parcels-tab parcel IDs.
   const activeLotKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
-  const prevLotKeyRef = useRef(activeLotKey); // initialised to the key at mount
+  // Seeded from the SAVED key, not the key at mount. Both lot ids start null,
+  // so the mount key is always "__default__"; without the saved value the
+  // first resolution of the real lot id read as a switch and wiped the
+  // restored edits (client req 2026-11-13: "today i cant find my edits").
+  const prevLotKeyRef = useRef(di.activeLotKey ?? activeLotKey);
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
@@ -1023,8 +1032,8 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, lotEdits: lotEditsRef.current });
-  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, liveCoordinateSystem, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, lotEdits: lotEditsRef.current, activeLotKey });
+  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, liveCoordinateSystem, activeLotKey, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
