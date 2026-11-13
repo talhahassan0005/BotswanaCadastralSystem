@@ -955,7 +955,12 @@ export function Diagrams() {
     setMeta((m) => ({
       ...m,
       ...(p?.number ? { lotName: formatLotName(p.number) } : {}),
-      scale: suggested,
+      // A scale the surveyor typed is kept (client req 2026-11-13: "after
+      // editing the scale, the system shall adopt the new scale, even after
+      // closing and re opening it"). This effect also fires on mount, once
+      // the restored parcel id resolves, and used to overwrite the saved
+      // scale with a fresh suggestion every time the project was reopened.
+      ...(m.scaleUserSet ? {} : { scale: suggested }),
       beaconDescription: defaultBeaconDescription(),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1791,7 +1796,13 @@ export function Diagrams() {
                   </Field>
                   <Field label="Land surveyor"><Input value={meta.surveyor} onChange={set("surveyor")} /></Field>
                   <Field label="Date"><Input value={meta.surveyedDate} onChange={set("surveyedDate")} /></Field>
-                  <Field label="Scale 1:N"><Input type="number" value={meta.scale} onChange={set("scale")} /></Field>
+                  <Field label="Scale 1:N">
+                    <Input
+                      type="number"
+                      value={meta.scale}
+                      onChange={(v) => setMeta((m) => ({ ...m, scale: Number(v) || 0, scaleUserSet: true }))}
+                    />
+                  </Field>
                   <Field label="Beacon label size">
                     <div className="flex items-center gap-2">
                       <input

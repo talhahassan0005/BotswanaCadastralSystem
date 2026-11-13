@@ -71,6 +71,10 @@ export interface DiagramMeta {
   certLine?: string;         // optional manual override for the certification line
   situateLine?: string;      // optional manual override for the "Situate at…" line
   beaconLabelScale?: number; // multiplier for figure beacon label font size (default 1.0)
+  /** Set once the surveyor types a scale. The lot-pick pre-fill then stops
+   *  replacing it with a suggested one, so an edited scale survives closing
+   *  and reopening the project (client req 2026-11-13). */
+  scaleUserSet?: boolean;
   // Client req 2026-10-22, WhatsApp voice note "where do i change paper
   // size" + "sometimes points are too many and everything do not fit in A4
   // page... now we will have to fit in A3 or A2": the frame, the top
