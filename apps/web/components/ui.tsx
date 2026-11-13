@@ -131,6 +131,7 @@ export function Input({
   onBlur,
   onKeyDown,
   readOnly,
+  list,
 }: {
   value: string | number;
   onChange: (v: string) => void;
@@ -141,6 +142,9 @@ export function Input({
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   /** Shown but not editable (greyed) — for a value that comes from somewhere else. */
   readOnly?: boolean;
+  /** id of a <datalist> to suggest values from. The field stays free text —
+   *  the list is only a shortcut for values the caller already knows. */
+  list?: string;
 }) {
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
@@ -156,6 +160,7 @@ export function Input({
         onKeyDown={onKeyDown}
         onChange={(e) => onChange(e.target.value)}
         readOnly={readOnly}
+        list={list}
         className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand ${
           readOnly ? "bg-slate-50 text-slate-500" : "bg-white"
         } ${isPassword ? "pr-10" : ""}`}

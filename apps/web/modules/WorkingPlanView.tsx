@@ -957,7 +957,19 @@ export function WorkingPlanView() {
               ))}
             </div>
           </div>
-          <Field label="Checked from"><Input value={meta.checkedFrom} onChange={set("checkedFrom")} /></Field>
+          {/* Pick the reference mark that prints in "All beacons observed
+              from X and checked from Y" (client req 2026-11-13: "I am having
+              a challenge to specify the reference mark that will appear
+              here"). It defaults to the 2nd imported ref mark and was plain
+              free text, so the name had to be typed exactly. Still free
+              text — the list is only a shortcut. */}
+          <Field label="Checked from">
+            <Input value={meta.checkedFrom} onChange={set("checkedFrom")} list="wp-refmarks" />
+            <datalist id="wp-refmarks">
+              {refMarks.map((r) => r.name).filter((n): n is string => !!n)
+                .map((n) => <option key={n} value={n} />)}
+            </datalist>
+          </Field>
           {!gpCoordinateSystem && (
             <Field label="Coordinate system">
               <Input value={meta.coordinateSystem} onChange={set("coordinateSystem")} />
