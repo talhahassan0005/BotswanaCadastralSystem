@@ -667,7 +667,19 @@ export function WorkingPlanView() {
   // (grid lines, inset box) the way Diagrams.tsx's more mature export does.
   function downloadDxf() {
     const t = transformRef.current;
-    if (!t) return;
+    // WorkingPlan only publishes its transform once it has actually drawn a
+    // sheet; it returns early for an empty/degenerate plan (<3 points) and
+    // for a single plot over its point limit. Without this the button just
+    // did nothing at all — no file, no message — which reads as DXF export
+    // being unavailable (client req 2026-11-13).
+    if (!t) {
+      window.alert(
+        "Nothing to export yet — the working plan hasn't been drawn.\n\n" +
+        "This needs at least 3 beacons, and a single plot has to stay under the point limit " +
+        "(split a large job into numbered plots with Add plot)."
+      );
+      return;
+    }
     const a = t.toWorld(0, 0), b = t.toWorld(1, 0);
     const metresPerUnit = Math.hypot(b.east - a.east, b.north - a.north) || 1;
     const notes: ImportedDrawing["texts"] = [];

@@ -461,6 +461,13 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       {/* TOP DATA TABLE — Open-at-the-bottom, per the reference PDF's actual
           line geometry (client req 2026-08-22, Part 27). */}
       <g transform={SPLIT ? `translate(${DETAILS_DX} 0)` : undefined}>
+        {/* The whole data table is one draggable block (client req
+            2026-11-13: "Make it be possible to shift the whole title block
+            without shifting the polygon"). Like every other block this is a
+            render-time translate only — the figure is laid out from
+            computeDiagramLayout and never reads this offset, so moving the
+            table leaves the boundary exactly where it is. */}
+        {block("table", tx, ty, (
         <g>{/* inner group for table lines + rows */}
         {/* vertical dividers */}
         {/* Row-label / distance-value split within SIDES METRES (client req
@@ -529,7 +536,8 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             </g>
           );
         })}
-        </g>{/* end inner table group */}
+        </g>
+        ))}{/* end inner table group */}
 
       {SPLIT && (
         <>

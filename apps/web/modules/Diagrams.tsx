@@ -1222,6 +1222,12 @@ export function Diagrams() {
       pageDX = SPLIT ? DETAILS_DX : 0;
 
       // ===================== Top data table (Part 27: open-bottom) =====================
+      // The table is draggable on the sheet (client req 2026-11-13), so the
+      // export has to carry the same offset or a moved table would come out
+      // of the DXF still in its original place. Covers the same rows the
+      // SVG's "table" block wraps — the SPLIT D.S.M header below stays out
+      // of it, exactly as it does there.
+      applyBlock("table", tx, ty);
       line(xSideVal, dataTop, xSideVal, tableBottom);
       line(xMetR, ty, xMetR, tableBottom);
       line(xDirR, ty, xDirR, tableBottom);
@@ -1261,6 +1267,8 @@ export function Diagrams() {
           text(xX + 8, y, tCoord(p.north), dataFS);
         }
       }
+
+      applyBlock(null);
 
       // For SPLIT A3: D.S.M box header is on the right page (table page).
       // Table is already at pageDX = SPLIT ? DETAILS_DX : 0 (set above).
