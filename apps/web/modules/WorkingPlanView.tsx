@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
-import { WorkingPlan, workingPlanMinScale, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
+import { WorkingPlan, workingPlanMinScale, DOUBLE_CIRCLE_R, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { bareLotNumber, dedupePoints } from "@/lib/plots";
@@ -744,13 +744,13 @@ export function WorkingPlanView() {
     // Double Circle Tool rings (client req 2026-10-22, moved here from
     // Diagrams — same approach as that module's own DXF export: approximate
     // each ring as a 36-point polygon around the beacon's live screen
-    // position, radii matching the sheet's own beaconR/beaconR*2.4).
+    // position, radii matching the sheet's own beaconR/DOUBLE_CIRCLE_R).
     if (doubleCircles.length) {
       const beaconR = (allBeacons.length > 400 ? 1.4 : allBeacons.length > 150 ? 2 : 2.8) * (meta.beaconScale ?? 1);
       for (const p of allBeacons) {
         if (!p.name || !doubleCircles.includes(p.name)) continue;
         const c = t!.toScreenLive ? t!.toScreenLive(p.east, p.north) : t!.toScreen(p.east, p.north);
-        for (const r of [beaconR, beaconR * 2.4]) {
+        for (const r of [beaconR, beaconR * DOUBLE_CIRCLE_R]) {
           const pts = Array.from({ length: 36 }, (_, k) => {
             const ang = (k / 36) * 2 * Math.PI;
             const q = t!.toWorld(c.x + r * Math.cos(ang), c.y + r * Math.sin(ang));
@@ -1029,18 +1029,6 @@ export function WorkingPlanView() {
         </div>
       </Card>
 
-      {/* Double Circle Tool (client req 2026-10-22 — moved here from
-          Diagrams: "this should only be at working plan window"). */}
-      <Card title="Double Circles">
-        <div className="flex items-center gap-2">
-          <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
-            {doubleCircleMode ? "Click beacons… (click here when done)" : "Double Circle Tool"}
-          </Button>
-          {doubleCircles.length > 0 && (
-            <Button variant="ghost" onClick={() => setDoubleCircles([])}>Clear all ({doubleCircles.length})</Button>
-          )}
-        </div>
-      </Card>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -1198,6 +1186,20 @@ export function WorkingPlanView() {
                 className="w-full"
               />
             </div>
+          </div>
+        </Card>
+
+        {/* Double Circle Tool — an editing tool, so it sits with the rest
+            of them beside the sheet (client req 2026-11-14: "move to the
+            other side"). Was in the left sidebar under the exports. */}
+        <Card title="Double Circles">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
+              {doubleCircleMode ? "Click beacons… (click here when done)" : "Double Circle Tool"}
+            </Button>
+            {doubleCircles.length > 0 && (
+              <Button variant="ghost" onClick={() => setDoubleCircles([])}>Clear all ({doubleCircles.length})</Button>
+            )}
           </div>
         </Card>
       </div>

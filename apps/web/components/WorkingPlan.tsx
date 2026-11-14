@@ -277,6 +277,12 @@ export function workingPlanMinScale(points: { east: number; north: number }[], t
 const GRID_BLUE = "#2563eb";
 const INSET_GREEN = "#16a34a";
 const REF_RED = "#dc2626";
+/** Outer ring of a block-corner double circle, as a multiple of the beacon
+ *  radius. Was 2.4, which drew a ring far wider than the beacon it marks
+ *  (client req 2026-11-14: "reduce size for double circle. it should not be
+ *  too big"). Kept in one place because the DXF export draws the same ring
+ *  and the two must match. */
+export const DOUBLE_CIRCLE_R = 1.7;
 
 // ---------------------------------------------------------------------------
 // Component — Botswana Working Plan as a scalable portrait SVG.
@@ -1001,7 +1007,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 convention. Click the inner circle above to toggle. */}
             {showDot && (isBlockCorner || isDoubleCircled) && (
               <circle
-                cx={bx} cy={by} r={beaconR * 2.4}
+                cx={bx} cy={by} r={beaconR * DOUBLE_CIRCLE_R}
                 fill="none" stroke="black" strokeWidth={Math.max(0.6, beaconR * 0.4)}
                 style={{ pointerEvents: "none" }}
               />
