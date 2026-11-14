@@ -205,6 +205,16 @@ interface Props {
    *  was hit and where on screen it was, so the caller can open an editor
    *  right there. Off for every other template, so a surveyed diagram's
    *  table stays strictly computed. */
+  /** Lets the figure — the polygon, its beacon dots and their names, and
+   *  everything else drawn in survey space with it — be dragged around the
+   *  sheet as one piece, leaving the frame, table and legal text where they
+   *  are (client req 2026-11-14: "Lets try moving the polygon with its
+   *  beacon names instead"). Deliberately an explicit mode: while it is on
+   *  the figure swallows the pointer, so the notes and extension lines
+   *  inside it cannot be selected, and while it is off nothing about the
+   *  existing interactions changes. The offset itself lives in
+   *  blockOffsets.figure and applies either way. */
+  figureMovable?: boolean;
   editableSides?: boolean;
   onSideCellClick?: (index: number, field: "distance" | "bearing", clientX: number, clientY: number) => void;
   /** Row indexes that currently carry a hand-typed value — faintly shaded so
@@ -220,10 +230,15 @@ const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#
 export type BlockOffset = { dx: number; dy: number; scale?: number };
 
 function MovableBlock({
-  id, ox, oy, off, interactive, selected, onSelect, onChange, children,
+  id, ox, oy, off, interactive, selected, onSelect, onChange, children, allowScale = true,
 }: {
   id: string; ox: number; oy: number; off?: BlockOffset; interactive: boolean; selected: boolean;
   onSelect: (id: string) => void; onChange?: (id: string, v: BlockOffset) => void; children: ReactNode;
+  /** The +/- buttons resize the block with a render-time scale. That is fine
+   *  for a text block, but the figure is drawn at the sheet's printed scale
+   *  (1:N, measurable with a scale rule), so resizing it would quietly make
+   *  the printed scale a lie. The figure passes false. */
+  allowScale?: boolean;
 }) {
   const gRef = useRef<SVGGElement>(null);
   const [bb, setBb] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -271,7 +286,7 @@ function MovableBlock({
       {interactive && selected && bb && (
         <g data-noexport="1">
           <rect x={bb.x - pad} y={bb.y - pad} width={bb.w + 2 * pad} height={bb.h + 2 * pad} fill="none" stroke="#dc2626" strokeWidth={2 / s} strokeDasharray={`${8 / s} ${6 / s}`} style={{ pointerEvents: "none" }} />
-          {([["+", 0.1], ["−", -0.1]] as const).map(([label, delta], i) => (
+          {allowScale && ([["+", 0.1], ["−", -0.1]] as const).map(([label, delta], i) => (
             <g
               key={label}
               style={{ cursor: "pointer" }}
@@ -300,7 +315,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
     labelOffsets, selectedLabel, onLabelClick, onLabelPointerDown, onLabelPointerMove, onLabelPointerUp,
-    editableSides, onSideCellClick, editedSideCells,
+    figureMovable, editableSides, onSideCellClick, editedSideCells,
   },
   ref
 ) {
@@ -349,6 +364,11 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // keeps the JSX below completely unchanged.
   const L = computeDiagramLayout(meta, rawPoints, rawSides, extraPoints ?? [], blockOffsets?.legal?.dy ?? 0);
   const blocksLive = !!onBlockOffset && !drawMode;
+  // How far the figure has been dragged from where the layout centred it.
+  // Kept in blockOffsets like every other movable piece, so it saves, loads
+  // and resets through the machinery that already exists.
+  const figDx = blockOffsets?.figure?.dx ?? 0;
+  const figDy = blockOffsets?.figure?.dy ?? 0;
   const block = (id: string, ox: number, oy: number, children: ReactNode) => (
     <MovableBlock id={id} ox={ox} oy={oy} off={blockOffsets?.[id]} interactive={blocksLive} selected={selBlock === id} onSelect={setSelBlock} onChange={onBlockOffset}>
       {children}
@@ -429,9 +449,14 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   onTransform?.({
     toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
     toWorld: (x, y) => ({ east: (x - offX) / sc + minE, north: maxN - (y - offY) / sc }),
-    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
-    toWorldLive: (xs, y) => {
-      const x = xs;
+    // The figure is drawn inside a translate (see blockOffsets.figure), so
+    // the LIVE pair — the one pointer input and the DXF export both go
+    // through — has to carry that translate too. toScreen/toWorld stay pure
+    // sheet geometry: the frame, table and legal text do not move with the
+    // figure, and the DXF writes them with the untranslated pair.
+    toScreenLive: (east, north) => ({ x: fx(east, north) + figDx, y: fy(east, north) + figDy }),
+    toWorldLive: (xs, ys) => {
+      const x = xs - figDx, y = ys - figDy;
       // Undo rotate (about the figure pivot), then the flip, then toX/toY.
       const dx = x - figPivotX, dy = y - figPivotY;
       let x0 = rotation ? figPivotX + dx * figCosR + dy * figSinR : x;
@@ -615,7 +640,10 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
             down — the sketch itself does not move, it is simply allowed to
             draw into the space the text vacated. */}
         <clipPath id="figClip">
-          <rect x={0} y={0} width={VB_W} height={figClipBottom + 20} />
+          {/* Grows with a downward drag of the figure as well as of the
+              legal block — without this, dragging the polygon down would
+              just slice it off at the old clip line. */}
+          <rect x={0} y={0} width={VB_W} height={figClipBottom + 20 + Math.max(0, figDy)} />
         </clipPath>
       </defs>
       {block("beaconDesc", tx + 4, bdHeadingY, (
@@ -750,6 +778,20 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
 
       {/* ===================== FIGURE ===================== */}
       <g clipPath="url(#figClip)">
+      {/* The whole figure — polygon, beacon dots and their names, reference
+          marks, extension lines and the notes placed on it — is one movable
+          piece (client req 2026-11-14: "Lets try moving the polygon with its
+          beacon names instead"). Everything in here is drawn in survey
+          space, so it all has to travel together or the sketch would come
+          apart. Like every other block this is a render-time translate: the
+          beacon coordinates, the tabulated values and the printed scale are
+          untouched, only where the sketch sits on the paper changes. */}
+      <MovableBlock
+        id="figure" ox={offX} oy={offY} off={blockOffsets?.figure}
+        interactive={blocksLive && !!figureMovable}
+        selected={selBlock === "figure"} onSelect={setSelBlock} onChange={onBlockOffset}
+        allowScale={false}
+      >
       {parcels && parcels.length > 0 ? (
         parcels.map((pc, i) => {
           const ring = pc.points.map((p) => `${fx(p.east, p.north)},${fy(p.east, p.north)}`).join(" ");
@@ -961,6 +1003,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         </g>
       ))}
 
+      </MovableBlock>
       </g>{/* end figClip */}
 
       {/* ===================== RIGHT PAGE group 2: legal + cert + annex ===================== */}

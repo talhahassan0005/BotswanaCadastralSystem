@@ -591,6 +591,11 @@ export function Diagrams() {
    *  figure was the only way before. Off by default, so a single block can
    *  still be nudged on its own. */
   const [moveInfoAsGroup, setMoveInfoAsGroup] = useState(false);
+  // Drag the sketch itself instead of the text around it (client req
+  // 2026-11-14). An explicit mode, like "Drag all text as one group": while
+  // it is on the figure takes the pointer, so the notes and extension lines
+  // drawn on it can't be picked up by accident.
+  const [movePolygon, setMovePolygon] = useState(false);
   const setBlockOffset = (id: string, v: BlockOffset) =>
     setBlockOffsets((m) => {
       if (!moveInfoAsGroup || !INFO_BLOCK_IDS.includes(id)) return { ...m, [id]: v };
@@ -2052,6 +2057,7 @@ export function Diagrams() {
                 points={points}
                 sides={sides}
                 extraPoints={extraPoints}
+                figureMovable={movePolygon}
                 editableSides={sidesEditable}
                 onSideCellClick={openSidePrompt}
                 editedSideCells={editedSideCells}
@@ -2321,6 +2327,27 @@ export function Diagrams() {
                     >Reset text positions</button>
                   )}
                 </Field>
+                <Field label="Move polygon">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={movePolygon}
+                      onChange={(e) => setMovePolygon(e.target.checked)}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                    Drag the polygon with its beacon names (frame and table stay put)
+                  </label>
+                  {blockOffsets.figure && (
+                    <button
+                      className="mt-1 text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
+                      onClick={() => setBlockOffsets((m) => {
+                        const next = { ...m };
+                        delete next.figure;
+                        return next;
+                      })}
+                    >Reset polygon position</button>
+                  )}
+                </Field>
               </div>
             </Card>
 
@@ -2403,8 +2430,15 @@ export function Diagrams() {
                 {selectedTextId && (
                   <Button variant="ghost" onClick={deleteSelectedText}>Delete Selected Text</Button>
                 )}
-                {Object.keys(blockOffsets).length > 0 && (
-                  <Button variant="ghost" onClick={() => setBlockOffsets({})}>Reset moved text</Button>
+                {Object.keys(blockOffsets).some((k) => k !== "figure") && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setBlockOffsets((m) => {
+                      const next: Record<string, BlockOffset> = {};
+                      if (m.figure) next.figure = m.figure;
+                      return next;
+                    })}
+                  >Reset moved text</Button>
                 )}
               </div>
             </Card>
