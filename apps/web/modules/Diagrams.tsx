@@ -360,6 +360,39 @@ export function Diagrams() {
       bearing_dms: s.bearing_dms,
     }));
   }, [points, baseSides]);
+  // Whether this template's table may be typed over at all, plus which
+  // cells already hold a hand-typed value (for the faint shading).
+  const sidesEditable = kind === "framed" || kind === "compiled";
+  const editedSideCells = useMemo(() => {
+    const distance = new Set<number>(), bearing = new Set<number>();
+    for (const [k, v] of Object.entries(sideEdits)) {
+      const i = Number(k);
+      if (!Number.isInteger(i)) continue;
+      if ((v.distance ?? "").trim()) distance.add(i);
+      if ((v.bearing_dms ?? "").trim()) bearing.add(i);
+    }
+    return { distance, bearing };
+  }, [sideEdits]);
+  /** Write one cell's override, dropping the row entirely once both of its
+   *  cells are empty again so a cleared row leaves nothing in the saved
+   *  project and falls straight back to the computed value. */
+  const setSideEdit = (index: number, field: "distance" | "bearing", raw: string) =>
+    setSideEdits((m) => {
+      const key = String(index);
+      const prop = field === "distance" ? "distance" : "bearing_dms";
+      const next = { ...m, [key]: { ...(m[key] ?? {}), [prop]: raw } };
+      const row = next[key];
+      if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim()) delete next[key];
+      return next;
+    });
+  const openSidePrompt = (index: number, field: "distance" | "bearing", clientX: number, clientY: number) => {
+    const e = sideEdits[String(index)] ?? {};
+    setSidePrompt({
+      index, field,
+      value: (field === "distance" ? e.distance : e.bearing_dms) ?? "",
+      sx: clientX, sy: clientY,
+    });
+  };
   // ===================== Part 37: automatic neighbour marks =====
   // When several plots are computed together in one COGO layout and the
   // diagram is generated for one of them: a subdivision lot shows each
@@ -602,6 +635,12 @@ export function Diagrams() {
   const [addingText, setAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<{ id: string | null; x: number; y: number; value: string; angle: number } | null>(null);
+  // Which SIDES/DIRECTIONS cell is being typed into, and where on screen the
+  // editor should sit (client req 2026-11-14 — the surveyor clicks the value
+  // in the table on the sheet itself and types over it).
+  const [sidePrompt, setSidePrompt] = useState<
+    { index: number; field: "distance" | "bearing"; value: string; sx: number; sy: number } | null
+  >(null);
   // Interactive text rotation via the selected text's rotate handle (client
   // req 2026-10-20): angle follows the pointer around the text's anchor.
   const [rotatingText, setRotatingText] = useState<{ id: string; anchor: { x: number; y: number }; startPointerDeg: number; origAngle: number } | null>(null);
@@ -2013,6 +2052,9 @@ export function Diagrams() {
                 points={points}
                 sides={sides}
                 extraPoints={extraPoints}
+                editableSides={sidesEditable}
+                onSideCellClick={openSidePrompt}
+                editedSideCells={editedSideCells}
                 manualAnnotations={[...annotations, ...autoShared.annotations]}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}
@@ -2101,6 +2143,53 @@ export function Diagrams() {
                   />
                 </label>
                 <button type="button" onClick={applyAnnotationReadout} className="w-full rounded bg-brand px-1.5 py-1 font-semibold text-white">Apply</button>
+              </div>
+            );
+          })()}
+          {/* Type-over editor for one SIDES/DIRECTIONS cell (client req
+              2026-11-14). Positioned at the click, the same fixed-overlay
+              approach the custom-text prompt uses. The placeholder is the
+              computed value, so emptying the box and saving puts the cell
+              back on the computed number. */}
+          {sidePrompt && (() => {
+            const row = sideRows[sidePrompt.index];
+            if (!row) return null;
+            const isDist = sidePrompt.field === "distance";
+            const computed = isDist ? tDist(row.distance) : toDotted(row.bearing_dms);
+            const close = () => setSidePrompt(null);
+            const commit = () => { setSideEdit(sidePrompt.index, sidePrompt.field, sidePrompt.value); close(); };
+            return (
+              <div
+                className="fixed z-20 w-56 rounded border border-brand bg-white p-2 text-xs shadow-md"
+                style={{ left: Math.min(sidePrompt.sx + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240), top: sidePrompt.sy + 12 }}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">
+                    {row.label} — {isDist ? "Distance (metres)" : "Direction"}
+                  </span>
+                  <button type="button" onClick={close} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                </div>
+                <input
+                  autoFocus
+                  value={sidePrompt.value}
+                  onChange={(ev) => setSidePrompt((g) => (g ? { ...g, value: ev.target.value } : g))}
+                  onKeyDown={(ev) => { if (ev.key === "Enter") commit(); if (ev.key === "Escape") close(); }}
+                  placeholder={computed}
+                  className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1 tabular-nums"
+                />
+                <p className="mb-1.5 text-[10px] leading-snug text-slate-500">
+                  {isDist ? "Computed: " : "Computed: "}{computed}
+                  {isDist ? " — type the record value, or leave empty to keep the computed one."
+                          : " — type as 344.26.40, or leave empty to keep the computed one."}
+                </p>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={commit} className="flex-1 rounded bg-brand px-1.5 py-1 font-semibold text-white">Save</button>
+                  <button
+                    type="button"
+                    onClick={() => { setSideEdit(sidePrompt.index, sidePrompt.field, ""); close(); }}
+                    className="rounded border border-slate-200 px-1.5 py-1 text-slate-600 hover:bg-slate-50"
+                  >Reset</button>
+                </div>
               </div>
             );
           })()}
@@ -2239,15 +2328,16 @@ export function Diagrams() {
                 for the two templates that are transcribed from an existing
                 approved record. A surveyed diagram's table must keep coming
                 from the survey it was computed from. */}
-            {(kind === "framed" || kind === "compiled") && (
+            {sidesEditable && (
               <Card title="Sides & Directions">
                 {sideRows.length === 0 ? (
                   <p className="text-xs text-slate-500">Pick a lot first — the sides are listed once there is a figure.</p>
                 ) : (
                   <div className="space-y-2">
                     <p className="text-[11px] leading-snug text-slate-500">
-                      Type a value to override what the table prints. Empty a box to go back
-                      to the computed value. The polygon is never redrawn from these.
+                      Click a value in the table on the sheet to type over it, or use the
+                      boxes here. Empty a box to go back to the computed value. The polygon
+                      is never redrawn from these.
                     </p>
                     <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-400">
                       <span className="w-7 shrink-0">Side</span>
@@ -2255,17 +2345,8 @@ export function Diagrams() {
                       <span className="flex-1 min-w-0">Direction</span>
                     </div>
                     <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
-                      {sideRows.map((r) => {
+                      {sideRows.map((r, i) => {
                         const e = sideEdits[r.key] ?? {};
-                        const set = (patch: { distance?: string; bearing_dms?: string }) =>
-                          setSideEdits((m) => {
-                            const next = { ...m, [r.key]: { ...(m[r.key] ?? {}), ...patch } };
-                            const row = next[r.key];
-                            // Drop the entry entirely once both boxes are empty, so a
-                            // cleared row leaves nothing behind in the saved project.
-                            if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim()) delete next[r.key];
-                            return next;
-                          });
                         const box = "min-w-0 flex-1 rounded border px-1 py-0.5 text-[11px] tabular-nums outline-none focus:border-slate-400";
                         return (
                           <div key={r.key} className="flex items-center gap-1">
@@ -2274,13 +2355,13 @@ export function Diagrams() {
                               className={`${box} ${(e.distance ?? "").trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
                               value={e.distance ?? ""}
                               placeholder={tDist(r.distance)}
-                              onChange={(ev) => set({ distance: ev.target.value })}
+                              onChange={(ev) => setSideEdit(i, "distance", ev.target.value)}
                             />
                             <input
                               className={`${box} ${(e.bearing_dms ?? "").trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
                               value={e.bearing_dms ?? ""}
                               placeholder={toDotted(r.bearing_dms)}
-                              onChange={(ev) => set({ bearing_dms: ev.target.value })}
+                              onChange={(ev) => setSideEdit(i, "bearing", ev.target.value)}
                             />
                           </div>
                         );

@@ -196,6 +196,20 @@ interface Props {
   onLabelPointerDown?: (name: string, e: PointerEvent<SVGElement>) => void;
   onLabelPointerMove?: (name: string, e: PointerEvent<SVGElement>) => void;
   onLabelPointerUp?: (e: PointerEvent<SVGElement>) => void;
+  /** Framed/compiled sheets are transcribed from an already-approved record,
+   *  so their tabulated SIDES (METRES) and DIRECTIONS values are typed by
+   *  hand on the sheet itself (client req 2026-11-14: "Under frame and
+   *  compilation, the system shall allow manually editing of the distance
+   *  and Direction"). When set, each of those two cells gets an invisible
+   *  hit area that reports a click back with the row index, which column
+   *  was hit and where on screen it was, so the caller can open an editor
+   *  right there. Off for every other template, so a surveyed diagram's
+   *  table stays strictly computed. */
+  editableSides?: boolean;
+  onSideCellClick?: (index: number, field: "distance" | "bearing", clientX: number, clientY: number) => void;
+  /** Row indexes that currently carry a hand-typed value — faintly shaded so
+   *  the surveyor can see at a glance which numbers are no longer computed. */
+  editedSideCells?: { distance: Set<number>; bearing: Set<number> };
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -286,6 +300,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
     labelOffsets, selectedLabel, onLabelClick, onLabelPointerDown, onLabelPointerMove, onLabelPointerUp,
+    editableSides, onSideCellClick, editedSideCells,
   },
   ref
 ) {
@@ -524,6 +539,45 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                   <text x={tx + 10} y={y}>{sideLabel(s.from, s.to)}</text>
                   <text x={xMetR - 8} y={y} textAnchor="end">{tDist(s.distance)}</text>
                   <text x={xDir + 12} y={y}>{toDotted(s.bearing_dms)}</text>
+                  {/* Hand-editable SIDES/DIRECTIONS cells (client req
+                      2026-11-14). The hit area sits ON TOP of the value so a
+                      plain click lands on it, and is painted with an almost
+                      invisible wash rather than a border; it also carries
+                      data-noexport so the print and PDF/SVG clones drop it
+                      entirely and the shading can never reach a lodged
+                      sheet. The shading only darkens once a cell actually
+                      holds a typed value. Suppressed
+                      while a draw tool is armed so clicking to place a note
+                      or an extension line still reaches the canvas.
+                      The pointerdown MUST be swallowed: this table is inside
+                      a MovableBlock, whose own pointerdown calls
+                      setPointerCapture, and a captured pointer sends the
+                      following click to the capturing <g> instead of to this
+                      rect — so without this the cell could never be clicked
+                      at all, it would just start dragging the block. Same
+                      reason MovableBlock's own +/- buttons do it. */}
+                  {editableSides && !drawMode && (
+                    <>
+                      <rect
+                        data-noexport="1"
+                        x={xSideVal} y={dataTop + i * rowH} width={Math.max(0, xMetR - xSideVal)} height={rowH}
+                        fill={editedSideCells?.distance.has(i) ? "#000" : "#fff"}
+                        fillOpacity={editedSideCells?.distance.has(i) ? 0.06 : 0.001}
+                        style={{ cursor: "text" }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onSideCellClick?.(i, "distance", e.clientX, e.clientY); }}
+                      />
+                      <rect
+                        data-noexport="1"
+                        x={xDir} y={dataTop + i * rowH} width={Math.max(0, xDirR - xDir)} height={rowH}
+                        fill={editedSideCells?.bearing.has(i) ? "#000" : "#fff"}
+                        fillOpacity={editedSideCells?.bearing.has(i) ? 0.06 : 0.001}
+                        style={{ cursor: "text" }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onSideCellClick?.(i, "bearing", e.clientX, e.clientY); }}
+                      />
+                    </>
+                  )}
                 </>
               )}
               {p && (
