@@ -18,13 +18,27 @@ import {
   type ManualText,
   type BlockOffset,
 } from "@/components/SgDiagram";
-import { computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
+import { boundaryLetter, computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
 import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { fitFontSize } from "@/lib/wrapSvgText";
+
+/** Hand-typed overrides for the SIDES (METRES) and DIRECTIONS columns of
+ *  the top table (client req 2026-11-14: "Under frame and compilation, the
+ *  system shall allow manually editing of the distance and Direction").
+ *  A framed/compiled diagram is transcribed from an already-approved
+ *  record, so its tabulated values have to be typeable by hand instead of
+ *  only ever coming from the computed geometry.
+ *  Keyed by boundary-side index (the same index the sheet letters A, B,
+ *  C...). Both fields are stored as the raw typed string so a half-typed
+ *  number like "27." doesn't fight the input; an absent, empty or
+ *  unparseable field falls straight back to the computed value.
+ *  These feed the TABLE ONLY — the polygon is still drawn from the beacon
+ *  coordinates, exactly as before. */
+type SideEdits = Record<string, { distance?: string; bearing_dms?: string }>;
 
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
@@ -193,7 +207,8 @@ export function Diagrams() {
     texts?: ManualText[];
     blockOffsets?: Record<string, BlockOffset>;
     labelOffsets?: Record<string, { dx: number; dy: number }>;
-    lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }> }>;
+    sideEdits?: SideEdits;
+    lotEdits?: Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }>; sideEdits?: SideEdits }>;
     /** Which lot the saved annotations/texts/offsets belong to. Without it
      *  a reopened project looked like a lot SWITCH the moment the lot id
      *  resolved, and the switch handler replaced the restored edits with an
@@ -208,7 +223,11 @@ export function Diagrams() {
   // it survives project saves and reloads.
   // `lotEditsRef` is a ref (not state) so we can read the latest stash
   // synchronously inside the lot-switch effect without stale closure issues.
-  const lotEditsRef = useRef<Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }> }>>(di.lotEdits ?? {});
+  const lotEditsRef = useRef<Record<string, { annotations: ManualAnnotation[]; texts: ManualText[]; blockOffsets: Record<string, BlockOffset>; labelOffsets?: Record<string, { dx: number; dy: number }>; sideEdits?: SideEdits }>>(di.lotEdits ?? {});
+  // Declared up here (not with the other edit state further down) because
+  // the `sides` memo below reads it — a const can't be read before its own
+  // declaration is evaluated.
+  const [sideEdits, setSideEdits] = useState<SideEdits>(di.sideEdits ?? {});
   const [kind, setKind] = useState<DiagramKind>(di.kind ?? "surveyed");
 
   // `closed`/`kind` are applied at render time, not stored in the form state.
@@ -286,7 +305,10 @@ export function Diagrams() {
   // residual is only bounded to (-45,45], not guaranteed small, so tying
   // the arrow to it could swing it visibly sideways for some layouts).
   const northArrowRotationDeg = 0;
-  const sides = useMemo(
+  // The computed sides, straight off the COGO legs — what the table shows
+  // when nothing has been overridden by hand, and what the override boxes
+  // show as their placeholder.
+  const baseSides = useMemo(
     () =>
       (fig?.legs ?? []).map((l) => ({
         from: l.from,
@@ -296,6 +318,48 @@ export function Diagrams() {
       })),
     [fig]
   );
+  // Hand-typed overrides applied on top (see SideEdits). Done here, at the
+  // single place the sides are produced, so the SVG sheet and the DXF
+  // export both print the same values without either of them knowing that
+  // an override exists. Geometry is untouched: nothing downstream draws
+  // the figure from `distance`/`bearing_dms` — they only ever reach the
+  // SIDES/DIRECTIONS columns of the top table.
+  const sides = useMemo(
+    () =>
+      baseSides.map((s, i) => {
+        const e = sideEdits[String(i)];
+        if (!e) return s;
+        const dRaw = (e.distance ?? "").trim();
+        const d = dRaw === "" ? NaN : Number(dRaw);
+        const b = (e.bearing_dms ?? "").trim();
+        return {
+          ...s,
+          distance: Number.isFinite(d) ? d : s.distance,
+          bearing_dms: b === "" ? s.bearing_dms : b,
+        };
+      }),
+    [baseSides, sideEdits]
+  );
+  // One row per boundary side for the override editor, labelled exactly as
+  // the printed table labels it. computeDiagramLayout() drops a repeated
+  // closing point (and its degenerate zero-length side) before lettering,
+  // so the editor has to drop it the same way or its labels would drift
+  // out of step with the sheet's.
+  const sideRows = useMemo(() => {
+    const DUP_TOL = 0.01; // metres — same tolerance computeDiagramLayout uses
+    const hasDup =
+      points.length > 1 &&
+      Math.abs(points[0].east - points[points.length - 1].east) < DUP_TOL &&
+      Math.abs(points[0].north - points[points.length - 1].north) < DUP_TOL;
+    const nPts = (hasDup ? points.slice(0, -1) : points).length;
+    const bSides = hasDup ? baseSides.slice(0, -1) : baseSides;
+    return bSides.map((s, i) => ({
+      key: String(i),
+      label: sideLabel(boundaryLetter(i), boundaryLetter(nPts > 0 ? (i + 1) % nPts : i + 1)),
+      distance: s.distance,
+      bearing_dms: s.bearing_dms,
+    }));
+  }, [points, baseSides]);
   // ===================== Part 37: automatic neighbour marks =====
   // When several plots are computed together in one COGO layout and the
   // diagram is generated for one of them: a subdivision lot shows each
@@ -521,10 +585,12 @@ export function Diagrams() {
   const textsRef = useRef(texts);
   const blockOffsetsRef = useRef(blockOffsets);
   const labelOffsetsRef = useRef(labelOffsets);
+  const sideEditsRef = useRef(sideEdits);
   annotationsRef.current = annotations;
   textsRef.current = texts;
   blockOffsetsRef.current = blockOffsets;
   labelOffsetsRef.current = labelOffsets;
+  sideEditsRef.current = sideEdits;
   // The key that identifies the currently-loaded lot — COGO lots get a
   // "cogo:" prefix so they never collide with Parcels-tab parcel IDs.
   const activeLotKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
@@ -1018,22 +1084,27 @@ export function Diagrams() {
         texts: textsRef.current,
         blockOffsets: blockOffsetsRef.current,
         labelOffsets: labelOffsetsRef.current,
+        sideEdits: sideEditsRef.current,
       },
     };
     // Load the new lot's saved edits, or start clean.
-    const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {}, labelOffsets: {} };
+    const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {}, labelOffsets: {}, sideEdits: {} };
     setAnnotations(entry.annotations);
     setTexts(entry.texts);
     setBlockOffsets(entry.blockOffsets);
     setLabelOffsets(entry.labelOffsets ?? {});
+    // A hand-typed distance/direction belongs to the lot it was typed for —
+    // carrying it across a lot switch would print one lot's record values
+    // against another lot's geometry.
+    setSideEdits(entry.sideEdits ?? {});
     prevLotKeyRef.current = newKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCogoLotNumber, selParcelId]);
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, lotEdits: lotEditsRef.current, activeLotKey });
-  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, liveCoordinateSystem, activeLotKey, setDiagramInput]);
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, lotEdits: lotEditsRef.current, activeLotKey });
+  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, liveCoordinateSystem, activeLotKey, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
@@ -2163,6 +2234,65 @@ export function Diagrams() {
                 </Field>
               </div>
             </Card>
+
+            {/* Hand-typed SIDES / DIRECTIONS (client req 2026-11-14) — only
+                for the two templates that are transcribed from an existing
+                approved record. A surveyed diagram's table must keep coming
+                from the survey it was computed from. */}
+            {(kind === "framed" || kind === "compiled") && (
+              <Card title="Sides & Directions">
+                {sideRows.length === 0 ? (
+                  <p className="text-xs text-slate-500">Pick a lot first — the sides are listed once there is a figure.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[11px] leading-snug text-slate-500">
+                      Type a value to override what the table prints. Empty a box to go back
+                      to the computed value. The polygon is never redrawn from these.
+                    </p>
+                    <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-400">
+                      <span className="w-7 shrink-0">Side</span>
+                      <span className="flex-1 min-w-0">Metres</span>
+                      <span className="flex-1 min-w-0">Direction</span>
+                    </div>
+                    <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
+                      {sideRows.map((r) => {
+                        const e = sideEdits[r.key] ?? {};
+                        const set = (patch: { distance?: string; bearing_dms?: string }) =>
+                          setSideEdits((m) => {
+                            const next = { ...m, [r.key]: { ...(m[r.key] ?? {}), ...patch } };
+                            const row = next[r.key];
+                            // Drop the entry entirely once both boxes are empty, so a
+                            // cleared row leaves nothing behind in the saved project.
+                            if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim()) delete next[r.key];
+                            return next;
+                          });
+                        const box = "min-w-0 flex-1 rounded border px-1 py-0.5 text-[11px] tabular-nums outline-none focus:border-slate-400";
+                        return (
+                          <div key={r.key} className="flex items-center gap-1">
+                            <span className="w-7 shrink-0 text-[11px] font-medium text-slate-600">{r.label}</span>
+                            <input
+                              className={`${box} ${(e.distance ?? "").trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
+                              value={e.distance ?? ""}
+                              placeholder={tDist(r.distance)}
+                              onChange={(ev) => set({ distance: ev.target.value })}
+                            />
+                            <input
+                              className={`${box} ${(e.bearing_dms ?? "").trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
+                              value={e.bearing_dms ?? ""}
+                              placeholder={toDotted(r.bearing_dms)}
+                              onChange={(ev) => set({ bearing_dms: ev.target.value })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {Object.keys(sideEdits).length > 0 && (
+                      <Button variant="ghost" onClick={() => setSideEdits({})}>Clear all overrides</Button>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
 
             <Card title="Joint Parcels">
               <div className="flex flex-wrap items-center gap-2">
