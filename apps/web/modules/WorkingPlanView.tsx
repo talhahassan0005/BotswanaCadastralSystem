@@ -338,6 +338,11 @@ export function WorkingPlanView() {
   // — reused from the Diagrams module's own field, same as lotName above,
   // not re-collected here.
   const diagramParent = ((diagramInput as { meta?: { parent?: string } } | null)?.meta?.parent) || "";
+  // "Tribal / administrative area" is entered once on the diagram and carried
+  // here rather than retyped (client req 2026-11-15: "automatically transfer
+  // this to working plan"). A General Plan still outranks it — that sheet is
+  // the authority on the area when there is one (client req 2026-09-21).
+  const diagramTribalArea = ((diagramInput as { meta?: { tribalArea?: string } } | null)?.meta?.tribalArea)?.trim() || "";
   // The diagram's "Situate ... in the ... District" line, word for word, so
   // this sheet's title repeats the diagram instead of the area being retyped
   // here (client req 2026-11-15). Built with the diagram's own helper, so the
@@ -395,7 +400,7 @@ export function WorkingPlanView() {
     titleName: diagramTitleName || undefined,
     dateOfSurvey: diagramSurveyDate || meta.dateOfSurvey,
     parent: diagramParent || meta.parent,
-    tribalArea: gpTribalArea || meta.tribalArea,
+    tribalArea: gpTribalArea || diagramTribalArea || meta.tribalArea,
     situateLine: diagramSituate || undefined,
     coordinateSystem: gpCoordinateSystem || meta.coordinateSystem,
     parentLotNumber: (meta.parentLotNumber ?? "").trim() || gpParentLot,
@@ -930,8 +935,12 @@ export function WorkingPlanView() {
           {!diagramLotName && (
             <Field label="Lot / parcel name"><Input value={meta.lotName} onChange={set("lotName")} /></Field>
           )}
-          <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : "Tribal territory / area"}>
-            <Input value={effectiveMeta.tribalArea} onChange={set("tribalArea")} readOnly={!!gpTribalArea} />
+          <Field label={gpTribalArea ? "Tribal territory / area (from General Plan)" : diagramTribalArea ? "Tribal territory / area (from Diagram)" : "Tribal territory / area"}>
+            <Input
+              value={effectiveMeta.tribalArea}
+              onChange={set("tribalArea")}
+              readOnly={!!gpTribalArea || !!diagramTribalArea}
+            />
           </Field>
           {/* "Observed from" sits above the grid-spacing buttons (client req
               2026-11-13: "Move 'Yard' option a little bit up. i am failing to
