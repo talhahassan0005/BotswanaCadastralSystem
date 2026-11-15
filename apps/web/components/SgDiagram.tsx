@@ -215,6 +215,13 @@ interface Props {
    *  existing interactions changes. The offset itself lives in
    *  blockOffsets.figure and applies either way. */
   figureMovable?: boolean;
+  /** "Shift frame": drags the whole sheet — frame border, table, beacon
+   *  description, locality, north arrow, legal block, certificate, surveyor
+   *  and the annexure table — as one piece, leaving the polygon exactly
+   *  where it is (client req 2026-11-15: "Shifting Frame should mean moving
+   *  everything other than polygon"). While on, the individual blocks stop
+   *  being separately draggable, so a drag anywhere moves the whole sheet. */
+  frameMovable?: boolean;
   editableSides?: boolean;
   onSideCellClick?: (index: number, field: "distance" | "bearing", clientX: number, clientY: number) => void;
   /** Row indexes that currently carry a hand-typed value — faintly shaded so
@@ -315,7 +322,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     manualTexts, selectedTextId, onTextClick, onTextDoubleClick, onTextHandleDown, onTextRotateDown, onTransform,
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
     labelOffsets, selectedLabel, onLabelClick, onLabelPointerDown, onLabelPointerMove, onLabelPointerUp,
-    figureMovable, editableSides, onSideCellClick, editedSideCells,
+    figureMovable, frameMovable, editableSides, onSideCellClick, editedSideCells,
   },
   ref
 ) {
@@ -363,7 +370,12 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
   // Destructuring back the same names the old inline computation used
   // keeps the JSX below completely unchanged.
   const L = computeDiagramLayout(meta, rawPoints, rawSides, extraPoints ?? [], blockOffsets?.legal?.dy ?? 0);
-  const blocksLive = !!onBlockOffset && !drawMode;
+  const blocksLive = !!onBlockOffset && !drawMode && !frameMovable;
+  // How far the whole sheet has been dragged. The figure cancels this out
+  // again (see the counter-translate below) so the polygon stays put while
+  // everything around it moves.
+  const sheetDx = blockOffsets?.sheet?.dx ?? 0;
+  const sheetDy = blockOffsets?.sheet?.dy ?? 0;
   // How far the figure has been dragged from where the layout centred it.
   // Kept in blockOffsets like every other movable piece, so it saves, loads
   // and resets through the machinery that already exists.
@@ -484,6 +496,18 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         cursor: drawMode ? "crosshair" : undefined,
       }}
     >
+      {/* Everything on the sheet is one movable piece (client req
+          2026-11-15: "Shifting Frame should mean moving everything other
+          than polygon"). The figure sits inside this group too, with a
+          counter-translate that cancels the shift, so the polygon holds its
+          place on the paper while the frame, table and all the text move
+          around it — which is the point: making room for the figure. */}
+      <MovableBlock
+        id="sheet" ox={FRAME_X} oy={FRAME_Y} off={blockOffsets?.sheet}
+        interactive={!!onBlockOffset && !drawMode && !!frameMovable}
+        selected={selBlock === "sheet"} onSelect={setSelBlock} onChange={onBlockOffset}
+        allowScale={false}
+      >
       {/* outer border — 160.4 x 272.9mm, positioned per Part 23's exact
           margins (24.8mm left/right, 12.2mm top, ~11.9mm bottom) */}
       {/* Split A3: left page frame for the figure; the right page's own
@@ -643,7 +667,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           {/* Grows with a downward drag of the figure as well as of the
               legal block — without this, dragging the polygon down would
               just slice it off at the old clip line. */}
-          <rect x={0} y={0} width={VB_W} height={figClipBottom + 20 + Math.max(0, figDy)} />
+          <rect x={-sheetDx} y={-sheetDy} width={VB_W} height={figClipBottom + 20 + Math.max(0, figDy)} />
         </clipPath>
       </defs>
       {block("beaconDesc", tx + 4, bdHeadingY, (
@@ -786,6 +810,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           apart. Like every other block this is a render-time translate: the
           beacon coordinates, the tabulated values and the printed scale are
           untouched, only where the sketch sits on the paper changes. */}
+      <g transform={sheetDx || sheetDy ? `translate(${-sheetDx} ${-sheetDy})` : undefined}>
       <MovableBlock
         id="figure" ox={offX} oy={offY} off={blockOffsets?.figure}
         interactive={blocksLive && !!figureMovable}
@@ -1004,6 +1029,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
       ))}
 
       </MovableBlock>
+      </g>{/* end figure counter-translate */}
       </g>{/* end figClip */}
 
       {/* ===================== RIGHT PAGE group 2: legal + cert + annex ===================== */}
@@ -1199,6 +1225,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         );
       })()}
       </g>
+      </MovableBlock>
     </svg>
   );
 });

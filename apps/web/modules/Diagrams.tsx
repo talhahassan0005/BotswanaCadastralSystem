@@ -583,7 +583,9 @@ export function Diagrams() {
    *  description, locality heading, legal description, certificate and
    *  surveyor name. The north arrow is deliberately NOT one of these; it
    *  belongs beside the boundary, not with the text. */
-  const INFO_BLOCK_IDS = ["table", "beaconDesc", "locality", "legal", "cert", "surveyor"];
+  // Blocks that belong to the sheet rather than to the figure. Clearing
+  // these is what "Reset text positions" means; blockOffsets.figure is the
+  // polygon's own position and is left alone (it has its own reset).
   /** Drag the written information as one group (client req 2026-11-13:
    *  "shift all that information as a block / group without shifting the
    *  diagram / polygon ... move everything a bit upwards for the polygon to
@@ -596,21 +598,13 @@ export function Diagrams() {
   // it is on the figure takes the pointer, so the notes and extension lines
   // drawn on it can't be picked up by accident.
   const [movePolygon, setMovePolygon] = useState(false);
+  // Moving the text blocks one at a time, each carrying the others along,
+  // was what "Shift frame" used to do — the client rejected it: it left the
+  // frame border, the north arrow, the D.S.M block and the annexure table
+  // behind. The mode now drags the whole sheet as a single piece (see
+  // SgDiagram's "sheet" block), so an individual drag is just that again.
   const setBlockOffset = (id: string, v: BlockOffset) =>
-    setBlockOffsets((m) => {
-      if (!moveInfoAsGroup || !INFO_BLOCK_IDS.includes(id)) return { ...m, [id]: v };
-      // Apply this drag step to every other information block, so they keep
-      // their relative positions (and any individual nudges already made).
-      const prev = m[id] ?? { dx: 0, dy: 0 };
-      const ddx = v.dx - prev.dx, ddy = v.dy - prev.dy;
-      const next: Record<string, BlockOffset> = { ...m, [id]: v };
-      for (const other of INFO_BLOCK_IDS) {
-        if (other === id) continue;
-        const o = m[other] ?? { dx: 0, dy: 0, scale: 1 };
-        next[other] = { ...o, dx: o.dx + ddx, dy: o.dy + ddy };
-      }
-      return next;
-    });
+    setBlockOffsets((m) => ({ ...m, [id]: v }));
   // Per-point label drag offsets — same pattern as WorkingPlanView.tsx.
   const [labelOffsets, setLabelOffsets] = useState<Record<string, { dx: number; dy: number }>>(di.labelOffsets ?? {});
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
@@ -1254,9 +1248,16 @@ export function Diagrams() {
       // Split A3: page-local sheet coordinates + the page's x offset (the
       // table page is at 0, the figure/details page at DETAILS_DX).
       let pageDX = 0;
+      // "Shift frame" moves the whole sheet and leaves the polygon alone, so
+      // every piece of sheet geometry written through w() carries the shift,
+      // while the figure (written through toExportWorld, which goes via
+      // toScreenLive) does not — the same split the preview draws.
+      const sheetDx = blockOffsets.sheet?.dx ?? 0, sheetDy = blockOffsets.sheet?.dy ?? 0;
       const w = (x: number, y: number) => {
         const b = blk;
-        return b ? t.toWorld(b.ox + (x - b.ox) * b.s + b.dx + pageDX, b.oy + (y - b.oy) * b.s + b.dy) : t.toWorld(x + pageDX, y);
+        return b
+          ? t.toWorld(b.ox + (x - b.ox) * b.s + b.dx + pageDX + sheetDx, b.oy + (y - b.oy) * b.s + b.dy + sheetDy)
+          : t.toWorld(x + pageDX + sheetDx, y + sheetDy);
       };
       const line = (x1: number, y1: number, x2: number, y2: number) => {
         const a = w(x1, y1), b = w(x2, y2);
@@ -2058,6 +2059,7 @@ export function Diagrams() {
                 sides={sides}
                 extraPoints={extraPoints}
                 figureMovable={movePolygon}
+                frameMovable={moveInfoAsGroup}
                 editableSides={sidesEditable}
                 onSideCellClick={openSidePrompt}
                 editedSideCells={editedSideCells}
@@ -2314,14 +2316,14 @@ export function Diagrams() {
                       onChange={(e) => setMoveInfoAsGroup(e.target.checked)}
                       className="w-4 h-4 cursor-pointer"
                     />
-                    Drag all text as one group (polygon stays put)
+                    Drag everything except the polygon — frame, table and all text
                   </label>
                   {Object.keys(blockOffsets).length > 0 && (
                     <button
                       className="mt-1 text-xs px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50"
                       onClick={() => setBlockOffsets((m) => {
-                        const next = { ...m };
-                        for (const id of INFO_BLOCK_IDS) delete next[id];
+                        const next: Record<string, BlockOffset> = {};
+                        if (m.figure) next.figure = m.figure;
                         return next;
                       })}
                     >Reset text positions</button>
