@@ -869,6 +869,15 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
           const off = (p.name ? labelOffsets?.[p.name] : undefined) ?? { dx: 0, dy: 0 };
           const lx = pl.labelX + off.dx, ly = pl.labelY + off.dy;
           const isSel = onLabelPointerDown && p.name === selectedLabel;
+          // The pointerdown on the label, the extension lines and the notes
+          // below is swallowed whether or not the item is selected. It has to
+          // be: the figure around them is a MovableBlock, and its pointerdown
+          // calls setPointerCapture, which sends the following click to the
+          // capturing group instead of to the item — so with "Move polygon"
+          // on, an unselected note could never be clicked to select it, and
+          // the drag ran away with the whole figure instead (client req
+          // 2026-11-15: "I had to de activate this"). Selecting, dragging,
+          // editing and deleting them all keep working with the mode on.
           return (
             <g key={`bcn${i}`}>
               <circle cx={bx} cy={by} r={bcnR} fill="white" stroke="black" strokeWidth={1.2} />
@@ -877,7 +886,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
                 <g
                   style={{ cursor: onLabelPointerDown ? (isSel ? "move" : "pointer") : "default" }}
                   onClick={() => onLabelClick?.(p.name!)}
-                  onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onLabelPointerDown(p.name!, e); } }}
+                  onPointerDown={(e) => { e.stopPropagation(); if (isSel) onLabelPointerDown(p.name!, e); }}
                   onPointerMove={(e) => onLabelPointerMove?.(p.name!, e)}
                   onPointerUp={(e) => onLabelPointerUp?.(e)}
                 >
@@ -924,7 +933,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               stroke="transparent"
               strokeWidth={16}
               onClick={(e) => { e.stopPropagation(); onAnnotationClick?.(a.id, e); }}
-              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onAnnotationHandleDown?.(a.id, "move", e); } }}
+              onPointerDown={(e) => { e.stopPropagation(); if (isSel) onAnnotationHandleDown?.(a.id, "move", e); }}
               style={{ cursor: isSel ? "move" : "pointer" }}
             />
             <line
@@ -982,7 +991,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
         const handlers = {
           onClick: (e: MouseEvent<SVGElement>) => { e.stopPropagation(); onTextClick?.(t.id, e); },
           onDoubleClick: (e: MouseEvent<SVGElement>) => { e.stopPropagation(); onTextDoubleClick?.(t.id); },
-          onPointerDown: (e: PointerEvent<SVGElement>) => { if (isSel) { e.stopPropagation(); onTextHandleDown?.(t.id, e); } },
+          onPointerDown: (e: PointerEvent<SVGElement>) => { e.stopPropagation(); if (isSel) onTextHandleDown?.(t.id, e); },
         };
         const rotHandle = { x: boxX + boxW + 18, y: boxY + boxH / 2 };
         return (
