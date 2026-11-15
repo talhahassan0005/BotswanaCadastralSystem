@@ -236,7 +236,7 @@ const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#
  *  the DXF export uses the same anchor so both land in the same place. */
 export type BlockOffset = { dx: number; dy: number; scale?: number };
 
-function MovableBlock({
+export function MovableBlock({
   id, ox, oy, off, interactive, selected, onSelect, onChange, children, allowScale = true,
 }: {
   id: string; ox: number; oy: number; off?: BlockOffset; interactive: boolean; selected: boolean;

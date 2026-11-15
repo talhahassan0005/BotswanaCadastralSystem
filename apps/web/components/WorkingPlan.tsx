@@ -1,7 +1,8 @@
 "use client";
 
-import { forwardRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import type { ManualAnnotation, ManualText, DiagramTransform } from "./SgDiagram";
+import { forwardRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { MovableBlock } from "./SgDiagram";
+import type { ManualAnnotation, ManualText, DiagramTransform, BlockOffset } from "./SgDiagram";
 import { bareLotNumber, dedupePoints, formatLotRange } from "@/lib/plots";
 import { declutterLabels } from "@/lib/labelLayout";
 
@@ -176,6 +177,19 @@ interface Props {
    *  as a unit; resize scales every line's font-size together), same
    *  dx/dy/scale shape as the other offset stores. */
   titleOffset?: { dx: number; dy: number; scale?: number };
+  /** "Shift frame" / "Move polygon", the same pair the Diagrams sheet has
+   *  (client req 2026-11-15: "also add this tools to working plan").
+   *  `sheetOffset` moves everything — border, title, grid, descriptions,
+   *  inset, certification — and the figure cancels it again so the polygon
+   *  holds its place; `figureOffset` moves the figure on its own. Each is
+   *  only grabbable while its own mode is on, so neither gets in the way of
+   *  selecting a beacon label, a note or the title block. */
+  sheetOffset?: BlockOffset;
+  figureOffset?: BlockOffset;
+  frameMovable?: boolean;
+  figureMovable?: boolean;
+  onSheetOffset?: (id: string, v: BlockOffset) => void;
+  onFigureOffset?: (id: string, v: BlockOffset) => void;
   titleSelected?: boolean;
   onTitleClick?: (e: ReactMouseEvent<SVGElement>) => void;
   onTitlePointerDown?: (e: ReactPointerEvent<SVGElement>) => void;
@@ -323,6 +337,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
     onTextPointerUp,
     onTextResize,
     titleOffset,
+    sheetOffset, figureOffset, frameMovable, figureMovable, onSheetOffset, onFigureOffset,
     titleSelected,
     onTitleClick,
     onTitlePointerDown,
@@ -337,6 +352,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   },
   ref
 ) {
+  // Which of the two movable groups is selected (shows its dashed outline).
+  // Local to the sheet: nothing outside needs to know, same as the Diagram's.
+  const [selBlock, setSelBlock] = useState<string | null>(null);
+  const figDx = figureOffset?.dx ?? 0, figDy = figureOffset?.dy ?? 0;
+  const sheetDx = sheetOffset?.dx ?? 0, sheetDy = sheetOffset?.dy ?? 0;
   // Paper size → viewBox dimensions. SVG_PPI is constant so the coordinate
   // scale (how much one SVG unit = in mm) stays identical regardless of
   // paper size — only the canvas gets bigger/wider for A3/landscape.
@@ -486,7 +506,11 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
   onTransform?.({
     toScreen: (east, north) => ({ x: toX(east), y: toY(north) }),
     toWorld: (x, y) => ({ east: (x - offX) / fit + minE, north: maxN - (y - offY) / fit }),
-    toScreenLive: (east, north) => ({ x: fx(east, north), y: fy(east, north) }),
+    // The figure is drawn inside a translate (figureOffset), so the LIVE
+    // projection — the one the DXF export goes through — carries it too.
+    // toScreen/toWorld stay pure sheet geometry: the border, title and
+    // descriptions do not travel with the figure.
+    toScreenLive: (east, north) => ({ x: fx(east, north) + figDx, y: fy(east, north) + figDy }),
   });
 
   const cE = avg(es), cN = avg(ns);
@@ -758,7 +782,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         transform={`translate(${dx},${dy})`}
         style={{ cursor: selected ? "move" : "pointer" }}
         onClick={(e) => { e.stopPropagation(); onTextClick?.(id, e); }}
-        onPointerDown={(e) => { if (selected) { e.stopPropagation(); onTextPointerDown?.(id, e); } }}
+        onPointerDown={(e) => { e.stopPropagation(); if (selected) onTextPointerDown?.(id, e); }}
         onPointerMove={(e) => onTextPointerMove?.(id, e)}
         onPointerUp={(e) => onTextPointerUp?.(id, e)}
       >
@@ -797,6 +821,17 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
       fill="#000"
       style={{ width: "100%", height: "auto", background: "white", color: "#000", fontFamily: "'Courier New', Courier, monospace" }}
     >
+      {/* Everything on the sheet is one movable piece ("Shift frame"). The
+          figure sits inside it with a counter-translate that cancels the
+          shift, so the polygon holds its place on the paper while the
+          border, title, grid labels and descriptions move around it —
+          making room for the figure, which is the point. */}
+      <MovableBlock
+        id="sheet" ox={6} oy={6} off={sheetOffset}
+        interactive={!!onSheetOffset && !!frameMovable}
+        selected={selBlock === "sheet"} onSelect={setSelBlock} onChange={onSheetOffset}
+        allowScale={false}
+      >
       {/* Outer border */}
       <rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} fill="white" stroke="black" strokeWidth={2} />
       <rect x={12} y={12} width={VB_W - 24} height={VB_H - 24} fill="none" stroke="black" strokeWidth={0.5} />
@@ -811,7 +846,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
             transform={`translate(${off.dx},${off.dy})`}
             style={{ cursor: titleSelected ? "move" : "pointer" }}
             onClick={(e) => { e.stopPropagation(); onTitleClick?.(e); }}
-            onPointerDown={(e) => { if (titleSelected) { e.stopPropagation(); onTitlePointerDown?.(e); } }}
+            onPointerDown={(e) => { e.stopPropagation(); if (titleSelected) onTitlePointerDown?.(e); }}
             onPointerMove={onTitlePointerMove}
             onPointerUp={onTitlePointerUp}
           >
@@ -914,7 +949,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
               fill={isSel ? "#dc2626" : undefined}
               style={{ cursor: isSel ? "move" : "pointer" }}
               onClick={(e) => { e.stopPropagation(); onTextClick?.(g.id, e); }}
-              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(g.id, e); } }}
+              onPointerDown={(e) => { e.stopPropagation(); if (isSel) onTextPointerDown?.(g.id, e); }}
               onPointerMove={(e) => onTextPointerMove?.(g.id, e)}
               onPointerUp={(e) => onTextPointerUp?.(g.id, e)}
             >
@@ -924,6 +959,17 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         })}
       </g>
 
+      {/* The figure and everything drawn in survey space with it — beacons,
+          their names, the extension lines and the notes from Diagrams — is
+          one movable piece ("Move polygon"). The counter-translate cancels
+          the sheet shift so the polygon stays put while the frame moves. */}
+      <g transform={sheetDx || sheetDy ? `translate(${-sheetDx} ${-sheetDy})` : undefined}>
+      <MovableBlock
+        id="figure" ox={offX} oy={offY} off={figureOffset}
+        interactive={!!onFigureOffset && !!figureMovable && !frameMovable}
+        selected={selBlock === "figure"} onSelect={setSelBlock} onChange={onFigureOffset}
+        allowScale={false}
+      >
       {/* ---------- Figure — one polygon per included plot ---------- */}
       {/* Line weight and label sizes shrink as more plots share one sheet
           (client req 2026-08-31: "lines ka font kam karo aur numbers ka
@@ -1043,7 +1089,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                 fill={isSel ? "#dc2626" : "#000"}
                 style={{ cursor: p.name ? (isSel ? "move" : "pointer") : "default" }}
                 onClick={(e) => { e.stopPropagation(); if (p.name) onLabelClick?.(p.name, e); }}
-                onPointerDown={(e) => { if (isSel && p.name) { e.stopPropagation(); onLabelPointerDown?.(p.name, e); } }}
+                onPointerDown={(e) => { e.stopPropagation(); if (isSel && p.name) onLabelPointerDown?.(p.name, e); }}
                 onPointerMove={(e) => { if (p.name) onLabelPointerMove?.(p.name, e); }}
                 onPointerUp={(e) => { if (p.name) onLabelPointerUp?.(p.name, e); }}
               >
@@ -1109,7 +1155,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
               transform={textAngle ? `rotate(${textAngle} ${x} ${y})` : undefined}
               style={{ cursor: isSel ? "move" : "pointer" }}
               onClick={(e) => { e.stopPropagation(); onTextClick?.(t.id, e); }}
-              onPointerDown={(e) => { if (isSel) { e.stopPropagation(); onTextPointerDown?.(t.id, e); } }}
+              onPointerDown={(e) => { e.stopPropagation(); if (isSel) onTextPointerDown?.(t.id, e); }}
               onPointerMove={(e) => onTextPointerMove?.(t.id, e)}
               onPointerUp={(e) => onTextPointerUp?.(t.id, e)}
             >
@@ -1135,6 +1181,9 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
           </g>
         );
       })}
+
+      </MovableBlock>
+      </g>{/* end figure counter-translate */}
 
       {/* ---------- Note under figure ---------- */}
       {sheetPanel("panel:note", { x: VB_W / 2 - 160, y: draw.y + draw.h + 40, w: 320, h: 14 }, (
@@ -1289,6 +1338,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
         <line x1={cert.x + 84} y1={cert.y + 90} x2={cert.x + cert.w - 12} y2={cert.y + 90} stroke="black" strokeWidth={0.4} />
       </g>
       ))}
+      </MovableBlock>
     </svg>
   );
 });

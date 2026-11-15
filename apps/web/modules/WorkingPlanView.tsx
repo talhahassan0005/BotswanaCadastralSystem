@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import { useStore, cogoTabLabel } from "@/lib/store";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { WorkingPlan, workingPlanMinScale, DOUBLE_CIRCLE_R, type WorkingPlanGridLayout, type WorkingPlanMeta, type WorkingPlanPlot } from "@/components/WorkingPlan";
-import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
+import type { ManualAnnotation, ManualText, DiagramTransform, BlockOffset } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { bareLotNumber, dedupePoints } from "@/lib/plots";
 import { situateWords, landCalledName, currentMonthYear } from "@/lib/diagramLayout";
@@ -171,6 +171,8 @@ export function WorkingPlanView() {
         labelOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
         textOffsets?: Record<string, { dx: number; dy: number; scale?: number; hidden?: boolean }>;
         titleOffset?: { dx: number; dy: number; scale?: number };
+        sheetOffset?: BlockOffset;
+        figureOffset?: BlockOffset;
         plotNumbers?: string[];
       }
     | Partial<WorkingPlanMeta>
@@ -227,6 +229,17 @@ export function WorkingPlanView() {
   const [titleOffset, setTitleOffset] = useState<{ dx: number; dy: number; scale?: number }>(
     (isWrappedSave ? (savedRaw as { titleOffset?: { dx: number; dy: number; scale?: number } }).titleOffset : null) ?? { dx: 0, dy: 0 }
   );
+  // "Shift frame" / "Move polygon" (client req 2026-11-15). Saved with the
+  // sheet like every other hand positioning, so reopening keeps the layout.
+  const [sheetOffset, setSheetOffset] = useState<BlockOffset | undefined>(
+    (isWrappedSave ? (savedRaw as { sheetOffset?: BlockOffset }).sheetOffset : undefined) ?? undefined
+  );
+  const [figureOffset, setFigureOffset] = useState<BlockOffset | undefined>(
+    (isWrappedSave ? (savedRaw as { figureOffset?: BlockOffset }).figureOffset : undefined) ?? undefined
+  );
+  // The two modes are UI state only — which one is armed is not worth saving.
+  const [frameMovable, setFrameMovable] = useState(false);
+  const [figureMovable, setFigureMovable] = useState(false);
   const [titleSelected, setTitleSelected] = useState(false);
   // Plots picked from the Cadastral work station for one multi-plot sheet
   // (client req 2026-08-26, Part 33a) — numbers only; resolved against
@@ -499,8 +512,8 @@ export function WorkingPlanView() {
   // Persist the title-block + label positions + picked plots into the
   // project bundle so they round-trip on save/open.
   useEffect(() => {
-    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds: Array.from(blockCornerIds), doubleCircles });
-  }, [meta, labelOffsets, textOffsets, titleOffset, plotNumbers, blockCornerIds, doubleCircles, setWorkingPlanInput]);
+    setWorkingPlanInput({ meta, labelOffsets, textOffsets, titleOffset, sheetOffset, figureOffset, plotNumbers, blockCornerIds: Array.from(blockCornerIds), doubleCircles });
+  }, [meta, labelOffsets, textOffsets, titleOffset, sheetOffset, figureOffset, plotNumbers, blockCornerIds, doubleCircles, setWorkingPlanInput]);
 
   function toSvgPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const svg = svgRef.current;
@@ -723,9 +736,15 @@ export function WorkingPlanView() {
     const polylines: ImportedDrawing["polylines"] = [];
     const beaconPoints: ImportedDrawing["points"] = [];
 
+    // "Shift frame" moves the sheet and leaves the figure alone, so sheet
+    // geometry written in page coordinates carries the shift while the
+    // figure (written through toExportWorld, which goes via toScreenLive)
+    // does not — the same split the preview draws.
+    const shDx = sheetOffset?.dx ?? 0, shDy = sheetOffset?.dy ?? 0;
+    const sheetW = (x: number, y: number) => t!.toWorld(x + shDx, y + shDy);
     function text(x: number, y: number, s: string, heightUnits: number, anchor?: "middle" | "end") {
       if (!s) return;
-      const p = t!.toWorld(x, y);
+      const p = sheetW(x, y);
       notes.push({ x: p.east, y: p.north, text: s, height: heightUnits * metresPerUnit, layer: "SHEET", anchor });
     }
     // The exported DXF now matches whatever the live preview is rotated/
@@ -801,11 +820,11 @@ export function WorkingPlanView() {
     const grid = gridLayoutRef.current;
     if (grid) {
       for (const l of grid.lines) {
-        const p1 = t.toWorld(l.x1, l.y1), p2 = t.toWorld(l.x2, l.y2);
+        const p1 = sheetW(l.x1, l.y1), p2 = sheetW(l.x2, l.y2);
         polylines.push({ pts: [{ x: p1.east, y: p1.north }, { x: p2.east, y: p2.north }], closed: false, layer: "GRID" });
       }
       for (const g of grid.labels) {
-        const q = t.toWorld(g.x, g.y);
+        const q = sheetW(g.x, g.y);
         notes.push({ x: q.east, y: q.north, text: g.text, height: g.fontSize * metresPerUnit, layer: "GRID_TEXT", anchor: g.anchor === "end" ? "end" : undefined, rotation: g.rotate ? 90 : undefined });
       }
     }
@@ -817,7 +836,7 @@ export function WorkingPlanView() {
       const off = textOffsets[tt.id];
       if (off?.hidden) continue;
       const base = t.toScreenLive ? t.toScreenLive(tt.east, tt.north) : t.toScreen(tt.east, tt.north);
-      const p = off ? t.toWorld(base.x + off.dx, base.y + off.dy) : toExportWorld(tt.east, tt.north);
+      const p = off ? sheetW(base.x + off.dx, base.y + off.dy) : toExportWorld(tt.east, tt.north);
       notes.push({ x: p.east, y: p.north, text: tt.text, height: 10 * (off?.scale ?? 1) * metresPerUnit, layer: "NOTES" });
     }
 
@@ -1120,6 +1139,12 @@ export function WorkingPlanView() {
             onTextPointerUp={handleTextPointerUp}
             onTextResize={handleTextResize}
             titleOffset={titleOffset}
+            sheetOffset={sheetOffset}
+            figureOffset={figureOffset}
+            frameMovable={frameMovable}
+            figureMovable={figureMovable}
+            onSheetOffset={(_id, v) => setSheetOffset(v)}
+            onFigureOffset={(_id, v) => setFigureOffset(v)}
             titleSelected={titleSelected}
             onTitleClick={handleTitleClick}
             onTitlePointerDown={handleTitlePointerDown}
@@ -1216,6 +1241,37 @@ export function WorkingPlanView() {
         {/* Double Circle Tool — an editing tool, so it sits with the rest
             of them beside the sheet (client req 2026-11-14: "move to the
             other side"). Was in the left sidebar under the exports. */}
+        {/* The Diagram sheet's two movement modes, here too (client req
+            2026-11-15: "also add this tools to working plan"). */}
+        <Card title="Shift frame">
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={frameMovable}
+                onChange={(e) => { setFrameMovable(e.target.checked); if (e.target.checked) setFigureMovable(false); }}
+                className="w-4 h-4 cursor-pointer"
+              />
+              Drag everything except the polygon — border, title and all text
+            </label>
+            {sheetOffset && (
+              <Button variant="ghost" onClick={() => setSheetOffset(undefined)}>Reset frame position</Button>
+            )}
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={figureMovable}
+                onChange={(e) => { setFigureMovable(e.target.checked); if (e.target.checked) setFrameMovable(false); }}
+                className="w-4 h-4 cursor-pointer"
+              />
+              Move polygon — drag it with its beacon names (frame stays put)
+            </label>
+            {figureOffset && (
+              <Button variant="ghost" onClick={() => setFigureOffset(undefined)}>Reset polygon position</Button>
+            )}
+          </div>
+        </Card>
+
         <Card title="Double Circles">
           <div className="flex flex-wrap items-center gap-2">
             <Button variant={doubleCircleMode ? "primary" : "ghost"} onClick={() => setDoubleCircleMode((v) => !v)}>
