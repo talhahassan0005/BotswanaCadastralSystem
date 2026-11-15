@@ -520,7 +520,13 @@ export function GisMap() {
             <Button variant="ghost" onClick={() => setRuler([])}>Clear ruler</Button>
           </div>
         )}
-        <div ref={mapDivRef} className="h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
+        {/* The basemap is the work surface on this tab, so it takes the
+            height the screen actually has instead of a fixed 600px box
+            (client req 2026-11-15: "Increase this windo"). The floor keeps
+            it at its old size on a short screen, so nothing gets smaller
+            than it was; the offset is the header, tab bar and the toolbar
+            rows above it. */}
+        <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
           {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets via the layers control.

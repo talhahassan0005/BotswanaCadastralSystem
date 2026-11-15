@@ -68,7 +68,12 @@ function Workspace() {
           // was leaving unused gutters on wide screens specifically for
           // this one). Scoped to just this tab so nothing else's layout
           // changes.
-          activeTab === "generalplan"
+          // The GIS tab wants it for the same reason (client req 2026-11-15:
+          // "Increase this windo ... maybe put it there and tools on the
+          // sides") — the basemap is the work surface there, and the cap
+          // was spending the widest part of the screen on empty gutters
+          // while the map sat boxed in between two sidebars.
+          activeTab === "generalplan" || activeTab === "gis"
             ? "mx-auto max-w-full px-3 py-4 sm:px-4 sm:py-6"
             : "mx-auto max-w-screen-2xl px-3 py-4 sm:px-6 sm:py-6"
         }
