@@ -7,7 +7,7 @@ import { WorkingPlan, workingPlanMinScale, DOUBLE_CIRCLE_R, type WorkingPlanGrid
 import type { ManualAnnotation, ManualText, DiagramTransform } from "@/components/SgDiagram";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { bareLotNumber, dedupePoints } from "@/lib/plots";
-import { landCalledName, currentMonthYear } from "@/lib/diagramLayout";
+import { situateWords, landCalledName, currentMonthYear } from "@/lib/diagramLayout";
 
 /**
  * Working Plan (Module D / M3) — a cadastral working plan in the WP-Model.pdf
@@ -338,6 +338,20 @@ export function WorkingPlanView() {
   // — reused from the Diagrams module's own field, same as lotName above,
   // not re-collected here.
   const diagramParent = ((diagramInput as { meta?: { parent?: string } } | null)?.meta?.parent) || "";
+  // The diagram's "Situate ... in the ... District" line, word for word, so
+  // this sheet's title repeats the diagram instead of the area being retyped
+  // here (client req 2026-11-15). Built with the diagram's own helper, so the
+  // auto-composed wording can never drift between the two sheets. Only used
+  // when the diagram actually has something to say — with every field blank
+  // the auto form would be the bare scaffolding "Situate at in the", so that
+  // case falls back to this sheet's own tribal-area line.
+  const diagramSituate = (() => {
+    const dm = (diagramInput as { meta?: { situateLine?: string; location?: string; tribalArea?: string } } | null)?.meta;
+    if (!dm) return "";
+    if (dm.situateLine?.trim()) return dm.situateLine.trim();
+    if (!(dm.location ?? "").trim() && !(dm.tribalArea ?? "").trim()) return "";
+    return situateWords({ location: dm.location ?? "", tribalArea: dm.tribalArea ?? "" }).join(" ");
+  })();
   const diagramAnnotations =
     (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
   const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
@@ -382,6 +396,7 @@ export function WorkingPlanView() {
     dateOfSurvey: diagramSurveyDate || meta.dateOfSurvey,
     parent: diagramParent || meta.parent,
     tribalArea: gpTribalArea || meta.tribalArea,
+    situateLine: diagramSituate || undefined,
     coordinateSystem: gpCoordinateSystem || meta.coordinateSystem,
     parentLotNumber: (meta.parentLotNumber ?? "").trim() || gpParentLot,
   };
@@ -810,7 +825,7 @@ export function WorkingPlanView() {
     const titleX = 300 + tOff.dx;
     text(titleX, 40 + tOff.dy, "WORKING PLAN OF", 14 * tScale, "middle");
     text(titleX, 62 + tOff.dy, resolvedPlots.length > 0 ? `LOTS ${resolvedPlots.map((p) => p.number).join(", ")} ${effectiveMeta.locality || ""}` : effectiveMeta.titleName || effectiveMeta.lotName, 13 * tScale, "middle");
-    text(titleX, 84 + tOff.dy, effectiveMeta.tribalArea, 12 * tScale, "middle");
+    text(titleX, 84 + tOff.dy, effectiveMeta.situateLine || effectiveMeta.tribalArea, 12 * tScale, "middle");
     text(titleX, 104 + tOff.dy, `1:${effectiveMeta.scale}`, 12 * tScale, "middle");
     text(26, 30, `REFERENCE MARKS: ${effectiveMeta.referenceMarkDescription}`, 8.5);
     text(26, 42, `WORKING STATION: ${effectiveMeta.workingStationDescription}`, 8.5);

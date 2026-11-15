@@ -64,6 +64,12 @@ export interface WorkingPlanMeta {
   /** "[LOCALITY]" in both the "LOTS ..." and "PORTIONS OF LOT ..." lines —
    *  mirrors the Diagrams module's "Situate at (location)" field. */
   locality?: string;
+  /** The diagram's "Situate ... in the ... District" line, carried over so
+   *  this sheet reads the same as the diagram instead of the area being
+   *  retyped here (client req 2026-11-15: "This information is the one that
+   *  automatically come here"). Printed in place of `tribalArea` in the
+   *  title when set; `tribalArea` still shows when there is no diagram. */
+  situateLine?: string;
   /** Grid-mark spacing in real metres — 50, 100, or 200 (same choices as
    *  General Plan). Defaults to niceStep(span) when absent/invalid. */
   gridSpacingM?: number;
@@ -821,8 +827,18 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                   <text x={VB_W / 2} y={62} fontSize={13 * ts} textDecoration="underline">
                     LOTS {formatLotRange(activePlots.map((p) => p.number))} {meta.locality || ""}
                   </text>
+                  {/* The diagram's parent line, verbatim and in brackets, so
+                      both sheets read "(A portion of lot 13043 Gaborone)"
+                      (client req 2026-11-15). Composing "PORTIONS OF LOT" +
+                      the parent + the locality double-wrote the parcel —
+                      the diagram's parent already names the lot and its
+                      locality, so the result read "PORTIONS OF LOT A portion
+                      of lot 16375 Gaborone GABORONE". Falls back to the
+                      composed line when there is no diagram parent. */}
                   <text x={VB_W / 2} y={82} fontSize={11 * ts} textDecoration="none">
-                    PORTIONS OF LOT {meta.parentLotNumber || ""} {meta.locality || ""}
+                    {meta.parent?.trim()
+                      ? `(${meta.parent.trim()})`
+                      : `PORTIONS OF LOT ${meta.parentLotNumber || ""} ${meta.locality || ""}`}
                   </text>
                 </>
               ) : (
@@ -833,7 +849,7 @@ export const WorkingPlan = forwardRef<SVGSVGElement, Props>(function WorkingPlan
                   )}
                 </>
               )}
-              <text x={VB_W / 2} y={84 + titleExtra} fontSize={12 * ts} textDecoration="underline">{meta.tribalArea}</text>
+              <text x={VB_W / 2} y={84 + titleExtra} fontSize={12 * ts} textDecoration="underline">{meta.situateLine || meta.tribalArea}</text>
               <text x={VB_W / 2} y={104 + titleExtra} fontSize={12 * ts} textDecoration="underline">1:{meta.scale}</text>
             </g>
             {titleSelected && (

@@ -156,6 +156,20 @@ export const PAPER_ORDER = ["A4", "A3", "A2", "A1"] as const;
  *  convention), but bare concatenation of longer point names is
  *  unreadable ("25A225A1" — is that 25A2→25A1, or something else?), so
  *  those get a separator instead (client req 2026-08-22). */
+/** The "Situate at ... in the ..." line, as a word list ready to wrap. The
+ *  surveyor's own wording wins; otherwise it is composed from the location
+ *  and the tribal/administrative area. Exported because the Working Plan
+ *  prints this same line, carried over from the diagram rather than retyped
+ *  (client req 2026-11-15: "This information is the one that automatically
+ *  come here"), and the two must never word it differently. */
+export function situateWords(meta: { situateLine?: string; location: string; tribalArea: string }): string[] {
+  const toTitleCase = (s: string) =>
+    s.split(/\s+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return meta.situateLine
+    ? meta.situateLine.trim().split(/\s+/)
+    : ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)];
+}
+
 export function sideLabel(from: string | null, to: string | null): string {
   const f = from ?? "", t = to ?? "";
   return f.length <= 1 && t.length <= 1 ? `${f}${t}` : `${f} ${t}`;
@@ -445,14 +459,7 @@ export function computeDiagramLayout(
       withParens[withParens.length - 1] = `${withParens[withParens.length - 1]})`;
       return withParens;
     });
-  const toTitleCase = (s: string) => s.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-  const situateLines = meta.situateLine
-    ? wrapSvgWords(meta.situateLine.trim().split(/\s+/), tw - 80 * PAGE_SCALE, FS_BEACON_HEAD)
-    : wrapSvgWords(
-        ["Situate", "at", ...toTitleCase(meta.location), "in", "the", ...toTitleCase(meta.tribalArea)],
-        tw - 80 * PAGE_SCALE,
-        FS_BEACON_HEAD
-      );
+  const situateLines = wrapSvgWords(situateWords(meta), tw - 80 * PAGE_SCALE, FS_BEACON_HEAD);
   // A little extra breathing room between each of this block's sub-sections
   // (client req 2026-08-26: "cale ke niche thori space add karo... sub ke
   // thori thori" — a bit of space below "CALLED", between the lines after
