@@ -1125,6 +1125,19 @@ export function Diagrams() {
         sideEdits: sideEditsRef.current,
       },
     };
+    // Switching away from the placeholder key into a real lot, when that lot
+    // has nothing stashed, is not a lot switch at all — it is this session
+    // finally learning which lot the edits on screen belong to. That happens
+    // when the sheet was already drawn from the restored figure and the lot
+    // was only picked from the dropdown afterwards, and it is also the shape
+    // every project left behind by the bug below is in. Clearing here is what
+    // threw the surveyor's work away (client req 2026-11-15: "Thso system
+    // does not save edits"); the edits are carried into the lot instead, and
+    // any already stranded under "__default__" come back with them.
+    if (!lotEditsRef.current[newKey] && prevKey === "__default__") {
+      prevLotKeyRef.current = newKey;
+      return;
+    }
     // Load the new lot's saved edits, or start clean.
     const entry = lotEditsRef.current[newKey] ?? { annotations: [], texts: [], blockOffsets: {}, labelOffsets: {}, sideEdits: {} };
     setAnnotations(entry.annotations);
@@ -1141,7 +1154,17 @@ export function Diagrams() {
 
   // Persist diagram form state into the project bundle.
   useEffect(() => {
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, lotEdits: lotEditsRef.current, activeLotKey });
+    // The key saved is the one the edits on screen actually belong to, NOT
+    // the key derived from the dropdown. Both lot ids start null on a fresh
+    // mount, so the derived key is "__default__" until the surveyor picks a
+    // lot — and the autosave (every 4s to the browser, 8s to the cloud) was
+    // writing that placeholder over the real key before they ever got the
+    // chance. Reopening then read "__default__", picking the lot looked like
+    // a switch, and the whole sheet's notes were swapped out for an empty
+    // set (client req 2026-11-15: "Thso system does not save edits").
+    // prevLotKeyRef is the lot the loaded edits came from and is updated by
+    // the switch effect above, which runs first, so it is always right here.
+    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, lotEdits: lotEditsRef.current, activeLotKey: prevLotKeyRef.current });
   }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, liveCoordinateSystem, activeLotKey, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
