@@ -1114,6 +1114,19 @@ export function Diagrams() {
     const newKey = activeCogoLotNumber ? `cogo:${activeCogoLotNumber}` : selParcelId ?? "__default__";
     const prevKey = prevLotKeyRef.current;
     if (newKey === prevKey) return;
+    // Losing the lot id is NOT a lot switch. Both ids are plain state that
+    // starts null, so they fall back to the "__default__" placeholder on
+    // every remount and whenever the dropdown is cleared or the lot changed
+    // — none of which means the surveyor wants a different lot's sheet.
+    // This effect is the ONLY place the notes, extension lines and moved
+    // blocks are ever replaced wholesale, so a placeholder landing here was
+    // enough to wipe a sheet full of work while the lot dropdown quietly
+    // read "pick a lot" (client req 2026-11-15: "5 minutes later i find it
+    // with out the new information that i added"). The edits stay on screen
+    // and keep belonging to the lot they were drawn for, so re-picking that
+    // lot is a no-op and picking a genuinely different one still swaps them
+    // out properly. Only a real lot -> real lot move touches the stash.
+    if (newKey === "__default__") return;
     // Persist the current lot's edits into the stash.
     lotEditsRef.current = {
       ...lotEditsRef.current,
