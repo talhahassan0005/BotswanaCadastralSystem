@@ -8,7 +8,7 @@
 // provided. A second toolbar row adds basic drafting (add/delete point,
 // undo/redo, zoom-extents) so the canvas isn't view-only.
 
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode, type WheelEvent as RWheelEvent } from "react";
 import { CogoDrawingToolbar } from "@/components/CogoDrawingToolbar";
 import { CogoCommandBar, type CogoCommandBarHandle } from "@/components/CogoCommandBar";
 import { forward, inverse, polygonArea, polygonCentroid, formatArea } from "@/lib/server/geometry";
@@ -540,6 +540,32 @@ export function CogoWorkspace({
   const [cogoResPoints, setCogoResPoints] = useState<{ name: string | null; east: number; north: number }[]>([]);
   const cogoResPointsRef = useRef(cogoResPoints);
   cogoResPointsRef.current = cogoResPoints;
+
+  // All points that can be snapped to: `visible` (imported/created) PLUS
+  // COGO-computed result points (`cogoResPoints`) that aren't already in
+  // `visible` PLUS saved-polygon vertex points likewise missing from both.
+  // Without this, bearing/distance traverses show the computed beacons on
+  // screen but `snapPoint` can't find them — "Point C is refusing to
+  // detect" (client report 2026-11-17).
+  const snappable: WPoint[] = useMemo(() => {
+    const EPS = 1e-4;
+    const inVis = (e: number, n: number) => visible.some((v) => Math.abs(v.east - e) < EPS && Math.abs(v.north - n) < EPS);
+    const out: WPoint[] = [...visible];
+    for (let i = 0; i < cogoResPoints.length; i++) {
+      const p = cogoResPoints[i];
+      if (!inVis(p.east, p.north)) out.push({ id: `cres-${i}`, name: p.name ?? "", east: p.east, north: p.north });
+    }
+    let pgIdx = 0;
+    for (const pg of polygons) {
+      for (const v of pg.points) {
+        if (!out.some((o) => Math.abs(o.east - v.east) < EPS && Math.abs(o.north - v.north) < EPS)) {
+          out.push({ id: `pgv-snap-${pgIdx}`, name: v.name ?? "", east: v.east, north: v.north });
+        }
+        pgIdx++;
+      }
+    }
+    return out;
+  }, [visible, cogoResPoints, polygons]);
 
   function snapshot() {
     past.current.push({ extra, hidden: new Set(hidden), lines, arcs, polygons, texts });
@@ -2566,7 +2592,7 @@ export function CogoWorkspace({
   function nearestVisible(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
     let bestD = (12 * vbPerPx()) ** 2;
-    for (const p of visible) {
+    for (const p of snappable) {
       const [x, y] = toScreen(p.east, p.north);
       const d = (x - sx) ** 2 + (y - sy) ** 2;
       if (d <= bestD) { bestD = d; best = p; }
@@ -2601,11 +2627,13 @@ export function CogoWorkspace({
   const POINT_SNAP_PX = 12;
   /** Nearest existing point within snap radius (screen space), if any. Point
    *  snapping is always on while drawing — needed to close traverses/
-   *  polygons cleanly onto an existing vertex. */
+   *  polygons cleanly onto an existing vertex. Searches `snappable` (which
+   *  includes COGO-result and polygon-vertex points, not just imported ones)
+   *  so a bearing/distance traverse's computed beacons can be connected. */
   function snapPoint(sx: number, sy: number): WPoint | null {
     let best: WPoint | null = null;
     let bestD = (POINT_SNAP_PX * vbPerPx()) ** 2;
-    for (const p of visible) {
+    for (const p of snappable) {
       const [x, y] = toScreen(p.east, p.north);
       const d = (x - sx) ** 2 + (y - sy) ** 2;
       if (d <= bestD) { bestD = d; best = p; }
