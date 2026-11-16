@@ -1,0 +1,35 @@
+// AUTO-GENERATED from public/Ref Marks1.csv by scripts/genRefMarksFromCsv.ts — do not edit by hand.
+// 28 reference marks across 8 villages,
+// converted from Lo27 to WGS84.
+import type { RefMark } from "./refmarks";
+
+export const REF_MARKS_EXTRA: RefMark[] = [
+  {"id":"DUKWI_DKRM1","number":"DKRM1","name":"Dukwi","type":"Reference mark","lat":-20.59062191,"lon":26.54239197,"description":"Lo27","status":"In good order","region":"Dukwi"},
+  {"id":"DUKWI_DKRM2","number":"DKRM2","name":"Dukwi","type":"Reference mark","lat":-20.58961958,"lon":26.53362,"description":"Lo27","status":"In good order","region":"Dukwi"},
+  {"id":"DUKWI_DKRM3","number":"DKRM3","name":"Dukwi","type":"Reference mark","lat":-20.60117703,"lon":26.52998427,"description":"Lo27","status":"In good order","region":"Dukwi"},
+  {"id":"DUKWI_DKRM4","number":"DKRM4","name":"Dukwi","type":"Reference mark","lat":-20.5753185,"lon":26.50357904,"description":"Lo27","status":"In good order","region":"Dukwi"},
+  {"id":"JAMATAKA_JMTRM1","number":"JMTRM1","name":"Jamataka","type":"Reference mark","lat":-21.08304984,"lon":27.13790054,"description":"Lo27","status":"In good order","region":"Jamataka"},
+  {"id":"KUTAMOGORE_KTMRM1","number":"KTMRM1","name":"Kutamogore","type":"Reference mark","lat":-20.74981647,"lon":26.90128404,"description":"Lo27","status":"In good order","region":"Kutamogore"},
+  {"id":"KUTAMOGORE_KTMRM3","number":"KTMRM3","name":"Kutamogore","type":"Reference mark","lat":-20.74325944,"lon":26.89003368,"description":"Lo27","status":"In good order","region":"Kutamogore"},
+  {"id":"MAKOBO_MKBRM4","number":"MKBRM4","name":"Makobo","type":"Reference mark","lat":-21.06311398,"lon":27.23326379,"description":"Lo27","status":"In good order","region":"Makobo"},
+  {"id":"MAKOBO_MKBRM3","number":"MKBRM3","name":"Makobo","type":"Reference mark","lat":-21.0685353,"lon":27.24982438,"description":"Lo27","status":"In good order","region":"Makobo"},
+  {"id":"MAKOBO_MKBRM2","number":"MKBRM2","name":"Makobo","type":"Reference mark","lat":-21.05867472,"lon":27.25149183,"description":"Lo27","status":"In good order","region":"Makobo"},
+  {"id":"MAKOBO_MKBRM1","number":"MKBRM1","name":"Makobo","type":"Reference mark","lat":-21.0610337,"lon":27.23947133,"description":"Lo27","status":"In good order","region":"Makobo"},
+  {"id":"MAROBELA_MRBRM3(1)","number":"MRBRM3(1)","name":"Marobela","type":"Reference mark","lat":-20.86040147,"lon":27.25198058,"description":"Lo27","status":"In good order","region":"Marobela"},
+  {"id":"MAROBELA_MRBRM4","number":"MRBRM4","name":"Marobela","type":"Reference mark","lat":-20.87259987,"lon":27.22990216,"description":"Lo27","status":"In good order","region":"Marobela"},
+  {"id":"MAROBELA_MRBRM3","number":"MRBRM3","name":"Marobela","type":"Reference mark","lat":-20.86657531,"lon":27.21615626,"description":"Lo27","status":"In good order","region":"Marobela"},
+  {"id":"MAROBELA_MRBRM2","number":"MRBRM2","name":"Marobela","type":"Reference mark","lat":-20.8579725,"lon":27.22422762,"description":"Lo27","status":"In good order","region":"Marobela"},
+  {"id":"MAROBELA_MRBRM1","number":"MRBRM1","name":"Marobela","type":"Reference mark","lat":-20.86985565,"lon":27.23913112,"description":"Lo27","status":"In good order","region":"Marobela"},
+  {"id":"MATHANGWANE_MTWRM1","number":"MTWRM1","name":"Mathangwane","type":"Reference mark","lat":-21.00307396,"lon":27.33743351,"description":"Lo27","status":"In good order","region":"Mathangwane"},
+  {"id":"MATHANGWANE_MTWRM2","number":"MTWRM2","name":"Mathangwane","type":"Reference mark","lat":-21.00215166,"lon":27.3281286,"description":"Lo27","status":"In good order","region":"Mathangwane"},
+  {"id":"MATHANGWANE_MTWRM4","number":"MTWRM4","name":"Mathangwane","type":"Reference mark","lat":-20.99076542,"lon":27.34426969,"description":"Lo27","status":"In good order","region":"Mathangwane"},
+  {"id":"SEBINA_SNRM10","number":"SNRM10","name":"Sebina","type":"Reference mark","lat":-20.80972764,"lon":27.20108497,"description":"Lo27","status":"In good order","region":"Sebina"},
+  {"id":"SEBINA_SNRM8","number":"SNRM8","name":"Sebina","type":"Reference mark","lat":-20.82258943,"lon":27.21190194,"description":"Lo27","status":"In good order","region":"Sebina"},
+  {"id":"SEBINA_SNRM7","number":"SNRM7","name":"Sebina","type":"Reference mark","lat":-20.82874077,"lon":27.21502969,"description":"Lo27","status":"In good order","region":"Sebina"},
+  {"id":"SEBINA_SNRM13","number":"SNRM13","name":"Sebina","type":"Reference mark","lat":-20.78861599,"lon":27.18577289,"description":"Lo27","status":"In good order","region":"Sebina"},
+  {"id":"SEBINA_SNRM6","number":"SNRM6","name":"Sebina","type":"Reference mark","lat":-20.83304698,"lon":27.21870372,"description":"Lo27","status":"In good order","region":"Sebina"},
+  {"id":"MAFUNGO_HUBONA_MFGRM1","number":"MFGRM1","name":"Mafungo Hubona","type":"Reference mark","lat":-20.94041072,"lon":27.26107276,"description":"Lo27","status":"In good order","region":"Mafungo Hubona"},
+  {"id":"MAFUNGO_HUBONA_MFGRM2","number":"MFGRM2","name":"Mafungo Hubona","type":"Reference mark","lat":-20.92483941,"lon":27.25206202,"description":"Lo27","status":"In good order","region":"Mafungo Hubona"},
+  {"id":"MAFUNGO_HUBONA_MFGRM3","number":"MFGRM3","name":"Mafungo Hubona","type":"Reference mark","lat":-20.90932144,"lon":27.23947386,"description":"Lo27","status":"In good order","region":"Mafungo Hubona"},
+  {"id":"MAFUNGO_HUBONA_MFGRM4","number":"MFGRM4","name":"Mafungo Hubona","type":"Reference mark","lat":-20.95611273,"lon":27.27558433,"description":"Lo27","status":"In good order","region":"Mafungo Hubona"},
+];

@@ -10,6 +10,7 @@
 
 import { supabase } from "./supabaseClient";
 import { REF_MARKS_DATA } from "./refMarksData";
+import { REF_MARKS_EXTRA } from "./refMarksExtra";
 
 export interface RefMark {
   id: string;
@@ -46,7 +47,25 @@ const SEED_FALLBACK: RefMark[] = [
 
 /** Reference-mark seed: the client's CONTROL POINTS dataset (1481 marks across 23
  *  localities, converted to WGS84), falling back to the hand list if empty. */
-export const REF_MARKS: RefMark[] = REF_MARKS_DATA.length ? REF_MARKS_DATA : SEED_FALLBACK;
+/** Marks supplied separately by the surveyor, on top of the DSM export
+ *  (client req 2026-11-16: "Add this ref marks to the list. I have marked
+ *  their village names"). Appended rather than merged into the generated
+ *  DSM file, which is rebuilt from the PDF and would lose them. A mark
+ *  already present under the same number in the same village is not added
+ *  twice, so re-running the generator cannot duplicate the list. */
+export const REF_MARKS: RefMark[] = (() => {
+  const base = REF_MARKS_DATA.length ? REF_MARKS_DATA : SEED_FALLBACK;
+  // Where the two disagree the surveyor's file wins. It has to: the DSM
+  // seed is scraped from a PDF and carries wrong positions for some marks —
+  // its five Sebina marks sit at longitude 25.19, about 200km west of where
+  // the surveyor's own file puts the same five numbers. Keeping the seed's
+  // copy would have quietly thrown away exactly the marks that were sent.
+  const replaced = new Set(REF_MARKS_EXTRA.map((m) => `${m.number}|${m.name}`.toUpperCase()));
+  return [
+    ...base.filter((m) => !replaced.has(`${m.number}|${m.name}`.toUpperCase())),
+    ...REF_MARKS_EXTRA,
+  ];
+})();
 
 const R_KM = 6371.0088;
 const toRad = (d: number) => (d * Math.PI) / 180;

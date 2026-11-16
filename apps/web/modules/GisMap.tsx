@@ -23,6 +23,14 @@ declare global {
 const ESRI_IMAGERY =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const OSM = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+/** Esri's transparent reference layer: country boundary lines and place
+ *  names — towns and villages — meant to be drawn over imagery. Client req
+ *  2026-11-16: "i want the map to show the country's boundary lines and
+ *  village names", with a Google Earth screenshot for reference. The
+ *  imagery on its own is unlabelled, so there was no way to tell which
+ *  country or village you were looking at. */
+const ESRI_BOUNDARIES_PLACES =
+  "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const BOTSWANA_CENTER: [number, number] = [-22.33, 24.68];
 
 /** Deepest zoom Esri actually has imagery for at a place (client screenshot
@@ -308,7 +316,21 @@ export function GisMap() {
           });
         };
         map.on("moveend", fitImageryZoom);
-        L.control.layers({ "Satellite (Esri)": sat, "Streets (OSM)": streets }).addTo(map);
+        // Boundaries and place names ride in their own pane, above the
+        // imagery but below the survey markers. Without a pane of their own
+        // they sit in the tile pane with the base layers, and switching
+        // Satellite/Streets re-adds the base map over the top of them.
+        map.createPane("labels");
+        const labelPane = map.getPane("labels");
+        if (labelPane) { labelPane.style.zIndex = "350"; labelPane.style.pointerEvents = "none"; }
+        const places = L.tileLayer(ESRI_BOUNDARIES_PLACES, {
+          pane: "labels", maxZoom: 19, attribution: "Boundaries & places © Esri",
+        });
+        places.addTo(map);
+        L.control.layers(
+          { "Satellite (Esri)": sat, "Streets (OSM)": streets },
+          { "Boundaries & place names": places }
+        ).addTo(map);
 
         const bounds: [number, number][] = [];
         const polyGroup = L.layerGroup().addTo(map);
@@ -605,7 +627,7 @@ export function GisMap() {
         <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
-          {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets via the layers control.
+          {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets, and turn country boundaries and place names on or off, via the layers control.
           {!hasData && " Build a parcel or run a closed traverse to see your survey on the map."}
         </p>
       </Card>

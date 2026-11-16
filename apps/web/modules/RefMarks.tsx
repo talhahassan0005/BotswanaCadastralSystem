@@ -43,6 +43,8 @@ export function RefMarks() {
   useEffect(() => { reloadMarks(); }, []);
 
   const filtered = useMemo(() => searchMarks(query, marks), [query, marks]);
+  // Open the list only once the surveyor is looking for something.
+  const listOpen = query.trim().length > 0 || !!user;
   const rows = useMemo(
     () =>
       user
@@ -130,6 +132,12 @@ export function RefMarks() {
           )}
         </Card>
 
+        {/* The full list of 2746 marks filled the sidebar with rows nobody
+            reads, so it stays closed until the surveyor is actually looking
+            for something (client req 2026-11-16: "This should only appear
+            after seaching"). A typed search opens it; so does "Nearest to
+            me", which is the same act of looking, just by distance. */}
+        {listOpen && (
         <div className="max-h-[460px] space-y-2 overflow-y-auto pr-1">
           {rows.map(({ mark, km }) => (
             <button
@@ -151,6 +159,7 @@ export function RefMarks() {
           ))}
           {rows.length === 0 && <p className="px-1 text-sm text-slate-400">No marks match “{query}”.</p>}
         </div>
+        )}
       </div>
 
       {/* Map + detail */}
