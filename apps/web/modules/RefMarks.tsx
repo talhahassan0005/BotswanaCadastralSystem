@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Input } from "@/components/ui";
+import { showOnGisMap } from "./GisMap";
 import {
   REF_MARKS,
+  haversineKm,
   directionsUrl,
   fetchRefMarks,
   importRefMarks,
@@ -43,6 +45,26 @@ export function RefMarks() {
   useEffect(() => { reloadMarks(); }, []);
 
   const filtered = useMemo(() => searchMarks(query, marks), [query, marks]);
+  // Searching by village takes the map there (client req 2026-11-16: "when i
+  // seach ref marks by village, the system shall automatically zoom the map
+  // to the village"). Held back until the query is long enough to mean
+  // something, so the map doesn't lurch across the country on the first
+  // letter typed, and skipped when the search is still too broad to frame.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 3 || filtered.length === 0 || filtered.length > 300) return;
+    // Frame the village, not the outliers. The DSM seed has marks filed
+    // under a village but positioned hundreds of kilometres away — one
+    // "Mathangwane" entry sits on the equator — and framing those zooms out
+    // to half the continent, which is the opposite of what was asked.
+    // Searching Sebina spans 668km raw and 9km once they are dropped;
+    // Mathangwane 2320km and 13km. Villages with clean data are unaffected.
+    const med = (ns: number[]) => [...ns].sort((x, y) => x - y)[Math.floor(ns.length / 2)];
+    const cLat = med(filtered.map((m) => m.lat)), cLon = med(filtered.map((m) => m.lon));
+    const near = filtered.filter((m) => haversineKm(cLat, cLon, m.lat, m.lon) <= 50);
+    const t = setTimeout(() => showOnGisMap(near.map((m) => [m.lat, m.lon] as [number, number])), 400);
+    return () => clearTimeout(t);
+  }, [query, filtered]);
   // Open the list only once the surveyor is looking for something.
   const listOpen = query.trim().length > 0 || !!user;
   const rows = useMemo(
@@ -143,6 +165,8 @@ export function RefMarks() {
             <button
               key={mark.id}
               onClick={() => setSelectedId(mark.id)}
+              onDoubleClick={() => showOnGisMap([[mark.lat, mark.lon]], 17)}
+              title="Click for the coordinates, double-click to go to the mark"
               className={`block w-full rounded-lg border p-3 text-left transition ${
                 selectedId === mark.id ? "border-brand bg-brand-light/30" : "border-slate-200 bg-white hover:bg-slate-50"
               }`}
@@ -155,6 +179,11 @@ export function RefMarks() {
                 <span className="text-sm text-slate-600">{mark.name} · {mark.region}</span>
                 <Badge kind={STATUS_KIND[mark.status]}>{mark.status}</Badge>
               </div>
+              {/* Clicking a mark shows what it is actually wanted for — its
+                  coordinates — right there in the row, rather than only in
+                  the detail card further down the sidebar, which is off
+                  screen (client req 2026-11-16). */}
+              {selectedId === mark.id && <MarkCoords mark={mark} />}
             </button>
           ))}
           {rows.length === 0 && <p className="px-1 text-sm text-slate-400">No marks match “{query}”.</p>}
@@ -309,6 +338,21 @@ function RefMap({
 }
 
 // ---------------------------------------------------------------------------
+/** The coordinates of the selected mark, shown inside its own row: the Lo
+ *  belt it belongs to, and WGS84 beneath it. Same transformPoint() the
+ *  detail card and the rest of the app use, so the numbers always agree. */
+function MarkCoords({ mark }: { mark: RefMark }) {
+  const cm = nearestOddMeridian(mark.lon);
+  const [Y, X] = useMemo(() => transformPoint(mark.lat, mark.lon, "WGS84", `Lo${cm}`), [mark, cm]);
+  return (
+    <div className="mt-2 border-t border-brand/30 pt-2 font-mono text-[11px] leading-5 tabular-nums text-slate-700">
+      <div><span className="text-slate-500">Lo {cm}° </span>Y {Y.toFixed(2)} &nbsp; X {X.toFixed(2)}</div>
+      <div><span className="text-slate-500">WGS84 </span>{mark.lat.toFixed(6)}, {mark.lon.toFixed(6)}</div>
+      <div className="font-sans text-[10px] text-slate-400">Double-click to go to it on the map</div>
+    </div>
+  );
+}
+
 function nearestOddMeridian(lon: number): number {
   const cm = 2 * Math.round((lon - 1) / 2) + 1; // nearest odd integer
   return Math.min(29, Math.max(13, cm)); // clamp to supported Lo13–Lo29 belts

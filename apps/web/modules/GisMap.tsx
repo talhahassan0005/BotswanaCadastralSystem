@@ -29,6 +29,16 @@ const OSM = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
  *  village names", with a Google Earth screenshot for reference. The
  *  imagery on its own is unlabelled, so there was no way to tell which
  *  country or village you were looking at. */
+/** The Reference Marks panel sits beside this map but is a separate
+ *  component, so it drives the map through here rather than either one
+ *  knowing about the other (client req 2026-11-16: double-clicking a mark
+ *  takes you to it, and searching by village zooms to that village).
+ *  A single point flies in close; several are framed together. */
+type GisShow = (points: [number, number][], zoom?: number) => void;
+let gisShow: GisShow | null = null;
+export function showOnGisMap(points: [number, number][], zoom?: number) {
+  if (points.length) gisShow?.(points, zoom);
+}
 const ESRI_BOUNDARIES_PLACES =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const BOTSWANA_CENTER: [number, number] = [-22.33, 24.68];
@@ -415,6 +425,10 @@ export function GisMap() {
         manualLayerRef.current = L.layerGroup().addTo(map);
         rulerLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
+        gisShow = (points, zoom) => {
+          if (points.length === 1) map.flyTo(points[0], zoom ?? 16, { duration: 0.8 });
+          else map.flyToBounds(L.latLngBounds(points).pad(0.25), { duration: 0.8, maxZoom: zoom ?? 15 });
+        };
         setMapReady((n) => n + 1);
         setStatus(
           bounds.length
@@ -427,6 +441,7 @@ export function GisMap() {
       .catch((e) => setErr(e.message));
     return () => {
       cancelled = true;
+      gisShow = null; // the map this pointed at is about to be destroyed
       mapRef.current = null;
       manualLayerRef.current = null;
       rulerLayerRef.current = null;
