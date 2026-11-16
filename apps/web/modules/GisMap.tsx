@@ -10,7 +10,7 @@ import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
 import type { ParcelDoc } from "@/lib/types";
 import type { WPoint } from "@/lib/cogoTools/types";
-import { REF_MARKS } from "@/lib/refmarks";
+import { REF_MARKS, type RefMark } from "@/lib/refmarks";
 
 // Leaflet is loaded from a CDN at runtime (no npm dependency) — keeps the
 // build self-contained. `window.L` is the global Leaflet namespace.
@@ -152,6 +152,8 @@ export function GisMap() {
   addPointRef.current = addPoint;
   const toENRef = useRef(toEN);
   toENRef.current = toEN;
+  const srcRef = useRef(src);
+  srcRef.current = src;
   function addTypedPoint() {
     const y = Number(typed.y.replace(/\s/g, "")), x = Number(typed.x.replace(/\s/g, ""));
     if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr("Enter Y and X as numbers."); return; }
@@ -324,11 +326,37 @@ export function GisMap() {
           if (t === "point") addPointRef.current("", en[0], en[1]);
           else setRuler((r) => [...r, { east: en[0], north: en[1], lat: ev.latlng.lat, lon: ev.latlng.lng }]);
         });
-        // Reference marks layer (off by default — 2057 marks)
+        // Reference marks layer (off by default — 2057 marks). Hovering
+        // names the mark; clicking opens its full record (client req
+        // 2026-11-16: "When i click on ref mark it should show its
+        // attributs"), including the grid coordinates in the project's own
+        // system, which is what the mark actually gets used for. Built when
+        // the popup opens, not when the layer is, so it follows a change of
+        // coordinate system and costs nothing for the 2000+ unopened marks.
         const rmGroup = L.layerGroup();
+        const refMarkPopup = (rm: RefMark) => {
+          const row = (k: string, v: string) =>
+            v ? `<tr><td style="color:#64748b;padding-right:8px;vertical-align:top;white-space:nowrap">${esc(k)}</td><td style="color:#0f172a">${esc(v)}</td></tr>` : "";
+          const en = toENRef.current(rm.lat, rm.lon);
+          const grid = en ? `${en[0].toFixed(3)},  ${en[1].toFixed(3)}` : "outside this system";
+          return (
+            `<div style="min-width:210px;font-size:12px">` +
+            `<div style="font-weight:700;font-size:13px;color:#0f172a">${esc(rm.number)}</div>` +
+            `<div style="color:#475569;margin-bottom:6px">${esc(rm.name)}</div>` +
+            `<table style="border-collapse:collapse">` +
+            row("Type", rm.type) +
+            row("Status", rm.status) +
+            row("Region", rm.region) +
+            row("Description", rm.description) +
+            row(`Y, X (${displayLo(srcRef.current)})`, grid) +
+            row("Lat, Lon", `${rm.lat.toFixed(6)},  ${rm.lon.toFixed(6)}`) +
+            `</table></div>`
+          );
+        };
         for (const rm of REF_MARKS) {
           L.circleMarker([rm.lat, rm.lon], { radius: 5, color: "#f97316", weight: 2, fillColor: "#fff7ed", fillOpacity: 0.9 })
             .bindTooltip(`<strong>${rm.number}</strong><br/>${rm.name}`, { permanent: false })
+            .bindPopup(() => refMarkPopup(rm), { maxWidth: 320 })
             .addTo(rmGroup);
         }
         refMarksLayerRef.current = rmGroup;
