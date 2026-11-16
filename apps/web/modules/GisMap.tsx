@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
-import { transformPoint, CRS_LIST } from "@/lib/server/crs";
+import { transformPoint, CRS_LIST, isGeographic } from "@/lib/server/crs";
 import { parseSurveyCsv } from "@/lib/server/csv";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
@@ -114,7 +114,11 @@ export function GisMap() {
   const docRef = useRef<Record<string, unknown>>((cogoWorkspaceDoc ?? {}) as Record<string, unknown>);
   const [manualPts, setManualPts] = useState<WPoint[]>(() => ((docRef.current.extra as WPoint[] | undefined) ?? []));
   const [ruler, setRuler] = useState<{ east: number; north: number; lat: number; lon: number }[]>([]);
-  const [typed, setTyped] = useState({ name: "", y: "", x: "" });
+  // A typed point can be given in any registered system, not only the
+  // project's own grid (client req 2026-11-16: "add an option to also add a
+  // point by wgs 84 coordinates, UTM"). `cs` is what the pair below is in;
+  // it is converted to the project grid on Add.
+  const [typed, setTyped] = useState({ name: "", y: "", x: "", cs: "" });
   const [typedErr, setTypedErr] = useState<string | null>(null);
   const src = config.coordinateSystem;
   const toEN = (lat: number, lon: number): [number, number] | null => {
@@ -154,14 +158,40 @@ export function GisMap() {
   toENRef.current = toEN;
   const srcRef = useRef(src);
   srcRef.current = src;
+  /** What the two boxes mean in a given system. The order is NOT the same
+   *  everywhere: a Lo belt is written (Y, X), UTM is written (Easting,
+   *  Northing), and a geographic system is (latitude, longitude). Getting
+   *  this wrong would drop the point on the other side of the world, so the
+   *  labels are driven from the same place the conversion is. */
+  function csFields(cs: string): { a: string; b: string; aPh: string; bPh: string } {
+    if (isGeographic(cs)) return { a: "Latitude", b: "Longitude", aPh: "Lat (e.g. -24.694249)", bPh: "Lon (e.g. 25.901351)" };
+    if (/^UTM/i.test(cs.replace(/\s/g, ""))) return { a: "Easting", b: "Northing", aPh: "Easting (e.g. 389123.45)", bPh: "Northing (e.g. 7268431.02)" };
+    return { a: "Y", b: "X", aPh: "Y (e.g. -97468.060)", bPh: "X (e.g. 2728457.058)" };
+  }
   function addTypedPoint() {
+    const cs = typed.cs || src;
     const y = Number(typed.y.replace(/\s/g, "")), x = Number(typed.x.replace(/\s/g, ""));
-    if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr("Enter Y and X as numbers."); return; }
-    const ll = toLatLon(y, x);
+    const f = csFields(cs);
+    if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr(`Enter ${f.a} and ${f.b} as numbers.`); return; }
+    // Bring the pair onto the project's own grid first — everything
+    // downstream (the point list, the Cadastral work station, the exports)
+    // is in that grid, so a point typed in WGS84 or UTM has to land there
+    // too rather than being stored in whatever system it was quoted in.
+    let e = y, n = x;
+    if (cs !== src) {
+      try {
+        [e, n] = transformPoint(y, x, cs, src);
+      } catch (ex: any) {
+        setTypedErr(ex?.message ?? `Could not convert from ${cs}.`);
+        return;
+      }
+      if (!isFinite(e) || !isFinite(n)) { setTypedErr(`Those coordinates don't convert from ${cs}.`); return; }
+    }
+    const ll = toLatLon(e, n);
     if (!ll) { setTypedErr(`These coordinates don't fall on the map in ${src}.`); return; }
     setTypedErr(null);
-    addPoint(typed.name, y, x);
-    setTyped({ name: "", y: "", x: "" });
+    addPoint(typed.name, e, n);
+    setTyped({ name: "", y: "", x: "", cs: typed.cs });
     mapRef.current?.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
   }
   useEffect(() => {
@@ -527,12 +557,29 @@ export function GisMap() {
           </span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-          <span className="font-medium">Add point by coordinates ({displayLo(src)}):</span>
+          <span className="font-medium">Add point by coordinates:</span>
+          {/* Any registered system, not just the project's grid. The boxes
+              relabel themselves because the order differs per system — see
+              csFields. The point is converted onto the project grid on Add. */}
+          <select
+            value={typed.cs || src}
+            onChange={(e) => { setTyped((t) => ({ ...t, cs: e.target.value })); setTypedErr(null); }}
+            title="The system the coordinates below are in"
+            className="max-w-[190px] rounded-md border border-slate-200 px-2 py-1 focus:border-brand focus:outline-none"
+          >
+            {!CRS_LIST.some((c) => c.code === src) && <option value={src}>{displayLo(src)} (project)</option>}
+            {CRS_LIST.map((c) => (
+              <option key={c.code} value={c.code}>{c.code === src ? `${c.label} — project` : c.label}</option>
+            ))}
+          </select>
           <input value={typed.name} onChange={(e) => setTyped((t) => ({ ...t, name: e.target.value }))} placeholder={`Name (${nextPointName()})`} className="w-28 rounded-md border border-slate-200 px-2 py-1 focus:border-brand focus:outline-none" />
-          <input value={typed.y} onChange={(e) => setTyped((t) => ({ ...t, y: e.target.value }))} placeholder="Y (e.g. -97468.060)" className="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
-          <input value={typed.x} onChange={(e) => setTyped((t) => ({ ...t, x: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addTypedPoint(); }} placeholder="X (e.g. 2728457.058)" className="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
+          <input value={typed.y} onChange={(e) => setTyped((t) => ({ ...t, y: e.target.value }))} placeholder={csFields(typed.cs || src).aPh} className="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
+          <input value={typed.x} onChange={(e) => setTyped((t) => ({ ...t, x: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addTypedPoint(); }} placeholder={csFields(typed.cs || src).bPh} className="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
           <Button variant="ghost" onClick={addTypedPoint}>Add</Button>
           {typedErr && <span className="text-red-600">{typedErr}</span>}
+          {!typedErr && (typed.cs || src) !== src && (
+            <span className="text-slate-400">converted to {displayLo(src)} on Add</span>
+          )}
           {manualPts.length > 0 && <span className="text-slate-400">{manualPts.length} added point(s) — also in the Cadastral work station.</span>}
         </div>
         {ruler.length > 0 && (
