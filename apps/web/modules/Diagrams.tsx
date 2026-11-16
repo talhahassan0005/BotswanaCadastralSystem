@@ -19,7 +19,6 @@ import {
   type BlockOffset,
 } from "@/components/SgDiagram";
 import { boundaryLetter, computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
-import { estimateDominantAngle } from "@/lib/plots";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -263,37 +262,32 @@ export function Diagrams() {
     () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
     [fig]
   );
-  // Automatic presentation rotation (client req 2026-09-09: zero user
-  // action — no button, no field, correctly oriented the very first time
-  // the sheet opens) — same estimateDominantAngle reuse and reasoning as
-  // GeneralPlanView.tsx/WorkingPlanView.tsx's own copies of this.
-  // BASE_ORIENTATION_DEG — see GeneralPlanView.tsx's own copy of this
+  // Presentation rotation: exactly the 180-degree Lo-grid display turn, no
+  // auto-alignment residual (client req 2026-11-16, side-by-side COGO vs
+  // Diagram screenshots of Lot 4925 Charleshill: "in cogo the plot is ok
+  // with its orientation .. but when i open diagram it looses its
+  // orientation"). CogoWorkspace.tsx draws at a flat BASE_ORIENTATION_DEG
+  // and is the orientation the surveyor checks against, so the sheet has to
+  // use the same one. WorkingPlanView.tsx dropped the same residual already
+  // (client req 2026-10-21, hand-corrected AutoCAD plan) and this is the
+  // Diagram's copy of that fix.
+  //
+  // What the residual did: estimateDominantAngle guesses a layout's grid
+  // tilt from nearest-neighbour angles and the sheet turned by it, squaring
+  // the figure to the page. That is wrong for a diagram whichever way it
+  // is estimated -- the north arrow is pinned straight up (see below), so
+  // turning the figure under it puts every drawn boundary off its own
+  // tabulated bearing. On Lot 4925 the estimate came out at +11.67 degrees
+  // from five points whose folded angles are 31.05, 31.05, 10.22, 10.22,
+  // 11.67: a 5-sided lot is not a grid, and the median is just the least
+  // bad of a set with no right answer in it. Drawing the real bearing is
+  // always right, so there is nothing left to estimate.
+  //
+  // BASE_ORIENTATION_DEG -- see GeneralPlanView.tsx's own copy of this
   // constant for the full explanation: the real data is bulk-imported in
   // Botswana's Lo-grid (south/west-positive) convention with no conversion
-  // applied at import, and empirically needs a 180 degrees correction that
-  // the small-angle residual estimate below is structurally blind to.
-  //
-  // The residual itself is estimated from EVERY point across the whole
-  // COGO layout when one is loaded (`cogoPlots.flatMap`), not just this
-  // one lot's own handful of boundary points (client req 2026-09-18,
-  // Lot 102 diagram screenshot: "bad orientation" — that lot's own ring
-  // is a small, slightly irregular hexagon; estimateDominantAngle's
-  // nearest-neighbour-angle median needs a reasonably large, mostly-
-  // rectangular sample to land near the true small-angle correction, and
-  // a single small/irregular lot's own 6 points is exactly the kind of
-  // thin, noisy sample that can throw the median off by tens of degrees.
-  // GeneralPlanView.tsx already estimates from `gpPlots.flatMap(...)` and
-  // WorkingPlanView.tsx from `resolvedPlots.flatMap(...)` for the same
-  // reason — every lot in one layout shares one physical grid tilt, so
-  // it should share one estimate, not each compute its own. Falls back
-  // to this lot's own points only when there's no COGO layout loaded at
-  // all (e.g. a Parcels-tab/manual-import figure).
-  const autoRotationDeg = useMemo(() => {
-    const BASE_ORIENTATION_DEG = 180;
-    const samplePoints = cogoPlots.length > 0 ? cogoPlots.flatMap((p) => p.fig.points) : points;
-    const angle = estimateDominantAngle(samplePoints);
-    return BASE_ORIENTATION_DEG + (angle == null ? 0 : angle);
-  }, [points, cogoPlots]);
+  // applied at import, and empirically needs a 180 degrees correction.
+  const autoRotationDeg = 180;
   // North arrow rotation (client req 2026-09-15: "North arrow should face
   // up" — see GeneralPlanView.tsx's own copy of this for the full
   // explanation). Deliberately excludes BASE_ORIENTATION_DEG: that 180
