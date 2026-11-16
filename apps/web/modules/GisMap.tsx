@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
 import { transformPoint, CRS_LIST } from "@/lib/server/crs";
+import { parseSurveyCsv } from "@/lib/server/csv";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
@@ -548,6 +549,65 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
   const [b, setB] = useState("");
   const [result, setResult] = useState<[number, number] | null>(null);
   const [err, setErr] = useState("");
+  // Whole-file conversion (client req 2026-11-16: "Add option to load csv")
+  // — the single Y/X pair above is fine for one check, but a job arrives as
+  // a list. Reuses the same CSV reader the Data Import tab uses, so the same
+  // headers, aliases and junk-file detection apply here.
+  const csvRef = useRef<HTMLInputElement>(null);
+  const [batch, setBatch] = useState<{ name: string; a: number; b: number }[] | null>(null);
+  const [batchNote, setBatchNote] = useState("");
+
+  function loadCsv(file: File) {
+    setErr(""); setBatch(null); setBatchNote("");
+    const reader = new FileReader();
+    reader.onerror = () => setErr("Could not read that file.");
+    reader.onload = () => {
+      try {
+        const parsed = parseSurveyCsv(String(reader.result ?? ""));
+        // The Y box is the easting field and the X box the northing one, the
+        // way this grid is written down here — the same pairing "Add point by
+        // coordinates" uses on the map above. Keep them in that order.
+        const usable = parsed.rows.filter((r) => r.east != null && r.north != null);
+        if (usable.length === 0) {
+          setErr(parsed.notice ?? "No rows with both coordinates were found in that file.");
+          return;
+        }
+        const out: { name: string; a: number; b: number }[] = [];
+        let failed = 0;
+        for (const r of usable) {
+          try {
+            const [x, y] = transformPoint(r.east as number, r.north as number, src, dst);
+            out.push({ name: r.beaconId ?? `P${r.index}`, a: x, b: y });
+          } catch { failed++; }
+        }
+        if (out.length === 0) { setErr("None of those coordinates could be converted between the chosen systems."); return; }
+        setBatch(out);
+        const skipped = parsed.rows.length - usable.length;
+        setBatchNote(
+          `${out.length} converted` +
+          (skipped ? ` · ${skipped} row${skipped > 1 ? "s" : ""} without coordinates skipped` : "") +
+          (failed ? ` · ${failed} failed` : "")
+        );
+      } catch (e: any) {
+        setErr(e?.message ?? "Could not read that CSV.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function downloadBatch() {
+    if (!batch) return;
+    const geo = dst === "WGS84";
+    const head = geo ? "Name,Latitude,Longitude" : "Name,Y,X";
+    const dp = geo ? 8 : 3;
+    const csv = [head, ...batch.map((r) => `${r.name},${r.a.toFixed(dp)},${r.b.toFixed(dp)}`)].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `converted-${dst.replace(/[^A-Za-z0-9]+/g, "")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   function convert() {
     setErr(""); setResult(null);
@@ -571,7 +631,7 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">From</label>
-            <select value={src} onChange={(e) => { setSrc(e.target.value); setResult(null); }}
+            <select value={src} onChange={(e) => { setSrc(e.target.value); setResult(null); setBatch(null); setBatchNote(""); }}
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none">
               {CRS_LIST.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
@@ -593,7 +653,7 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">To</label>
-            <select value={dst} onChange={(e) => { setDst(e.target.value); setResult(null); }}
+            <select value={dst} onChange={(e) => { setDst(e.target.value); setResult(null); setBatch(null); setBatchNote(""); }}
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-brand focus:outline-none">
               {CRS_LIST.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
@@ -618,10 +678,56 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={convert}>Convert</Button>
-          <button onClick={() => { setSrc(dst); setDst(src); setResult(null); }}
+          <button onClick={() => { setSrc(dst); setDst(src); setResult(null); setBatch(null); setBatchNote(""); }}
             className="text-xs text-slate-500 hover:text-slate-800 underline">
             Swap
           </button>
+        </div>
+
+        {/* A whole file at once (client req 2026-11-16). Same From/To pair as
+            the single conversion above, so the list converts exactly the way
+            one typed point would. */}
+        <div className="border-t border-slate-200 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={() => csvRef.current?.click()}>Load CSV</Button>
+            {batch && <Button variant="ghost" onClick={downloadBatch}>Download converted</Button>}
+            {batch && (
+              <button onClick={() => { setBatch(null); setBatchNote(""); }}
+                className="text-xs text-slate-500 hover:text-slate-800 underline">Clear</button>
+            )}
+            <input
+              ref={csvRef} type="file" accept=".csv,.txt" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCsv(f); e.target.value = ""; }}
+            />
+          </div>
+          {!batch && !err && (
+            <p className="mt-1 text-xs text-slate-400">
+              Columns: name, {isGeoSrc ? "latitude, longitude" : "Y, X"} — with or without a header row.
+            </p>
+          )}
+          {batchNote && <p className="mt-1 text-xs text-slate-500">{batchNote}</p>}
+          {batch && (
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-md bg-slate-50 px-2 py-1.5">
+              <table className="w-full font-mono text-[11px] tabular-nums">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="pr-2 font-medium">Name</th>
+                    <th className="pr-2 font-medium">{isGeoDst ? "Lat" : "Y"}</th>
+                    <th className="font-medium">{isGeoDst ? "Lon" : "X"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batch.map((r, i) => (
+                    <tr key={i}>
+                      <td className="pr-2 truncate">{r.name}</td>
+                      <td className="pr-2">{r.a.toFixed(isGeoDst ? 8 : 3)}</td>
+                      <td>{r.b.toFixed(isGeoDst ? 8 : 3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </Card>
