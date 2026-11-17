@@ -13,7 +13,7 @@ import { Topographic } from "@/modules/Topographic";
 import { Volume } from "@/modules/Volume";
 import { Editor } from "@/modules/Editor";
 import { RefMarks } from "@/modules/RefMarks";
-import { GisMap, CoordConverter } from "@/modules/GisMap";
+import { GisMap, CoordConverter, DrawingToolsPanel } from "@/modules/GisMap";
 import { Collaborate } from "@/modules/Collaborate";
 import { AiValidate } from "@/modules/AiValidate";
 import { Reports } from "@/modules/Reports";
@@ -97,6 +97,7 @@ function Workspace() {
               {/* Left sidebar — coordinate converter */}
               <div className="w-72 shrink-0 space-y-4">
                 <CoordConverter projectCs={config.coordinateSystem} />
+                <DrawingToolsPanel />
               </div>
               {/* Centre — big map */}
               <div className="min-w-0 flex-1">

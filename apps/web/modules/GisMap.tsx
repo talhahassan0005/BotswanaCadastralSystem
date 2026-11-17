@@ -680,6 +680,22 @@ export function GisMap() {
     }
   }, [tool]);
 
+  // Publish drawing state to the external DrawingToolsPanel component.
+  useEffect(() => {
+    publishDrawingState(
+      { tool, drawDraft, drawnLayers },
+      {
+        setTool: (t: string) => setTool(t as Tool),
+        finishDrawing,
+        undoLast: () => setDrawDraft((d) => d.slice(0, -1)),
+        cancelDraw: () => { setDrawDraft([]); setTool("none"); },
+        toggleLayer: toggleLayerVisibility,
+        renameLayer,
+        removeLayer,
+      }
+    );
+  });
+
   function buildKml(): string {
     const marks: string[] = [];
     for (const b of beacons) marks.push(`<Placemark><name>${esc(b.id)}</name><Point><coordinates>${b.lon},${b.lat},0</coordinates></Point></Placemark>`);
@@ -829,111 +845,7 @@ export function GisMap() {
             it at its old size on a short screen, so nothing gets smaller
             than it was; the offset is the header, tab bar and the toolbar
             rows above it. */}
-        <div className="flex gap-2">
-          {/* Left sidebar: drawing tools + layers (client req 2026-11-17:
-              "Add those tools similar to google earth ... it should appear
-              on the left side as layers"). Always visible so the tools are
-              discoverable even before any feature has been drawn. */}
-          <div className="w-56 shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: "calc(100vh - 260px)" }}>
-            {/* ---- Drawing tools ---- */}
-            <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
-              Drawing Tools
-            </div>
-            <div className="flex flex-col gap-1 px-2 py-2">
-              <button
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-polygon" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
-                onClick={() => setTool((t) => (t === "draw-polygon" ? "none" : "draw-polygon"))}
-              >
-                <PolygonIcon /> Draw Polygon
-              </button>
-              <button
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-line" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
-                onClick={() => setTool((t) => (t === "draw-line" ? "none" : "draw-line"))}
-              >
-                <LineIcon /> Draw Line
-              </button>
-              <button
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-circle" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
-                onClick={() => setTool((t) => (t === "draw-circle" ? "none" : "draw-circle"))}
-              >
-                <CircleIcon /> Circle
-              </button>
-            </div>
-            {/* Drawing status / finish controls */}
-            {(tool === "draw-polygon" || tool === "draw-line") && drawDraft.length > 0 && (
-              <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-blue-800">
-                <div className="font-medium">{drawDraft.length} point{drawDraft.length !== 1 ? "s" : ""}</div>
-                {drawDraft.length >= 2 && <div>{formatLength(polylineLength(drawDraft, false))}</div>}
-                {tool === "draw-polygon" && drawDraft.length >= 3 && <div>Area: {formatArea(polygonAreaM2(drawDraft))}</div>}
-                <div className="mt-1 flex gap-1">
-                  <button onClick={finishDrawing}
-                    disabled={tool === "draw-polygon" ? drawDraft.length < 3 : drawDraft.length < 2}
-                    className="rounded bg-brand px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40">Finish</button>
-                  <button onClick={() => setDrawDraft((d) => d.slice(0, -1))}
-                    className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Undo</button>
-                  <button onClick={() => { setDrawDraft([]); setTool("none"); }}
-                    className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
-                </div>
-              </div>
-            )}
-            {tool === "draw-circle" && drawDraft.length === 1 && (
-              <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-purple-800">
-                <div>Centre placed — click map to set radius</div>
-                <button onClick={() => { setDrawDraft([]); setTool("none"); }}
-                  className="mt-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
-              </div>
-            )}
-            {/* ---- Layers list ---- */}
-            <div className="border-y border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
-              Layers{drawnLayers.length > 0 ? ` (${drawnLayers.length})` : ""}
-            </div>
-            {drawnLayers.length === 0 ? (
-              <div className="px-3 py-3 text-[11px] text-slate-400">
-                No layers yet. Use the tools above to draw on the map.
-              </div>
-            ) : (
-              drawnLayers.map((layer) => (
-                <div key={layer.id} className="border-b border-slate-100 px-3 py-2 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={layer.visible} onChange={() => toggleLayerVisibility(layer.id)}
-                      className="accent-brand" style={{ width: 13, height: 13 }} />
-                    <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{
-                      backgroundColor: layer.kind === "polygon" ? "#3b82f6" : layer.kind === "line" ? "#ef4444" : "#8b5cf6",
-                    }} />
-                    <input
-                      value={layer.name}
-                      onChange={(e) => renameLayer(layer.id, e.target.value)}
-                      className="min-w-0 flex-1 truncate bg-transparent text-[11px] font-medium text-slate-700 outline-none focus:bg-slate-50 focus:px-1"
-                      title="Click to rename"
-                    />
-                    <button onClick={() => removeLayer(layer.id)}
-                      className="shrink-0 text-slate-400 hover:text-red-500" title="Delete">
-                      x
-                    </button>
-                  </div>
-                  <div className="mt-0.5 pl-5 text-[10px] text-slate-500 leading-relaxed">
-                    {layer.kind === "polygon" && (
-                      <>
-                        <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
-                        <div>Perimeter: {formatLength(layer.perimeterM ?? 0)}</div>
-                      </>
-                    )}
-                    {layer.kind === "line" && (
-                      <div>Length: {formatLength(layer.perimeterM ?? 0)}</div>
-                    )}
-                    {layer.kind === "circle" && (
-                      <>
-                        <div>Radius: {formatLength(layer.radius ?? 0)}</div>
-                        <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] flex-1 rounded-lg border border-slate-200 bg-slate-100" />
-        </div>
+        <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
           {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets, and turn country boundaries and place names on or off, via the layers control.
@@ -1155,6 +1067,144 @@ function RulerIcon() {
       <rect x="2.5" y="8.5" width="19" height="7" rx="1" />
       <path d="M6 8.5v2.5M9.5 8.5v4M13 8.5v2.5M16.5 8.5v4" strokeWidth="1.3" />
     </svg>
+  );
+}
+
+/** Drawing tools + layers panel (client req 2026-11-17: "it should appear on
+ *  the left side as layers" — under the Coordinate Conversion panel). The
+ *  drawing state lives in GisMap above; this panel drives it via the shared
+ *  module-level channel, same pattern as showOnGisMap. */
+type DrawTool = "draw-polygon" | "draw-line" | "draw-circle";
+interface DrawingPanelState {
+  tool: string;
+  drawDraft: [number, number][];
+  drawnLayers: { id: string; kind: string; name: string; visible: boolean; latlngs: [number, number][]; radius?: number; areaM2?: number; perimeterM?: number }[];
+}
+type DrawingPanelActions = {
+  setTool: (t: string) => void;
+  finishDrawing: () => void;
+  undoLast: () => void;
+  cancelDraw: () => void;
+  toggleLayer: (id: string) => void;
+  renameLayer: (id: string, name: string) => void;
+  removeLayer: (id: string) => void;
+};
+let _drawingPanelState: DrawingPanelState = { tool: "none", drawDraft: [], drawnLayers: [] };
+let _drawingPanelActions: DrawingPanelActions | null = null;
+let _drawingPanelNotify: (() => void) | null = null;
+
+/** Called by GisMap to push its state to the external panel. */
+function publishDrawingState(s: DrawingPanelState, a: DrawingPanelActions) {
+  _drawingPanelState = s;
+  _drawingPanelActions = a;
+  _drawingPanelNotify?.();
+}
+
+export function DrawingToolsPanel() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    _drawingPanelNotify = () => setTick((n) => n + 1);
+    return () => { _drawingPanelNotify = null; };
+  }, []);
+  const { tool, drawDraft, drawnLayers } = _drawingPanelState;
+  const a = _drawingPanelActions;
+  const setTool = (t: string) => a?.setTool(t);
+  return (
+    <Card title="Drawing Tools & Layers">
+      {/* ---- Drawing tools ---- */}
+      <div className="flex flex-col gap-1">
+        <button
+          className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-polygon" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+          onClick={() => setTool(tool === "draw-polygon" ? "none" : "draw-polygon")}
+        >
+          <PolygonIcon /> Draw Polygon
+        </button>
+        <button
+          className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-line" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+          onClick={() => setTool(tool === "draw-line" ? "none" : "draw-line")}
+        >
+          <LineIcon /> Draw Line
+        </button>
+        <button
+          className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-circle" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+          onClick={() => setTool(tool === "draw-circle" ? "none" : "draw-circle")}
+        >
+          <CircleIcon /> Circle
+        </button>
+      </div>
+      {/* Drawing status / finish controls */}
+      {(tool === "draw-polygon" || tool === "draw-line") && drawDraft.length > 0 && (
+        <div className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
+          <div className="font-medium">{drawDraft.length} point{drawDraft.length !== 1 ? "s" : ""}</div>
+          {drawDraft.length >= 2 && <div>{formatLength(polylineLength(drawDraft, false))}</div>}
+          {tool === "draw-polygon" && drawDraft.length >= 3 && <div>Area: {formatArea(polygonAreaM2(drawDraft))}</div>}
+          <div className="mt-1 flex gap-1">
+            <button onClick={() => a?.finishDrawing()}
+              disabled={tool === "draw-polygon" ? drawDraft.length < 3 : drawDraft.length < 2}
+              className="rounded bg-brand px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40">Finish</button>
+            <button onClick={() => a?.undoLast()}
+              className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Undo</button>
+            <button onClick={() => a?.cancelDraw()}
+              className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
+          </div>
+        </div>
+      )}
+      {tool === "draw-circle" && drawDraft.length === 1 && (
+        <div className="mt-2 rounded-md bg-purple-50 px-3 py-2 text-[11px] text-purple-800">
+          <div>Centre placed — click map to set radius</div>
+          <button onClick={() => a?.cancelDraw()}
+            className="mt-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
+        </div>
+      )}
+      {/* ---- Layers list ---- */}
+      <div className="mt-3 border-t border-slate-200 pt-2 text-xs font-semibold text-slate-700">
+        Layers{drawnLayers.length > 0 ? ` (${drawnLayers.length})` : ""}
+      </div>
+      {drawnLayers.length === 0 ? (
+        <div className="py-2 text-[11px] text-slate-400">
+          No layers yet. Use the tools above to draw on the map.
+        </div>
+      ) : (
+        drawnLayers.map((layer) => (
+          <div key={layer.id} className="border-b border-slate-100 py-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <input type="checkbox" checked={layer.visible} onChange={() => a?.toggleLayer(layer.id)}
+                className="accent-brand" style={{ width: 13, height: 13 }} />
+              <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{
+                backgroundColor: layer.kind === "polygon" ? "#3b82f6" : layer.kind === "line" ? "#ef4444" : "#8b5cf6",
+              }} />
+              <input
+                value={layer.name}
+                onChange={(e) => a?.renameLayer(layer.id, e.target.value)}
+                className="min-w-0 flex-1 truncate bg-transparent text-[11px] font-medium text-slate-700 outline-none focus:bg-slate-50 focus:px-1"
+                title="Click to rename"
+              />
+              <button onClick={() => a?.removeLayer(layer.id)}
+                className="shrink-0 text-slate-400 hover:text-red-500" title="Delete">
+                x
+              </button>
+            </div>
+            <div className="mt-0.5 pl-5 text-[10px] text-slate-500 leading-relaxed">
+              {layer.kind === "polygon" && (
+                <>
+                  <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
+                  <div>Perimeter: {formatLength(layer.perimeterM ?? 0)}</div>
+                </>
+              )}
+              {layer.kind === "line" && (
+                <div>Length: {formatLength(layer.perimeterM ?? 0)}</div>
+              )}
+              {layer.kind === "circle" && (
+                <>
+                  <div>Radius: {formatLength(layer.radius ?? 0)}</div>
+                  <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
+                </>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </Card>
   );
 }
 
