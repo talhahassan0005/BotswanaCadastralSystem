@@ -762,20 +762,6 @@ export function GisMap() {
             <RulerIcon />
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
-          {/* Drawing tools (client req 2026-11-17) */}
-          <span className="ml-1 border-l border-slate-200 pl-2" />
-          <Button variant={tool === "draw-polygon" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-polygon" ? "none" : "draw-polygon"))}>
-            <PolygonIcon />
-            {tool === "draw-polygon" ? "Drawing polygon…" : "Draw Polygon"}
-          </Button>
-          <Button variant={tool === "draw-line" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-line" ? "none" : "draw-line"))}>
-            <LineIcon />
-            {tool === "draw-line" ? "Drawing line…" : "Draw Line"}
-          </Button>
-          <Button variant={tool === "draw-circle" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-circle" ? "none" : "draw-circle"))}>
-            <CircleIcon />
-            {tool === "draw-circle" ? "Click centre, then edge…" : "Circle"}
-          </Button>
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
           {/* Layer visibility toggles */}
           {(beacons.length > 0 || parcels.length > 0) && (
@@ -837,28 +823,6 @@ export function GisMap() {
             <Button variant="ghost" onClick={() => setRuler([])}>Clear ruler</Button>
           </div>
         )}
-        {/* Drawing toolbar: finish / undo / cancel */}
-        {(tool === "draw-polygon" || tool === "draw-line") && drawDraft.length > 0 && (
-          <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
-            <span className="font-medium">{tool === "draw-polygon" ? "Draw Polygon" : "Draw Line"}:</span>
-            <span>{drawDraft.length} point{drawDraft.length !== 1 ? "s" : ""}</span>
-            {drawDraft.length >= 2 && <span>length {formatLength(polylineLength(drawDraft, false))}</span>}
-            {tool === "draw-polygon" && drawDraft.length >= 3 && <span>area {formatArea(polygonAreaM2(drawDraft))}</span>}
-            <Button variant="ghost" onClick={finishDrawing}
-              disabled={tool === "draw-polygon" ? drawDraft.length < 3 : drawDraft.length < 2}>
-              Finish
-            </Button>
-            <Button variant="ghost" onClick={() => setDrawDraft((d) => d.slice(0, -1))}>Undo last</Button>
-            <Button variant="ghost" onClick={() => { setDrawDraft([]); setTool("none"); }}>Cancel</Button>
-          </div>
-        )}
-        {tool === "draw-circle" && drawDraft.length === 1 && (
-          <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md bg-purple-50 px-3 py-1.5 text-xs text-purple-900">
-            <span className="font-medium">Circle:</span>
-            <span>Centre placed — click to set the radius</span>
-            <Button variant="ghost" onClick={() => { setDrawDraft([]); setTool("none"); }}>Cancel</Button>
-          </div>
-        )}
         {/* The basemap is the work surface on this tab, so it takes the
             height the screen actually has instead of a fixed 600px box
             (client req 2026-11-15: "Increase this windo"). The floor keeps
@@ -866,58 +830,108 @@ export function GisMap() {
             than it was; the offset is the header, tab bar and the toolbar
             rows above it. */}
         <div className="flex gap-2">
-          {/* Layers panel (client req 2026-11-17: "it should appear on the
-              left side as layers") — lists every drawn feature with
-              visibility toggle, rename, delete, and computed measurements. */}
-          {drawnLayers.length > 0 && (
-            <div className="w-64 shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: "calc(100vh - 260px)", minHeight: 200 }}>
-              <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
-                Layers ({drawnLayers.length})
+          {/* Left sidebar: drawing tools + layers (client req 2026-11-17:
+              "Add those tools similar to google earth ... it should appear
+              on the left side as layers"). Always visible so the tools are
+              discoverable even before any feature has been drawn. */}
+          <div className="w-56 shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: "calc(100vh - 260px)" }}>
+            {/* ---- Drawing tools ---- */}
+            <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+              Drawing Tools
+            </div>
+            <div className="flex flex-col gap-1 px-2 py-2">
+              <button
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-polygon" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                onClick={() => setTool((t) => (t === "draw-polygon" ? "none" : "draw-polygon"))}
+              >
+                <PolygonIcon /> Draw Polygon
+              </button>
+              <button
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-line" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                onClick={() => setTool((t) => (t === "draw-line" ? "none" : "draw-line"))}
+              >
+                <LineIcon /> Draw Line
+              </button>
+              <button
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${tool === "draw-circle" ? "bg-brand text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                onClick={() => setTool((t) => (t === "draw-circle" ? "none" : "draw-circle"))}
+              >
+                <CircleIcon /> Circle
+              </button>
+            </div>
+            {/* Drawing status / finish controls */}
+            {(tool === "draw-polygon" || tool === "draw-line") && drawDraft.length > 0 && (
+              <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-blue-800">
+                <div className="font-medium">{drawDraft.length} point{drawDraft.length !== 1 ? "s" : ""}</div>
+                {drawDraft.length >= 2 && <div>{formatLength(polylineLength(drawDraft, false))}</div>}
+                {tool === "draw-polygon" && drawDraft.length >= 3 && <div>Area: {formatArea(polygonAreaM2(drawDraft))}</div>}
+                <div className="mt-1 flex gap-1">
+                  <button onClick={finishDrawing}
+                    disabled={tool === "draw-polygon" ? drawDraft.length < 3 : drawDraft.length < 2}
+                    className="rounded bg-brand px-2 py-0.5 text-[10px] font-semibold text-white disabled:opacity-40">Finish</button>
+                  <button onClick={() => setDrawDraft((d) => d.slice(0, -1))}
+                    className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Undo</button>
+                  <button onClick={() => { setDrawDraft([]); setTool("none"); }}
+                    className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
+                </div>
               </div>
-              {drawnLayers.map((layer) => (
+            )}
+            {tool === "draw-circle" && drawDraft.length === 1 && (
+              <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-purple-800">
+                <div>Centre placed — click map to set radius</div>
+                <button onClick={() => { setDrawDraft([]); setTool("none"); }}
+                  className="mt-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-200">Cancel</button>
+              </div>
+            )}
+            {/* ---- Layers list ---- */}
+            <div className="border-y border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+              Layers{drawnLayers.length > 0 ? ` (${drawnLayers.length})` : ""}
+            </div>
+            {drawnLayers.length === 0 ? (
+              <div className="px-3 py-3 text-[11px] text-slate-400">
+                No layers yet. Use the tools above to draw on the map.
+              </div>
+            ) : (
+              drawnLayers.map((layer) => (
                 <div key={layer.id} className="border-b border-slate-100 px-3 py-2 text-xs">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <input type="checkbox" checked={layer.visible} onChange={() => toggleLayerVisibility(layer.id)}
-                      className="accent-brand" />
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{
+                      className="accent-brand" style={{ width: 13, height: 13 }} />
+                    <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{
                       backgroundColor: layer.kind === "polygon" ? "#3b82f6" : layer.kind === "line" ? "#ef4444" : "#8b5cf6",
                     }} />
                     <input
                       value={layer.name}
                       onChange={(e) => renameLayer(layer.id, e.target.value)}
-                      className="flex-1 truncate bg-transparent font-medium text-slate-700 outline-none focus:bg-slate-50 focus:px-1"
+                      className="min-w-0 flex-1 truncate bg-transparent text-[11px] font-medium text-slate-700 outline-none focus:bg-slate-50 focus:px-1"
                       title="Click to rename"
                     />
                     <button onClick={() => removeLayer(layer.id)}
-                      className="text-slate-400 hover:text-red-500" title="Delete">
+                      className="shrink-0 text-slate-400 hover:text-red-500" title="Delete">
                       x
                     </button>
                   </div>
-                  <div className="mt-1 pl-6 text-[10px] text-slate-500">
+                  <div className="mt-0.5 pl-5 text-[10px] text-slate-500 leading-relaxed">
                     {layer.kind === "polygon" && (
                       <>
-                        {layer.latlngs.length} vertices
-                        {layer.areaM2 != null && <> · Area: {formatArea(layer.areaM2)}</>}
-                        {layer.perimeterM != null && <> · Perimeter: {formatLength(layer.perimeterM)}</>}
+                        <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
+                        <div>Perimeter: {formatLength(layer.perimeterM ?? 0)}</div>
                       </>
                     )}
                     {layer.kind === "line" && (
-                      <>
-                        {layer.latlngs.length} points
-                        {layer.perimeterM != null && <> · Length: {formatLength(layer.perimeterM)}</>}
-                      </>
+                      <div>Length: {formatLength(layer.perimeterM ?? 0)}</div>
                     )}
                     {layer.kind === "circle" && (
                       <>
-                        {layer.radius != null && <>Radius: {formatLength(layer.radius)}</>}
-                        {layer.areaM2 != null && <> · Area: {formatArea(layer.areaM2)}</>}
+                        <div>Radius: {formatLength(layer.radius ?? 0)}</div>
+                        <div>Area: {formatArea(layer.areaM2 ?? 0)}</div>
                       </>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
           <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] flex-1 rounded-lg border border-slate-200 bg-slate-100" />
         </div>
         <p className="mt-2 text-xs text-slate-400">
