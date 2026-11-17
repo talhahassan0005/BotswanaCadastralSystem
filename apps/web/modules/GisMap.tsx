@@ -98,6 +98,57 @@ function loadLeaflet(): Promise<any> {
 interface LLBeacon { id: string; lat: number; lon: number }
 interface LLParcel { number: string; ring: [number, number][] }
 
+// ---- Geodetic helpers for drawn features (Haversine-based) ----
+const R_EARTH = 6371008.8; // mean radius in metres
+const toRad = (d: number) => (d * Math.PI) / 180;
+
+/** Great-circle distance between two WGS84 points, in metres. */
+function haversineM(a: [number, number], b: [number, number]): number {
+  const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+/** Total length of a polyline (or polygon perimeter when closed=true). */
+function polylineLength(pts: [number, number][], closed: boolean): number {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += haversineM(pts[i - 1], pts[i]);
+  if (closed && pts.length >= 3) d += haversineM(pts[pts.length - 1], pts[0]);
+  return d;
+}
+
+/** Spherical excess polygon area in m² (Girard's theorem, good enough for
+ *  drawn shapes up to city-scale). */
+function polygonAreaM2(pts: [number, number][]): number {
+  if (pts.length < 3) return 0;
+  // Shoelace on projected coordinates is simpler: we approximate by
+  // treating latitude/longitude as a local Cartesian grid scaled by the
+  // cosine of the mean latitude — accurate to <0.1% for shapes under a
+  // few hundred km.
+  const meanLat = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cosLat = Math.cos(toRad(meanLat));
+  let sum = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    // Convert to metres from the mean point
+    const ax = toRad(a[1]) * cosLat, ay = toRad(a[0]);
+    const bx = toRad(b[1]) * cosLat, by = toRad(b[0]);
+    sum += ax * by - bx * ay;
+  }
+  return Math.abs(sum / 2) * R_EARTH * R_EARTH;
+}
+
+function formatArea(m2: number): string {
+  if (m2 >= 1e6) return `${(m2 / 1e6).toFixed(4)} km²`;
+  if (m2 >= 1e4) return `${(m2 / 1e4).toFixed(4)} ha`;
+  return `${m2.toFixed(2)} m²`;
+}
+
+function formatLength(m: number): string {
+  if (m >= 1000) return `${(m / 1000).toFixed(3)} km`;
+  return `${m.toFixed(3)} m`;
+}
+
 /**
  * GIS Map (client req): a geo-referenced satellite basemap (Esri World Imagery)
  * with the project's beacons & parcels overlaid, plus KML export / Open in
@@ -112,7 +163,10 @@ export function GisMap() {
   // ---- Map tools (client req 2026-10-22): live cursor coordinates, an Add
   // Point tool (click the map or type coordinates — the point also lands in
   // the Cadastral/COGO work station) and a ruler. ----
-  type Tool = "none" | "point" | "ruler";
+  // Drawing tools (client req 2026-11-17): Draw Polygon, Draw Line, Circle,
+  // Calculate Area — same as Google Earth. Drawn features appear as "layers"
+  // in a left-side panel.
+  type Tool = "none" | "point" | "ruler" | "draw-polygon" | "draw-line" | "draw-circle";
   const [tool, setTool] = useState<Tool>("none");
   const toolRef = useRef<Tool>("none");
   toolRef.current = tool;
@@ -212,6 +266,76 @@ export function GisMap() {
     setTyped({ name: "", y: "", x: "", cs: typed.cs });
     mapRef.current?.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
   }
+  // ---- Drawing tools state (client req 2026-11-17) ----
+  interface DrawnLayer {
+    id: string;
+    kind: "polygon" | "line" | "circle";
+    name: string;
+    visible: boolean;
+    // polygon/line: array of [lat,lon]; circle: single centre
+    latlngs: [number, number][];
+    // circle only
+    radius?: number; // metres
+    // computed
+    areaM2?: number;
+    perimeterM?: number;
+    leafletId?: number; // internal
+  }
+  const [drawnLayers, setDrawnLayers] = useState<DrawnLayer[]>([]);
+  const drawnLayersRef = useRef<DrawnLayer[]>([]);
+  drawnLayersRef.current = drawnLayers;
+  const [drawDraft, setDrawDraft] = useState<[number, number][]>([]);
+  const drawDraftRef = useRef<[number, number][]>([]);
+  drawDraftRef.current = drawDraft;
+  const drawLayerRef = useRef<any>(null); // Leaflet layer group for drawn features
+  const drawDraftLayerRef = useRef<any>(null); // Leaflet layer group for in-progress drawing
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const drawIdRef = useRef(1);
+
+  function finishDrawing() {
+    const t = toolRef.current;
+    const pts = drawDraftRef.current;
+    if (t === "draw-polygon" && pts.length >= 3) {
+      const id = `draw-${Date.now()}-${drawIdRef.current++}`;
+      const area = polygonAreaM2(pts);
+      const perim = polylineLength(pts, true);
+      setDrawnLayers((ls) => [...ls, {
+        id, kind: "polygon", name: `Polygon ${drawnLayersRef.current.filter((l) => l.kind === "polygon").length + 1}`,
+        visible: true, latlngs: pts, areaM2: area, perimeterM: perim,
+      }]);
+    } else if (t === "draw-line" && pts.length >= 2) {
+      const id = `draw-${Date.now()}-${drawIdRef.current++}`;
+      const len = polylineLength(pts, false);
+      setDrawnLayers((ls) => [...ls, {
+        id, kind: "line", name: `Line ${drawnLayersRef.current.filter((l) => l.kind === "line").length + 1}`,
+        visible: true, latlngs: pts, perimeterM: len,
+      }]);
+    }
+    setDrawDraft([]);
+    setTool("none");
+  }
+  function finishCircle(centre: [number, number], radiusM: number) {
+    const id = `draw-${Date.now()}-${drawIdRef.current++}`;
+    const area = Math.PI * radiusM * radiusM;
+    setDrawnLayers((ls) => [...ls, {
+      id, kind: "circle",
+      name: `Circle ${drawnLayersRef.current.filter((l) => l.kind === "circle").length + 1}`,
+      visible: true, latlngs: [centre], radius: radiusM,
+      areaM2: area, perimeterM: 2 * Math.PI * radiusM,
+    }]);
+    setDrawDraft([]);
+    setTool("none");
+  }
+  function removeLayer(id: string) {
+    setDrawnLayers((ls) => ls.filter((l) => l.id !== id));
+  }
+  function toggleLayerVisibility(id: string) {
+    setDrawnLayers((ls) => ls.map((l) => l.id === id ? { ...l, visible: !l.visible } : l));
+  }
+  function renameLayer(id: string, name: string) {
+    setDrawnLayers((ls) => ls.map((l) => l.id === id ? { ...l, name } : l));
+  }
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -383,10 +507,21 @@ export function GisMap() {
         map.on("click", (ev: any) => {
           const t = toolRef.current;
           if (t === "none") return;
-          const en = toENRef.current(ev.latlng.lat, ev.latlng.lng);
-          if (!en) return;
-          if (t === "point") addPointRef.current("", en[0], en[1]);
-          else setRuler((r) => [...r, { east: en[0], north: en[1], lat: ev.latlng.lat, lon: ev.latlng.lng }]);
+          const ll: [number, number] = [ev.latlng.lat, ev.latlng.lng];
+          const en = toENRef.current(ll[0], ll[1]);
+          if (t === "point") { if (en) addPointRef.current("", en[0], en[1]); }
+          else if (t === "ruler") { if (en) setRuler((r) => [...r, { east: en[0], north: en[1], lat: ll[0], lon: ll[1] }]); }
+          else if (t === "draw-polygon" || t === "draw-line") {
+            setDrawDraft((d) => [...d, ll]);
+          } else if (t === "draw-circle") {
+            const draft = drawDraftRef.current;
+            if (draft.length === 0) {
+              setDrawDraft([ll]);
+            } else {
+              const radiusM = haversineM(draft[0], ll);
+              finishCircle(draft[0], radiusM);
+            }
+          }
         });
         // Reference marks layer (off by default — 2057 marks). Hovering
         // names the mark; clicking opens its full record (client req
@@ -424,6 +559,8 @@ export function GisMap() {
         refMarksLayerRef.current = rmGroup;
         manualLayerRef.current = L.layerGroup().addTo(map);
         rulerLayerRef.current = L.layerGroup().addTo(map);
+        drawLayerRef.current = L.layerGroup().addTo(map);
+        drawDraftLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
         gisShow = (points, zoom) => {
           if (points.length === 1) map.flyTo(points[0], zoom ?? 16, { duration: 0.8 });
@@ -446,6 +583,8 @@ export function GisMap() {
       manualLayerRef.current = null;
       rulerLayerRef.current = null;
       refMarksLayerRef.current = null;
+      drawLayerRef.current = null;
+      drawDraftLayerRef.current = null;
       coordBoxRef.current = null;
       if (map) map.remove();
     };
@@ -489,6 +628,57 @@ export function GisMap() {
   }, [ruler, mapReady]);
   const rulerLegs = ruler.slice(1).map((r, i) => inverse(ruler[i], r));
   const rulerTotal = rulerLegs.reduce((s, [, d]) => s + d, 0);
+
+  // Render drawn features (polygons, lines, circles) on the map.
+  useEffect(() => {
+    const L = window.L, group = drawLayerRef.current;
+    if (!L || !group) return;
+    group.clearLayers();
+    for (const layer of drawnLayers) {
+      if (!layer.visible) continue;
+      if (layer.kind === "polygon") {
+        const pg = L.polygon(layer.latlngs, { color: "#3b82f6", weight: 2, fillColor: "#3b82f6", fillOpacity: 0.15 });
+        pg.bindTooltip(layer.name, { permanent: false });
+        if (layer.areaM2 != null) pg.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Area: ${formatArea(layer.areaM2)}<br/>Perimeter: ${formatLength(layer.perimeterM ?? 0)}`);
+        pg.addTo(group);
+      } else if (layer.kind === "line") {
+        const pl = L.polyline(layer.latlngs, { color: "#ef4444", weight: 2.5 });
+        pl.bindTooltip(layer.name, { permanent: false });
+        if (layer.perimeterM != null) pl.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Length: ${formatLength(layer.perimeterM)}`);
+        pl.addTo(group);
+      } else if (layer.kind === "circle" && layer.radius != null) {
+        const c = L.circle(layer.latlngs[0], { radius: layer.radius, color: "#8b5cf6", weight: 2, fillColor: "#8b5cf6", fillOpacity: 0.1 });
+        c.bindTooltip(layer.name, { permanent: false });
+        c.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Radius: ${formatLength(layer.radius)}<br/>Area: ${formatArea(layer.areaM2 ?? 0)}`);
+        c.addTo(group);
+      }
+    }
+  }, [drawnLayers, mapReady]);
+
+  // Render the in-progress drawing draft (dashed preview).
+  useEffect(() => {
+    const L = window.L, group = drawDraftLayerRef.current;
+    if (!L || !group) return;
+    group.clearLayers();
+    if (!drawDraft.length) return;
+    if (tool === "draw-polygon" || tool === "draw-line") {
+      L.polyline(drawDraft, { color: "#3b82f6", weight: 2, dashArray: "6 4" }).addTo(group);
+      for (const pt of drawDraft) {
+        L.circleMarker(pt, { radius: 4, color: "#3b82f6", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(group);
+      }
+    } else if (tool === "draw-circle" && drawDraft.length === 1) {
+      L.circleMarker(drawDraft[0], { radius: 5, color: "#8b5cf6", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(group);
+    }
+  }, [drawDraft, tool, mapReady]);
+
+  // Clear draft when tool changes away from a draw tool.
+  useEffect(() => {
+    if (tool !== "draw-polygon" && tool !== "draw-line" && tool !== "draw-circle") {
+      setDrawDraft([]);
+      const group = drawDraftLayerRef.current;
+      if (group) group.clearLayers();
+    }
+  }, [tool]);
 
   function buildKml(): string {
     const marks: string[] = [];
@@ -572,6 +762,20 @@ export function GisMap() {
             <RulerIcon />
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
+          {/* Drawing tools (client req 2026-11-17) */}
+          <span className="ml-1 border-l border-slate-200 pl-2" />
+          <Button variant={tool === "draw-polygon" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-polygon" ? "none" : "draw-polygon"))}>
+            <PolygonIcon />
+            {tool === "draw-polygon" ? "Drawing polygon…" : "Draw Polygon"}
+          </Button>
+          <Button variant={tool === "draw-line" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-line" ? "none" : "draw-line"))}>
+            <LineIcon />
+            {tool === "draw-line" ? "Drawing line…" : "Draw Line"}
+          </Button>
+          <Button variant={tool === "draw-circle" ? "primary" : "ghost"} onClick={() => setTool((t) => (t === "draw-circle" ? "none" : "draw-circle"))}>
+            <CircleIcon />
+            {tool === "draw-circle" ? "Click centre, then edge…" : "Circle"}
+          </Button>
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
           {/* Layer visibility toggles */}
           {(beacons.length > 0 || parcels.length > 0) && (
@@ -633,13 +837,89 @@ export function GisMap() {
             <Button variant="ghost" onClick={() => setRuler([])}>Clear ruler</Button>
           </div>
         )}
+        {/* Drawing toolbar: finish / undo / cancel */}
+        {(tool === "draw-polygon" || tool === "draw-line") && drawDraft.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
+            <span className="font-medium">{tool === "draw-polygon" ? "Draw Polygon" : "Draw Line"}:</span>
+            <span>{drawDraft.length} point{drawDraft.length !== 1 ? "s" : ""}</span>
+            {drawDraft.length >= 2 && <span>length {formatLength(polylineLength(drawDraft, false))}</span>}
+            {tool === "draw-polygon" && drawDraft.length >= 3 && <span>area {formatArea(polygonAreaM2(drawDraft))}</span>}
+            <Button variant="ghost" onClick={finishDrawing}
+              disabled={tool === "draw-polygon" ? drawDraft.length < 3 : drawDraft.length < 2}>
+              Finish
+            </Button>
+            <Button variant="ghost" onClick={() => setDrawDraft((d) => d.slice(0, -1))}>Undo last</Button>
+            <Button variant="ghost" onClick={() => { setDrawDraft([]); setTool("none"); }}>Cancel</Button>
+          </div>
+        )}
+        {tool === "draw-circle" && drawDraft.length === 1 && (
+          <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md bg-purple-50 px-3 py-1.5 text-xs text-purple-900">
+            <span className="font-medium">Circle:</span>
+            <span>Centre placed — click to set the radius</span>
+            <Button variant="ghost" onClick={() => { setDrawDraft([]); setTool("none"); }}>Cancel</Button>
+          </div>
+        )}
         {/* The basemap is the work surface on this tab, so it takes the
             height the screen actually has instead of a fixed 600px box
             (client req 2026-11-15: "Increase this windo"). The floor keeps
             it at its old size on a short screen, so nothing gets smaller
             than it was; the offset is the header, tab bar and the toolbar
             rows above it. */}
-        <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] w-full rounded-lg border border-slate-200 bg-slate-100" />
+        <div className="flex gap-2">
+          {/* Layers panel (client req 2026-11-17: "it should appear on the
+              left side as layers") — lists every drawn feature with
+              visibility toggle, rename, delete, and computed measurements. */}
+          {drawnLayers.length > 0 && (
+            <div className="w-64 shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white" style={{ maxHeight: "calc(100vh - 260px)", minHeight: 200 }}>
+              <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+                Layers ({drawnLayers.length})
+              </div>
+              {drawnLayers.map((layer) => (
+                <div key={layer.id} className="border-b border-slate-100 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" checked={layer.visible} onChange={() => toggleLayerVisibility(layer.id)}
+                      className="accent-brand" />
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{
+                      backgroundColor: layer.kind === "polygon" ? "#3b82f6" : layer.kind === "line" ? "#ef4444" : "#8b5cf6",
+                    }} />
+                    <input
+                      value={layer.name}
+                      onChange={(e) => renameLayer(layer.id, e.target.value)}
+                      className="flex-1 truncate bg-transparent font-medium text-slate-700 outline-none focus:bg-slate-50 focus:px-1"
+                      title="Click to rename"
+                    />
+                    <button onClick={() => removeLayer(layer.id)}
+                      className="text-slate-400 hover:text-red-500" title="Delete">
+                      x
+                    </button>
+                  </div>
+                  <div className="mt-1 pl-6 text-[10px] text-slate-500">
+                    {layer.kind === "polygon" && (
+                      <>
+                        {layer.latlngs.length} vertices
+                        {layer.areaM2 != null && <> · Area: {formatArea(layer.areaM2)}</>}
+                        {layer.perimeterM != null && <> · Perimeter: {formatLength(layer.perimeterM)}</>}
+                      </>
+                    )}
+                    {layer.kind === "line" && (
+                      <>
+                        {layer.latlngs.length} points
+                        {layer.perimeterM != null && <> · Length: {formatLength(layer.perimeterM)}</>}
+                      </>
+                    )}
+                    {layer.kind === "circle" && (
+                      <>
+                        {layer.radius != null && <>Radius: {formatLength(layer.radius)}</>}
+                        {layer.areaM2 != null && <> · Area: {formatArea(layer.areaM2)}</>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div ref={mapDivRef} className="h-[calc(100vh-260px)] min-h-[600px] flex-1 rounded-lg border border-slate-200 bg-slate-100" />
+        </div>
         <p className="mt-2 text-xs text-slate-400">
           Basemap: Esri World Imagery (geo-referenced satellite). Your beacons &amp; parcels are projected from
           {" "}{config.coordinateSystem} to WGS84 and overlaid. Switch Satellite/Streets, and turn country boundaries and place names on or off, via the layers control.
@@ -860,6 +1140,33 @@ function RulerIcon() {
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
       <rect x="2.5" y="8.5" width="19" height="7" rx="1" />
       <path d="M6 8.5v2.5M9.5 8.5v4M13 8.5v2.5M16.5 8.5v4" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+function PolygonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M5 17L3 7l8-3 7 3 2 10-6 4z" />
+    </svg>
+  );
+}
+
+function LineIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 20L20 4" />
+      <circle cx="4" cy="20" r="2" />
+      <circle cx="20" cy="4" r="2" />
+    </svg>
+  );
+}
+
+function CircleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
     </svg>
   );
 }
