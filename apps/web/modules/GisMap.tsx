@@ -158,7 +158,7 @@ function formatLength(m: number): string {
  * Google Earth. Coordinates are projected (Lo/UTM) → WGS84 via crs.transformPoint.
  */
 export function GisMap() {
-  const { cogoResult, parcelDoc, config, cogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
+  const { cogoResult, parcelDoc, config, cogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc, importResult } = useStore();
   const mapDivRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("Loading map…");
@@ -433,9 +433,23 @@ export function GisMap() {
         }
       }
       if (ring.length >= 3 && cogoResult.type === "closed") parcels.push({ number: config.name || "figure", ring });
+    } else if (importResult?.rows?.length) {
+      // COGO can display the raw Data Import point cloud before the user
+      // computes a traverse or creates numbered plots. GIS previously had
+      // no equivalent fallback, so the same visible COGO points simply
+      // disappeared on this tab. Project every valid imported coordinate
+      // through the selected project CRS and show it as a map beacon; no
+      // polygon is invented because an unordered point cloud has no safe
+      // boundary order.
+      const rows = importResult.rows.filter((row) => row.east != null && row.north != null);
+      inputCount = rows.length;
+      for (const row of rows) {
+        const ll = toLL(row.east as number, row.north as number);
+        if (ll) beacons.push({ id: row.beaconId ?? `P${row.index}`, lat: ll[0], lon: ll[1] });
+      }
     }
     return { beacons, parcels, inputCount };
-  }, [cogoResult, parcelDoc, cogoPlots, config.coordinateSystem, config.name]);
+  }, [cogoResult, parcelDoc, cogoPlots, importResult, config.coordinateSystem, config.name]);
 
   const centroid = useMemo<[number, number]>(() => {
     const all = [...beacons.map((b) => [b.lat, b.lon] as [number, number]), ...parcels.flatMap((p) => p.ring)];
