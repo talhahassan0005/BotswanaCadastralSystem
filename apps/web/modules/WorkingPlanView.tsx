@@ -374,11 +374,11 @@ export function WorkingPlanView() {
   // automatic neighbouring-lot continuation stubs/labels as well as manual
   // annotations. Older saved projects have only the manual arrays, so keep
   // those as a backward-compatible fallback.
-  const diagramAnnotations =
+  const savedDiagramAnnotations =
     (diagramInput as { displayAnnotations?: ManualAnnotation[]; annotations?: ManualAnnotation[] } | null)?.displayAnnotations
     ?? (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations
     ?? [];
-  const diagramTexts =
+  const savedDiagramTexts =
     (diagramInput as { displayTexts?: ManualText[]; texts?: ManualText[] } | null)?.displayTexts
     ?? (diagramInput as { texts?: ManualText[] } | null)?.texts
     ?? [];
@@ -446,6 +446,103 @@ export function WorkingPlanView() {
         })),
     [plotNumbers, cogoPlots]
   );
+  // Rebuild the neighbouring-lot continuation marks directly from COGO.
+  // Previously Working Plan relied on `displayAnnotations` being saved by
+  // the Diagram screen first. Opening an older project or going straight to
+  // Working Plan therefore lost the dashed continuations at shared corners
+  // (such as A/B), even though Diagram could derive them from the same lots.
+  const autoNeighbourMarks = useMemo(() => {
+    const empty = { annotations: [] as ManualAnnotation[], texts: [] as ManualText[] };
+    if (cogoPlots.length < 2 || resolvedPlots.length > 1) return empty;
+    const bare = (s: string) => s.trim().replace(/^(LOT|ERF|PLOT)\s+/i, "").toUpperCase();
+    const activeNumber = resolvedPlots.length === 1
+      ? resolvedPlots[0].number
+      : cogoPlots.find((p) => bare(p.number) === bare(effectiveMeta.lotName))?.number;
+    if (!activeNumber) return empty;
+    const active = cogoPlots.find((p) => p.number === activeNumber);
+    if (!active || active.fig.points.length < 3) return empty;
+    const mainFigures = new Set<string>();
+    const doc = (cogoWorkspaceDoc ?? {}) as { polygons?: { id: string }[]; polygonMeta?: Record<string, { position?: string; mainFigure?: boolean }> };
+    for (const pg of doc.polygons ?? []) {
+      const m = doc.polygonMeta?.[pg.id];
+      if (m?.mainFigure && m.position?.trim()) mainFigures.add(bare(m.position));
+    }
+    const inside = (pt: { east: number; north: number }, ring: { east: number; north: number }[]) => {
+      let hit = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        if (a.north > pt.north !== b.north > pt.north && pt.east < ((b.east - a.east) * (pt.north - a.north)) / (b.north - a.north) + a.east) hit = !hit;
+      }
+      return hit;
+    };
+    for (const plot of cogoPlots) {
+      if (plot.fig.points.length < 3) continue;
+      const contained = cogoPlots.filter((other) => {
+        if (other === plot || other.fig.points.length < 3 || other.fig.area_m2 >= plot.fig.area_m2) return false;
+        const centre = {
+          east: other.fig.points.reduce((s, q) => s + q.east, 0) / other.fig.points.length,
+          north: other.fig.points.reduce((s, q) => s + q.north, 0) / other.fig.points.length,
+        };
+        return inside(centre, plot.fig.points);
+      }).length;
+      if (contained >= 2) mainFigures.add(bare(plot.number));
+    }
+    if (mainFigures.has(bare(activeNumber))) return empty;
+    const current = active.fig.points;
+    const others = cogoPlots.filter((p) => p.number !== activeNumber && !mainFigures.has(bare(p.number)));
+    const same = (a: { east: number; north: number }, b: { east: number; north: number }) =>
+      Math.abs(a.east - b.east) < 0.01 && Math.abs(a.north - b.north) < 0.01;
+    const onCurrent = (q: { east: number; north: number }) => current.some((p) => same(p, q));
+    const cE = current.reduce((s, p) => s + p.east, 0) / current.length;
+    const cN = current.reduce((s, p) => s + p.north, 0) / current.length;
+    const span = Math.max(
+      Math.max(...current.map((p) => p.east)) - Math.min(...current.map((p) => p.east)),
+      Math.max(...current.map((p) => p.north)) - Math.min(...current.map((p) => p.north)),
+      1
+    );
+    const annotations: ManualAnnotation[] = [];
+    const texts: ManualText[] = [];
+    const drawn = new Set<string>();
+    for (let i = 0; i < current.length; i++) {
+      const a = current[i], b = current[(i + 1) % current.length];
+      const neighbour = others.find((o) => o.fig.points.some((oa, j) => {
+        const ob = o.fig.points[(j + 1) % o.fig.points.length];
+        return (same(a, oa) && same(b, ob)) || (same(a, ob) && same(b, oa));
+      }));
+      if (!neighbour) continue;
+      const dE = b.east - a.east, dN = b.north - a.north;
+      const len = Math.hypot(dE, dN) || 1;
+      const mE = (a.east + b.east) / 2, mN = (a.north + b.north) / 2;
+      let pE = -dN / len, pN = dE / len;
+      if (pE * (mE - cE) + pN * (mN - cN) < 0) { pE = -pE; pN = -pN; }
+      const off = Math.max(1, Math.min(len * 0.08, span * 0.06));
+      texts.push({ id: `auto-nbr-${i}-${neighbour.number}`, east: mE + pE * off, north: mN + pN * off, text: neighbour.number, upright: true, from: { east: mE, north: mN } });
+      const ring = neighbour.fig.points;
+      for (const v of [a, b]) {
+        const k = ring.findIndex((q) => same(q, v));
+        if (k < 0) continue;
+        for (const w of [ring[(k + 1) % ring.length], ring[(k - 1 + ring.length) % ring.length]]) {
+          if (onCurrent(w)) continue;
+          const key = `${v.east.toFixed(2)},${v.north.toFixed(2)}>${w.east.toFixed(2)},${w.north.toFixed(2)}`;
+          if (drawn.has(key)) continue;
+          drawn.add(key);
+          const eE = w.east - v.east, eN = w.north - v.north;
+          const eLen = Math.hypot(eE, eN) || 1;
+          const stub = Math.min(eLen * 0.5, span * 0.12);
+          annotations.push({ id: `auto-nbr-dash-${annotations.length}`, e1: v.east, n1: v.north, e2: v.east + (eE / eLen) * stub, n2: v.north + (eN / eLen) * stub });
+        }
+      }
+    }
+    return { annotations, texts };
+  }, [cogoPlots, resolvedPlots, effectiveMeta.lotName, cogoWorkspaceDoc]);
+  const diagramAnnotations = useMemo(() => {
+    const ids = new Set(savedDiagramAnnotations.map((a) => a.id));
+    return [...savedDiagramAnnotations, ...autoNeighbourMarks.annotations.filter((a) => !ids.has(a.id))];
+  }, [savedDiagramAnnotations, autoNeighbourMarks.annotations]);
+  const diagramTexts = useMemo(() => {
+    const ids = new Set(savedDiagramTexts.map((t) => t.id));
+    return [...savedDiagramTexts, ...autoNeighbourMarks.texts.filter((t) => !ids.has(t.id))];
+  }, [savedDiagramTexts, autoNeighbourMarks.texts]);
   // Automatic presentation rotation (client req 2026-09-09: zero user
   // action — no button, no field, correctly oriented the very first time
   // the sheet opens) — same estimateDominantAngle reuse and reasoning as

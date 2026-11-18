@@ -23,6 +23,7 @@ import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
+import { transformPoint } from "@/lib/server/crs";
 import { fitFontSize } from "@/lib/wrapSvgText";
 
 /** Hand-typed overrides for the SIDES (METRES) and DIRECTIONS columns of
@@ -117,6 +118,34 @@ function formatLotName(plotNumber: string): string {
  *  individual beacons when a lot genuinely mixes beacon types. */
 function defaultBeaconDescription(): string {
   return "ALL : 12mm Iron peg";
+}
+
+/** Botswana degree-square code from the one-minute geographic grid cell
+ * containing the figure. Per the SG convention supplied by the client, read
+ * the immediate TOP latitude grid line first and the immediate RIGHT
+ * longitude grid line second, then retain their whole-degree parts only:
+ * e.g. 24°30'S / 25°03'E -> 2425. */
+function automaticDegreeSquare(
+  pts: { east: number; north: number }[],
+  coordinateSystem: string
+): string | null {
+  if (!pts.length) return null;
+  const east = pts.reduce((sum, p) => sum + p.east, 0) / pts.length;
+  const north = pts.reduce((sum, p) => sum + p.north, 0) / pts.length;
+  try {
+    const [lat, lon] = transformPoint(east, north, coordinateSystem, "WGS84");
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    // The grid is 1' × 1'. `ceil` finds the north/top and east/right grid
+    // lines. A tiny tolerance keeps an exact grid-line coordinate on that
+    // line instead of moving it into the next cell because of FP noise.
+    const topLat = Math.ceil(lat * 60 - 1e-9) / 60;
+    const rightLon = Math.ceil(lon * 60 - 1e-9) / 60;
+    const latDegree = Math.floor(Math.abs(topLat) + 1e-9);
+    const lonDegree = Math.floor(Math.abs(rightLon) + 1e-9);
+    return `${String(latDegree).padStart(2, "0")}${String(lonDegree).padStart(2, "0")}`;
+  } catch {
+    return null;
+  }
 }
 
 export function Diagrams() {
@@ -1060,6 +1089,14 @@ export function Diagrams() {
   // the diagram was first opened, which froze the header at e.g. Lo 25
   // (client req 2026-10-21).
   const liveCoordinateSystem = config.coordinateSystem.replace(" Botswana", "");
+  const computedDegreeSquare = useMemo(
+    () => automaticDegreeSquare(points, liveCoordinateSystem),
+    [points, liveCoordinateSystem]
+  );
+  useEffect(() => {
+    if (!computedDegreeSquare) return;
+    setMeta((m) => m.degreeSquare === computedDegreeSquare ? m : { ...m, degreeSquare: computedDegreeSquare });
+  }, [computedDegreeSquare]);
   const fullMeta: DiagramMeta = {
     ...meta,
     coordinateSystem: liveCoordinateSystem,
@@ -2064,7 +2101,14 @@ export function Diagrams() {
                   {!isBorehole && (
                     <Field label="General Plan No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
                   )}
-                  <Field label="Degree Square"><Input value={meta.degreeSquare} onChange={set("degreeSquare")} /></Field>
+                  <Field label="Degree Square (automatic)">
+                    <input
+                      value={meta.degreeSquare}
+                      readOnly
+                      title="Calculated automatically from the figure's geographic grid square"
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                    />
+                  </Field>
                   <Field label="D.S.M File"><Input value={meta.dsmFile ?? ""} onChange={set("dsmFile")} placeholder="e.g. CAD T9" /></Field>
                   <Field label="Comp."><Input value={meta.comp ?? ""} onChange={set("comp")} /></Field>
                   <Field label="LIR No."><Input value={meta.lirNo ?? ""} onChange={set("lirNo")} /></Field>
