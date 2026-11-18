@@ -123,7 +123,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     }
   }
   async function signOut() {
-    try { await supabase?.auth.signOut(); } catch { /* offline — clear local session anyway */ }
+    try {
+      await supabase?.auth.signOut();
+    } catch {
+      // Offline/backend failure must not leave the local UI looking signed in.
+    } finally {
+      setUser(null);
+      setRecovery(false);
+    }
   }
   async function resetPassword(email: string) {
     if (!supabase) return { error: "Backend not configured." };

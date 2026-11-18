@@ -612,7 +612,7 @@ export function Stockpile() {
                     <div className="flex justify-between"><dt className="text-slate-500">Min RL</dt><dd className="font-medium">{fmt(r.stats.minZ, 3)} m</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">Max RL</dt><dd className="font-medium">{fmt(r.stats.maxZ, 3)} m</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">Mean RL</dt><dd className="font-medium">{fmt(r.stats.meanZ, 3)} m</dd></div>
-                    <div className="flex justify-between"><dt className="text-slate-500">Relief</dt><dd className="font-medium">{fmt(r.stats.relief, 3)} m</dd></div>
+                    <div className="flex justify-between"><dt className="text-slate-500">Highest − lowest</dt><dd className="font-medium">{fmt(r.stats.relief, 3)} m</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">Points</dt><dd className="font-medium">{r.stats.count}</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">Triangles</dt><dd className="font-medium">{r.stats.triangles}</dd></div>
                   </dl>

@@ -100,8 +100,8 @@ export function ProjectBar() {
 
   // Save before an in-app "close" (sign out / Projects home / open another).
   // If the save fails, surface it and DON'T proceed, so work is never lost.
-  async function saveAndThen(after: () => void) {
-    if (!user) { after(); return; }
+  async function saveAndThen(after: () => void | Promise<void>) {
+    if (!user) { await after(); return; }
     setMsg("Saving…");
     const r = await autoSave();
     if (r.error) {
@@ -109,7 +109,7 @@ export function ProjectBar() {
       return;
     }
     setMsg(null);
-    after();
+    await after();
   }
 
   return (
