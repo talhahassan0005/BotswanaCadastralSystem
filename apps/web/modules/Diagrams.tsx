@@ -18,7 +18,7 @@ import {
   type ManualText,
   type BlockOffset,
 } from "@/components/SgDiagram";
-import { boundaryLetter, computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
+import { boundaryLetter, certificationLine, computeDiagramLayout, sideLabel, tCoord, tDist, fmtSystem, annexNameY, currentMonthYear } from "@/lib/diagramLayout";
 import { BoreholeDiagram } from "@/components/BoreholeDiagram";
 import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketch";
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
@@ -204,6 +204,12 @@ export function Diagrams() {
     leaseMeta?: Omit<LeaseMeta, "areaM2" | "coordinateSystem">;
     annotations?: ManualAnnotation[];
     texts?: ManualText[];
+    /** Complete marks currently rendered on the Diagram, including the
+     *  automatically generated neighbouring-lot stubs and labels. Other
+     *  sheets consume these read-only copies; `annotations`/`texts` remain
+     *  the editable user-created records so auto marks are never duplicated. */
+    displayAnnotations?: ManualAnnotation[];
+    displayTexts?: ManualText[];
     blockOffsets?: Record<string, BlockOffset>;
     labelOffsets?: Record<string, { dx: number; dy: number }>;
     sideEdits?: SideEdits;
@@ -1171,8 +1177,21 @@ export function Diagrams() {
     // set (client req 2026-11-15: "Thso system does not save edits").
     // prevLotKeyRef is the lot the loaded edits came from and is updated by
     // the switch effect above, which runs first, so it is always right here.
-    setDiagramInput({ kind, meta: { ...meta, coordinateSystem: liveCoordinateSystem }, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, lotEdits: lotEditsRef.current, activeLotKey: prevLotKeyRef.current });
-  }, [kind, meta, leaseMeta, annotations, texts, blockOffsets, labelOffsets, sideEdits, liveCoordinateSystem, activeLotKey, setDiagramInput]);
+    setDiagramInput({
+      kind,
+      meta: { ...meta, coordinateSystem: liveCoordinateSystem },
+      leaseMeta,
+      annotations,
+      texts,
+      displayAnnotations: [...annotations, ...autoShared.annotations],
+      displayTexts: [...texts, ...autoShared.texts],
+      blockOffsets,
+      labelOffsets,
+      sideEdits,
+      lotEdits: lotEditsRef.current,
+      activeLotKey: prevLotKeyRef.current,
+    });
+  }, [kind, meta, leaseMeta, annotations, texts, autoShared, blockOffsets, labelOffsets, sideEdits, liveCoordinateSystem, activeLotKey, setDiagramInput]);
   const fullLeaseMeta: LeaseMeta = {
     ...leaseMeta,
     coordinateSystem: liveCoordinateSystem,
@@ -2026,9 +2045,9 @@ export function Diagrams() {
                     );
                   })()}
                   {(kind === "compiled" || kind === "framed") && (
-                    <Field label="Certification line (leave blank for auto)">
+                    <Field label="Editable certification line">
                       <textarea
-                        value={meta.certLine ?? ""}
+                        value={meta.certLine?.trim() ? meta.certLine : certificationLine(fullMeta)}
                         onChange={(e) => setMeta((m) => ({ ...m, certLine: e.target.value }))}
                         placeholder={kind === "framed" ? "e.g. Framed From Sr. No 425/2021 and DSM No. 564/2021 In February 2026 by me," : "e.g. Compiled From Sr. No 435/2017 and DSM No. 657/2017 In May 2025 by me,"}
                         rows={2}

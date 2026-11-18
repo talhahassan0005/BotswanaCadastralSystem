@@ -39,6 +39,9 @@ let gisShow: GisShow | null = null;
 export function showOnGisMap(points: [number, number][], zoom?: number) {
   if (points.length) gisShow?.(points, zoom);
 }
+type GisAddConvertedPoint = (a: number, b: number, cs: string, name?: string) => boolean;
+let gisAddConvertedPoint: GisAddConvertedPoint | null = null;
+let gisConversionPick: ((lat: number, lon: number) => void) | null = null;
 const ESRI_BOUNDARIES_PLACES =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const BOTSWANA_CENTER: [number, number] = [-22.33, 24.68];
@@ -230,6 +233,24 @@ export function GisMap() {
   toENRef.current = toEN;
   const srcRef = useRef(src);
   srcRef.current = src;
+  const toLatLonRef = useRef(toLatLon);
+  toLatLonRef.current = toLatLon;
+  useEffect(() => {
+    gisAddConvertedPoint = (a, b, cs, name = "") => {
+      if (!mapRef.current) return false;
+      try {
+        const [east, north] = cs === srcRef.current ? [a, b] : transformPoint(a, b, cs, srcRef.current);
+        const ll = toLatLonRef.current(east, north);
+        if (!ll) return false;
+        addPointRef.current(name, east, north);
+        mapRef.current.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return () => { gisAddConvertedPoint = null; };
+  }, []);
   /** What the two boxes mean in a given system. The order is NOT the same
    *  everywhere: a Lo belt is written (Y, X), UTM is written (Easting,
    *  Northing), and a geographic system is (latitude, longitude). Getting
@@ -505,6 +526,12 @@ export function GisMap() {
             `<span style="color:#64748b">${ev.latlng.lat.toFixed(6)}, ${ev.latlng.lng.toFixed(6)}</span>`;
         });
         map.on("click", (ev: any) => {
+          if (gisConversionPick) {
+            const pick = gisConversionPick;
+            gisConversionPick = null;
+            pick(ev.latlng.lat, ev.latlng.lng);
+            return;
+          }
           const t = toolRef.current;
           if (t === "none") return;
           const ll: [number, number] = [ev.latlng.lat, ev.latlng.lng];
@@ -867,6 +894,10 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
   const [b, setB] = useState("");
   const [result, setResult] = useState<[number, number] | null>(null);
   const [err, setErr] = useState("");
+  const [resultNote, setResultNote] = useState("");
+  const [manualPoints, setManualPoints] = useState("");
+  const [pickingMapPoint, setPickingMapPoint] = useState(false);
+  useEffect(() => () => { gisConversionPick = null; }, []);
   // Whole-file conversion (client req 2026-11-16: "Add option to load csv")
   // — the single Y/X pair above is fine for one check, but a job arrives as
   // a list. Reuses the same CSV reader the Data Import tab uses, so the same
@@ -913,6 +944,30 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
     reader.readAsText(file);
   }
 
+  function convertManualPoints() {
+    setErr(""); setBatch(null); setBatchNote(""); setResultNote("");
+    const lines = manualPoints.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) { setErr("Enter one or more points first."); return; }
+    const out: { name: string; a: number; b: number }[] = [];
+    let failed = 0;
+    lines.forEach((line, index) => {
+      const cells = line.split(",").map((cell) => cell.trim());
+      const hasName = cells.length >= 3;
+      const name = hasName ? cells[0] : `P${index + 1}`;
+      const av = Number(cells[hasName ? 1 : 0]);
+      const bv = Number(cells[hasName ? 2 : 1]);
+      if (!name || !isFinite(av) || !isFinite(bv)) { failed++; return; }
+      try {
+        const [ra, rb] = transformPoint(av, bv, src, dst);
+        if (!isFinite(ra) || !isFinite(rb)) { failed++; return; }
+        out.push({ name, a: ra, b: rb });
+      } catch { failed++; }
+    });
+    if (out.length === 0) { setErr("No valid points were found. Use Name,Y,X or Y,X, one point per line."); return; }
+    setBatch(out);
+    setBatchNote(`${out.length} converted${failed ? ` · ${failed} invalid line${failed > 1 ? "s" : ""} skipped` : ""}`);
+  }
+
   function downloadBatch() {
     if (!batch) return;
     const geo = dst === "WGS84";
@@ -928,7 +983,7 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
   }
 
   function convert() {
-    setErr(""); setResult(null);
+    setErr(""); setResult(null); setResultNote("");
     const av = parseFloat(a), bv = parseFloat(b);
     if (isNaN(av) || isNaN(bv)) { setErr("Enter valid numbers in both fields."); return; }
     try {
@@ -936,6 +991,71 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
     } catch (e: any) {
       setErr(e?.message ?? "Conversion failed.");
     }
+  }
+
+  function addResultToMap() {
+    if (!result) return;
+    const added = gisAddConvertedPoint?.(result[0], result[1], dst) ?? false;
+    setResultNote(added ? "Added to map." : "The point could not be added to the map.");
+  }
+
+  async function copyResult() {
+    if (!result) return;
+    const labels = isGeoDst ? ["Lat", "Lon"] : ["Y", "X"];
+    const dp = isGeoDst ? 8 : 3;
+    const text = `${labels[0]}: ${result[0].toFixed(dp)}\n${labels[1]}: ${result[1].toFixed(dp)}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setResultNote("Copied.");
+    } catch {
+      setResultNote("Could not copy the result.");
+    }
+  }
+
+  function addBatchToMap() {
+    if (!batch) return;
+    const added = batch.reduce((count, point) =>
+      count + (gisAddConvertedPoint?.(point.a, point.b, dst, point.name) ? 1 : 0), 0);
+    setBatchNote(`${added} of ${batch.length} added to map.`);
+  }
+
+  async function copyBatch() {
+    if (!batch) return;
+    const dp = isGeoDst ? 8 : 3;
+    const text = batch.map((point) => `${point.name},${point.a.toFixed(dp)},${point.b.toFixed(dp)}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setBatchNote(`${batch.length} point${batch.length > 1 ? "s" : ""} copied.`);
+    } catch {
+      setBatchNote("Could not copy the converted points.");
+    }
+  }
+
+  function pickPointOnMap() {
+    if (pickingMapPoint) {
+      gisConversionPick = null;
+      setPickingMapPoint(false);
+      setResultNote("");
+      return;
+    }
+    setPickingMapPoint(true);
+    setResultNote("Click a point on the map.");
+    gisConversionPick = (lat, lon) => {
+      setPickingMapPoint(false);
+      try {
+        const source = src === "WGS84" ? [lat, lon] as [number, number] : transformPoint(lat, lon, "WGS84", src);
+        const converted = transformPoint(source[0], source[1], src, dst);
+        const sourceDp = src === "WGS84" ? 8 : 3;
+        setA(source[0].toFixed(sourceDp));
+        setB(source[1].toFixed(sourceDp));
+        setResult(converted);
+        setErr("");
+        setResultNote("Map point converted.");
+      } catch (e: any) {
+        setErr(e?.message ?? "That map point could not be converted.");
+        setResultNote("");
+      }
+    };
   }
 
   const srcInfo = CRS_LIST.find((c) => c.code === src);
@@ -958,14 +1078,14 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
                 <label className="mb-0.5 block text-xs text-slate-500">{isGeoSrc ? "Latitude" : "Y (Northing)"}</label>
                 <input value={a} onChange={(e) => { setA(e.target.value); setResult(null); }}
                   placeholder={isGeoSrc ? "e.g. -22.5" : "e.g. -97468.06"}
-                  className="w-full rounded-md border border-slate-200 px-2 py-1 font-mono text-sm focus:border-brand focus:outline-none" />
+                  className="h-10 w-full rounded-md border border-slate-200 px-3 font-mono text-base focus:border-brand focus:outline-none" />
               </div>
               <div>
                 <label className="mb-0.5 block text-xs text-slate-500">{isGeoSrc ? "Longitude" : "X (Easting)"}</label>
                 <input value={b} onChange={(e) => { setB(e.target.value); setResult(null); }}
                   placeholder={isGeoSrc ? "e.g. 25.9" : "e.g. 2728457.06"}
                   onKeyDown={(e) => { if (e.key === "Enter") convert(); }}
-                  className="w-full rounded-md border border-slate-200 px-2 py-1 font-mono text-sm focus:border-brand focus:outline-none" />
+                  className="h-10 w-full rounded-md border border-slate-200 px-3 font-mono text-base focus:border-brand focus:outline-none" />
               </div>
             </div>
           </div>
@@ -996,10 +1116,29 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={convert}>Convert</Button>
+          <Button variant="ghost" onClick={pickPointOnMap}>{pickingMapPoint ? "Cancel Pick" : "Pick on Map"}</Button>
+          {result && <Button variant="ghost" onClick={addResultToMap}>Add to Map</Button>}
+          {result && <Button variant="ghost" onClick={copyResult}>Copy</Button>}
           <button onClick={() => { setSrc(dst); setDst(src); setResult(null); setBatch(null); setBatchNote(""); }}
             className="text-xs text-slate-500 hover:text-slate-800 underline">
             Swap
           </button>
+        </div>
+        {resultNote && <p className="text-xs text-slate-500">{resultNote}</p>}
+
+        <div className="border-t border-slate-200 pt-3">
+          <label className="mb-1 block text-xs font-medium text-slate-600">Type one or multiple points</label>
+          <textarea
+            value={manualPoints}
+            onChange={(e) => setManualPoints(e.target.value)}
+            rows={5}
+            placeholder={"A,-97468.060,2728457.058\nB,-97470.125,2728462.441\n-97475.300,2728470.900"}
+            className="w-full resize-y rounded-md border border-slate-200 px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-slate-400">One per line: Name,Y,X or Y,X.</p>
+          <div className="mt-2">
+            <Button variant="ghost" onClick={convertManualPoints}>Convert Points</Button>
+          </div>
         </div>
 
         {/* A whole file at once (client req 2026-11-16). Same From/To pair as
@@ -1009,6 +1148,8 @@ export function CoordConverter({ projectCs }: { projectCs: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" onClick={() => csvRef.current?.click()}>Load CSV</Button>
             {batch && <Button variant="ghost" onClick={downloadBatch}>Download converted</Button>}
+            {batch && <Button variant="ghost" onClick={addBatchToMap}>Add All to Map</Button>}
+            {batch && <Button variant="ghost" onClick={copyBatch}>Copy All</Button>}
             {batch && (
               <button onClick={() => { setBatch(null); setBatchNote(""); }}
                 className="text-xs text-slate-500 hover:text-slate-800 underline">Clear</button>

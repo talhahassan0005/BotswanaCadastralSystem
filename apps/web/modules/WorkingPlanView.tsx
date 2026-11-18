@@ -370,9 +370,18 @@ export function WorkingPlanView() {
     if (!(dm.location ?? "").trim() && !(dm.tribalArea ?? "").trim()) return "";
     return situateWords({ location: dm.location ?? "", tribalArea: dm.tribalArea ?? "" }).join(" ");
   })();
+  // Use the complete set actually visible on the Diagram. That includes
+  // automatic neighbouring-lot continuation stubs/labels as well as manual
+  // annotations. Older saved projects have only the manual arrays, so keep
+  // those as a backward-compatible fallback.
   const diagramAnnotations =
-    (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations ?? [];
-  const diagramTexts = (diagramInput as { texts?: ManualText[] } | null)?.texts ?? [];
+    (diagramInput as { displayAnnotations?: ManualAnnotation[]; annotations?: ManualAnnotation[] } | null)?.displayAnnotations
+    ?? (diagramInput as { annotations?: ManualAnnotation[] } | null)?.annotations
+    ?? [];
+  const diagramTexts =
+    (diagramInput as { displayTexts?: ManualText[]; texts?: ManualText[] } | null)?.displayTexts
+    ?? (diagramInput as { texts?: ManualText[] } | null)?.texts
+    ?? [];
   // Values that come from the General Plan information (client req
   // 2026-09-21: "That should come frm gp information" beside Tribal
   // territory / area and Coordinate system, and "Parent plot number should
