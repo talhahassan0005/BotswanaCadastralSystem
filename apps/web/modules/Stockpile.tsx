@@ -75,6 +75,7 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cursor, setCursor] = useState<{ ex: number; ny: number; rl: number | null } | null>(null);
+  const [selectedPoint, setSelectedPoint] = useState<StockpileResult["points"][number] | null>(null);
   const dragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -170,6 +171,7 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
+        onClick={() => setSelectedPoint(null)}
       >
         <g>
           {/* Contour lines */}
@@ -192,7 +194,9 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
               <g key={i}>
                 <circle cx={pcx} cy={pcy} r={r}
                   fill={col} stroke={isTop ? "#dc2626" : isBase ? "#1e40af" : col}
-                  strokeWidth={isTop || isBase ? 1.5 / zoom : 0} />
+                  strokeWidth={isTop || isBase ? 1.5 / zoom : 0}
+                  style={{ cursor: "pointer" }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedPoint(p); }} />
                 {p.name && zoom > 1.5 && (
                   <text x={pcx + 5 / zoom} y={pcy - 4 / zoom} fontSize={7 / zoom} fill="#334155">{p.name}</text>
                 )}
@@ -223,6 +227,18 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
           </g>
         )}
       </svg>
+      {selectedPoint && (
+        <div className="absolute left-2 top-2 z-10 min-w-[210px] rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <strong className="text-sm text-slate-900">{selectedPoint.name || "Point"}</strong>
+            <button onClick={() => setSelectedPoint(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close point information">×</button>
+          </div>
+          <div><span className="text-slate-500">Easting:</span> {selectedPoint.x.toFixed(3)}</div>
+          <div><span className="text-slate-500">Northing:</span> {selectedPoint.y.toFixed(3)}</div>
+          <div><span className="text-slate-500">RL:</span> {selectedPoint.z.toFixed(3)} m</div>
+          <div><span className="text-slate-500">Height above base:</span> {(selectedPoint.z - datum).toFixed(3)} m</div>
+        </div>
+      )}
     </div>
   );
 }

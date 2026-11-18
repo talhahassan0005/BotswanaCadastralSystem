@@ -192,9 +192,11 @@ export function GisMap() {
   const pointsLayerRef = useRef<any>(null);
   const polysLayerRef = useRef<any>(null);
   const refMarksLayerRef = useRef<any>(null);
+  const gridLayerRef = useRef<any>(null);
   const [showPoints, setShowPoints] = useState(true);
   const [showPolygons, setShowPolygons] = useState(true);
   const [showRefMarks, setShowRefMarks] = useState(false);
+  const [showGridLines, setShowGridLines] = useState(true);
   // Manually added points live in the COGO work station's own saved doc
   // ("extra" points), so they show up there and in its Points table.
   const docRef = useRef<Record<string, unknown>>((cogoWorkspaceDoc ?? {}) as Record<string, unknown>);
@@ -666,6 +668,7 @@ export function GisMap() {
             .addTo(rmGroup);
         }
         refMarksLayerRef.current = rmGroup;
+        gridLayerRef.current = L.layerGroup().addTo(map);
         manualLayerRef.current = L.layerGroup().addTo(map);
         rulerLayerRef.current = L.layerGroup().addTo(map);
         drawLayerRef.current = L.layerGroup().addTo(map);
@@ -692,6 +695,7 @@ export function GisMap() {
       manualLayerRef.current = null;
       rulerLayerRef.current = null;
       refMarksLayerRef.current = null;
+      gridLayerRef.current = null;
       drawLayerRef.current = null;
       drawDraftLayerRef.current = null;
       coordBoxRef.current = null;
@@ -855,6 +859,50 @@ export function GisMap() {
     if (showRefMarks) map.addLayer(layer); else map.removeLayer(layer);
   }, [showRefMarks, mapReady]);
 
+  // Geographic graticule with labelled latitude/longitude markers. Spacing
+  // adapts to the current extent: whole-country views show degree lines like
+  // 22°E / 18°S, while close site views retain useful decimal-degree marks.
+  useEffect(() => {
+    const L = window.L, map = mapRef.current, group = gridLayerRef.current;
+    if (!L || !map || !group) return;
+    const draw = () => {
+      group.clearLayers();
+      if (!showGridLines) return;
+      const bounds = map.getBounds();
+      const west = bounds.getWest(), east = bounds.getEast();
+      const south = bounds.getSouth(), north = bounds.getNorth();
+      const span = Math.max(east - west, north - south);
+      const step = span > 12 ? 2 : span > 5 ? 1 : span > 2 ? 0.5 : span > 0.5 ? 0.1 : span > 0.1 ? 0.02 : span > 0.02 ? 0.005 : 0.001;
+      const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+      const label = (v: number, axis: "lat" | "lon") =>
+        `${Math.abs(v).toFixed(decimals)}°${axis === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E")}`;
+      const lineStyle = { color: "#475569", weight: 1, opacity: 0.5, interactive: false };
+      const icon = (text: string, rotate = false, horizontalTick = false) => L.divIcon({
+        className: "",
+        html: `<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(255,255,255,.86);padding:1px 3px;border-radius:2px;color:#334155;font:10px/1.2 ui-monospace,monospace;white-space:nowrap;${rotate ? "transform:rotate(-90deg);transform-origin:left top;" : ""}"><i style="display:inline-block;${horizontalTick ? "width:8px;height:0;border-top:1px solid #334155" : "width:0;height:8px;border-left:1px solid #334155"}"></i>${text}</span>`,
+        iconSize: [1, 1],
+        iconAnchor: [0, 0],
+      });
+      const lonStart = Math.ceil(west / step) * step;
+      for (let lon = lonStart, guard = 0; lon <= east + step * 1e-6 && guard < 50; lon += step, guard++) {
+        const v = Number(lon.toFixed(10));
+        L.polyline([[south, v], [north, v]], lineStyle).addTo(group);
+        L.marker([north - (north - south) * 0.035, v], { icon: icon(label(v, "lon")), interactive: false }).addTo(group);
+        L.marker([south + (north - south) * 0.035, v], { icon: icon(label(v, "lon")), interactive: false }).addTo(group);
+      }
+      const latStart = Math.ceil(south / step) * step;
+      for (let lat = latStart, guard = 0; lat <= north + step * 1e-6 && guard < 50; lat += step, guard++) {
+        const v = Number(lat.toFixed(10));
+        L.polyline([[v, west], [v, east]], lineStyle).addTo(group);
+        L.marker([v, west + (east - west) * 0.015], { icon: icon(label(v, "lat"), true, true), interactive: false }).addTo(group);
+        L.marker([v, east - (east - west) * 0.015], { icon: icon(label(v, "lat"), true, true), interactive: false }).addTo(group);
+      }
+    };
+    draw();
+    map.on("moveend", draw);
+    return () => { map.off("moveend", draw); group.clearLayers(); };
+  }, [showGridLines, mapReady]);
+
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -934,6 +982,10 @@ export function GisMap() {
             </span>
           )}
           <span className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-2 text-xs text-slate-600">
+            <label className="flex cursor-pointer items-center gap-1">
+              <input type="checkbox" checked={showGridLines} onChange={(e) => setShowGridLines(e.target.checked)} className="accent-brand" />
+              Grid Lines
+            </label>
             <label className="flex cursor-pointer items-center gap-1">
               <input type="checkbox" checked={showRefMarks} onChange={(e) => setShowRefMarks(e.target.checked)} className="accent-brand" />
               Ref Marks
