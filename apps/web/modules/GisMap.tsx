@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { apiJson } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { Button, Card } from "@/components/ui";
 import { transformPoint, CRS_LIST, isGeographic } from "@/lib/server/crs";
@@ -8,7 +9,7 @@ import { parseSurveyCsv } from "@/lib/server/csv";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
-import type { ParcelDoc } from "@/lib/types";
+import type { ParcelDoc, StockpileResult } from "@/lib/types";
 import type { WPoint } from "@/lib/cogoTools/types";
 import { REF_MARKS, type RefMark } from "@/lib/refmarks";
 
@@ -98,7 +99,7 @@ function loadLeaflet(): Promise<any> {
   });
 }
 
-interface LLBeacon { id: string; lat: number; lon: number }
+interface LLBeacon { id: string; lat: number; lon: number; east: number; north: number; rl?: number | null }
 interface LLParcel { number: string; ring: [number, number][] }
 
 // ---- Geodetic helpers for drawn features (Haversine-based) ----
@@ -141,6 +142,16 @@ function polygonAreaM2(pts: [number, number][]): number {
   return Math.abs(sum / 2) * R_EARTH * R_EARTH;
 }
 
+function pointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
+  let inside = false;
+  const [py, px] = point;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [yi, xi] = polygon[i], [yj, xj] = polygon[j];
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 function formatArea(m2: number): string {
   if (m2 >= 1e6) return `${(m2 / 1e6).toFixed(4)} km²`;
   if (m2 >= 1e4) return `${(m2 / 1e4).toFixed(4)} ha`;
@@ -169,7 +180,7 @@ export function GisMap() {
   // Drawing tools (client req 2026-11-17): Draw Polygon, Draw Line, Circle,
   // Calculate Area — same as Google Earth. Drawn features appear as "layers"
   // in a left-side panel.
-  type Tool = "none" | "point" | "ruler" | "draw-polygon" | "draw-line" | "draw-circle";
+  type Tool = "none" | "point" | "ruler" | "draw-polygon" | "draw-line" | "draw-circle" | "select-computation";
   const [tool, setTool] = useState<Tool>("none");
   const toolRef = useRef<Tool>("none");
   toolRef.current = tool;
@@ -195,6 +206,11 @@ export function GisMap() {
   // it is converted to the project grid on Add.
   const [typed, setTyped] = useState({ name: "", y: "", x: "", cs: "" });
   const [typedErr, setTypedErr] = useState<string | null>(null);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectionResult, setSelectionResult] = useState<{
+    area: number; volume: number; maxHeight: number; minHeight: number; pointCount: number;
+  } | null>(null);
   const src = config.coordinateSystem;
   const toEN = (lat: number, lon: number): [number, number] | null => {
     try {
@@ -287,6 +303,41 @@ export function GisMap() {
     setTyped({ name: "", y: "", x: "", cs: typed.cs });
     mapRef.current?.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
   }
+
+  async function computeSelection(polygon: [number, number][]) {
+    setSelectionError(null);
+    setSelectionResult(null);
+    if (polygon.length < 3) { setSelectionError("Draw at least three corners around the section."); return; }
+    const selected = beacons.filter((b) => b.rl != null && pointInPolygon([b.lat, b.lon], polygon));
+    if (selected.length < 3) {
+      setSelectionError("The selection needs at least three points with RL values.");
+      return;
+    }
+    const heights = selected.map((p) => p.rl as number);
+    const minHeight = Math.min(...heights), maxHeight = Math.max(...heights);
+    setSelectionBusy(true);
+    try {
+      const volume = await apiJson<StockpileResult>("/stockpile", {
+        points: selected.map((p) => ({ name: p.id, x: p.east, y: p.north, z: p.rl })),
+        interval: 0,
+        datumMode: "manual",
+        datum: minHeight,
+      });
+      setSelectionResult({
+        area: polygonAreaM2(polygon),
+        volume: volume.volume_m3,
+        maxHeight,
+        minHeight,
+        pointCount: selected.length,
+      });
+    } catch (e: any) {
+      setSelectionError(e?.message ?? "Could not compute this selection.");
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+  const computeSelectionRef = useRef(computeSelection);
+  computeSelectionRef.current = computeSelection;
   // ---- Drawing tools state (client req 2026-11-17) ----
   interface DrawnLayer {
     id: string;
@@ -392,7 +443,7 @@ export function GisMap() {
       const by = new Map(pd.beacons.map((b) => [b.id, b] as const));
       for (const b of pd.beacons) {
         const ll = toLL(b.east, b.north);
-        if (ll) beacons.push({ id: b.id, lat: ll[0], lon: ll[1] });
+        if (ll) beacons.push({ id: b.id, lat: ll[0], lon: ll[1], east: b.east, north: b.north });
       }
       for (const p of pd.parcels ?? []) {
         const ring: [number, number][] = [];
@@ -418,7 +469,7 @@ export function GisMap() {
           if (!ll) continue;
           ring.push(ll);
           const key = `${pt.east.toFixed(3)},${pt.north.toFixed(3)}`;
-          if (!seen.has(key)) { seen.add(key); beacons.push({ id: pt.name ?? "?", lat: ll[0], lon: ll[1] }); }
+          if (!seen.has(key)) { seen.add(key); beacons.push({ id: pt.name ?? "?", lat: ll[0], lon: ll[1], east: pt.east, north: pt.north }); }
         }
         if (ring.length >= 3) parcels.push({ number: plot.number || "plot", ring });
       }
@@ -428,7 +479,7 @@ export function GisMap() {
       for (const p of cogoResult.points) {
         const ll = toLL(p.east, p.north);
         if (ll) {
-          beacons.push({ id: p.name ?? "?", lat: ll[0], lon: ll[1] });
+          beacons.push({ id: p.name ?? "?", lat: ll[0], lon: ll[1], east: p.east, north: p.north });
           ring.push(ll);
         }
       }
@@ -445,7 +496,12 @@ export function GisMap() {
       inputCount = rows.length;
       for (const row of rows) {
         const ll = toLL(row.east as number, row.north as number);
-        if (ll) beacons.push({ id: row.beaconId ?? `P${row.index}`, lat: ll[0], lon: ll[1] });
+        if (ll) beacons.push({
+          id: row.beaconId ?? `P${row.index}`,
+          lat: ll[0], lon: ll[1],
+          east: row.east as number, north: row.north as number,
+          rl: row.rl,
+        });
       }
     }
     return { beacons, parcels, inputCount };
@@ -515,6 +571,16 @@ export function GisMap() {
         for (const b of beacons) {
           L.circleMarker([b.lat, b.lon], { radius: 4, color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 1 })
             .bindTooltip(b.id, { permanent: false })
+            .bindPopup(
+              `<div style="min-width:210px;font-size:12px">` +
+              `<div style="font-weight:700;font-size:13px;margin-bottom:6px">${esc(b.id)}</div>` +
+              `<div><span style="color:#64748b">${esc(displayLo(config.coordinateSystem))} Y:</span> ${b.east.toFixed(3)}</div>` +
+              `<div><span style="color:#64748b">${esc(displayLo(config.coordinateSystem))} X:</span> ${b.north.toFixed(3)}</div>` +
+              (b.rl != null ? `<div><span style="color:#64748b">RL:</span> ${b.rl.toFixed(3)} m</div>` : "") +
+              `<div><span style="color:#64748b">Latitude:</span> ${b.lat.toFixed(8)}</div>` +
+              `<div><span style="color:#64748b">Longitude:</span> ${b.lon.toFixed(8)}</div>` +
+              `</div>`
+            )
             .addTo(ptGroup);
           bounds.push([b.lat, b.lon]);
         }
@@ -553,6 +619,8 @@ export function GisMap() {
           if (t === "point") { if (en) addPointRef.current("", en[0], en[1]); }
           else if (t === "ruler") { if (en) setRuler((r) => [...r, { east: en[0], north: en[1], lat: ll[0], lon: ll[1] }]); }
           else if (t === "draw-polygon" || t === "draw-line") {
+            setDrawDraft((d) => [...d, ll]);
+          } else if (t === "select-computation") {
             setDrawDraft((d) => [...d, ll]);
           } else if (t === "draw-circle") {
             const draft = drawDraftRef.current;
@@ -642,6 +710,15 @@ export function GisMap() {
       if (!ll) continue;
       L.circleMarker(ll, { radius: 5, color: "#c026d3", weight: 2, fillColor: "#f0abfc", fillOpacity: 1 })
         .bindTooltip(p.name, { permanent: true, direction: "right", offset: [6, 0] })
+        .bindPopup(
+          `<div style="min-width:210px;font-size:12px">` +
+          `<div style="font-weight:700;font-size:13px;margin-bottom:6px">${esc(p.name)}</div>` +
+          `<div><span style="color:#64748b">${esc(displayLo(config.coordinateSystem))} Y:</span> ${p.east.toFixed(3)}</div>` +
+          `<div><span style="color:#64748b">${esc(displayLo(config.coordinateSystem))} X:</span> ${p.north.toFixed(3)}</div>` +
+          `<div><span style="color:#64748b">Latitude:</span> ${ll[0].toFixed(8)}</div>` +
+          `<div><span style="color:#64748b">Longitude:</span> ${ll[1].toFixed(8)}</div>` +
+          `</div>`
+        )
         .addTo(group);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -681,6 +758,12 @@ export function GisMap() {
         const pg = L.polygon(layer.latlngs, { color: "#3b82f6", weight: 2, fillColor: "#3b82f6", fillOpacity: 0.15 });
         pg.bindTooltip(layer.name, { permanent: false });
         if (layer.areaM2 != null) pg.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Area: ${formatArea(layer.areaM2)}<br/>Perimeter: ${formatLength(layer.perimeterM ?? 0)}`);
+        pg.on("click", (ev: any) => {
+          if (toolRef.current !== "select-computation") return;
+          L.DomEvent.stopPropagation(ev);
+          setDrawDraft(layer.latlngs);
+          void computeSelectionRef.current(layer.latlngs);
+        });
         pg.addTo(group);
       } else if (layer.kind === "line") {
         const pl = L.polyline(layer.latlngs, { color: "#ef4444", weight: 2.5 });
@@ -702,7 +785,7 @@ export function GisMap() {
     if (!L || !group) return;
     group.clearLayers();
     if (!drawDraft.length) return;
-    if (tool === "draw-polygon" || tool === "draw-line") {
+    if (tool === "draw-polygon" || tool === "draw-line" || tool === "select-computation") {
       L.polyline(drawDraft, { color: "#3b82f6", weight: 2, dashArray: "6 4" }).addTo(group);
       for (const pt of drawDraft) {
         L.circleMarker(pt, { radius: 4, color: "#3b82f6", weight: 2, fillColor: "#fff", fillOpacity: 1 }).addTo(group);
@@ -714,7 +797,7 @@ export function GisMap() {
 
   // Clear draft when tool changes away from a draw tool.
   useEffect(() => {
-    if (tool !== "draw-polygon" && tool !== "draw-line" && tool !== "draw-circle") {
+    if (tool !== "draw-polygon" && tool !== "draw-line" && tool !== "draw-circle" && tool !== "select-computation") {
       setDrawDraft([]);
       const group = drawDraftLayerRef.current;
       if (group) group.clearLayers();
@@ -819,6 +902,23 @@ export function GisMap() {
             <RulerIcon />
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
+          <Button
+            variant={tool === "select-computation" ? "primary" : "ghost"}
+            onClick={() => {
+              const active = tool === "select-computation";
+              setTool(active ? "none" : "select-computation");
+              setDrawDraft([]);
+              setSelectionResult(null);
+              setSelectionError(null);
+            }}
+          >
+            Selecting Computation
+          </Button>
+          {tool === "select-computation" && drawDraft.length >= 3 && (
+            <Button variant="ghost" onClick={() => void computeSelection(drawDraft)} disabled={selectionBusy}>
+              {selectionBusy ? "Computing…" : "Compute Selection"}
+            </Button>
+          )}
           <span className="text-xs text-slate-500">{err ? `Map error: ${err}` : status}</span>
           {/* Layer visibility toggles */}
           {(beacons.length > 0 || parcels.length > 0) && (
@@ -840,6 +940,19 @@ export function GisMap() {
             </label>
           </span>
         </div>
+        {tool === "select-computation" && !selectionResult && !selectionError && (
+          <p className="mb-2 text-xs text-slate-500">Click around the required section, then choose Compute Selection. You can also click an existing drawn polygon.</p>
+        )}
+        {selectionError && <p className="mb-2 text-xs text-red-600">{selectionError}</p>}
+        {selectionResult && (
+          <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <span><strong>Area:</strong> {formatArea(selectionResult.area)}</span>
+            <span><strong>Volume:</strong> {selectionResult.volume.toLocaleString(undefined, { maximumFractionDigits: 3 })} m³</span>
+            <span><strong>Maximum height:</strong> {selectionResult.maxHeight.toFixed(3)} m</span>
+            <span><strong>Lowest height:</strong> {selectionResult.minHeight.toFixed(3)} m</span>
+            <span className="text-slate-400">{selectionResult.pointCount} selected point(s)</span>
+          </div>
+        )}
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="font-medium">Add point by coordinates:</span>
           {/* Any registered system, not just the project's grid. The boxes
