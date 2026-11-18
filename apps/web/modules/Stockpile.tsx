@@ -83,9 +83,14 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
   function svgToSurvey(svgX: number, svgY: number): { ex: number; ny: number } {
     const sc = baseScale * zoom;
     const ox = baseOffX * zoom + pan.x;
-    const oy = baseOffY * zoom + pan.y;
-    const ex = sx + (svgX - ox) / sc;
-    const ny = sy + (H * zoom - (svgY - oy + H * (zoom - 1))) / sc;
+    const oy = H - (baseOffY * zoom + pan.y);
+    // COGO uses Botswana Lo-grid's native 180° display orientation. Undo
+    // that same display rotation before converting the cursor back to the
+    // underlying survey coordinates.
+    const rawX = W - svgX;
+    const rawY = H - svgY;
+    const ex = sx + (rawX - ox) / sc;
+    const ny = sy + (oy - rawY) / sc;
     return { ex, ny };
   }
 
@@ -103,8 +108,8 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
     const rect = svgRef.current!.getBoundingClientRect();
-    const mx = ((e.clientX - rect.left) / rect.width) * W;
-    const my = ((e.clientY - rect.top) / rect.height) * H;
+    const mx = W - ((e.clientX - rect.left) / rect.width) * W;
+    const my = H - ((e.clientY - rect.top) / rect.height) * H;
     setZoom((z) => {
       const nz = Math.min(Math.max(z * factor, 0.3), 20);
       setPan((p) => ({ x: mx - (mx - p.x) * (nz / z), y: my - (my - p.y) * (nz / z) }));
@@ -127,7 +132,9 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
     const dx = e.clientX - lastMouse.current.x;
     const dy = e.clientY - lastMouse.current.y;
     lastMouse.current = { x: e.clientX, y: e.clientY };
-    setPan((p) => ({ x: p.x + dx * (W / rect.width), y: p.y + dy * (H / rect.height) }));
+    // The plan is displayed at 180° to match COGO, so raw pan direction is
+    // the inverse of the pointer movement on screen.
+    setPan((p) => ({ x: p.x - dx * (W / rect.width), y: p.y - dy * (H / rect.height) }));
   }
 
   function handleMouseUp() { dragging.current = false; }
@@ -136,8 +143,11 @@ function PlanCanvas({ result }: { result: StockpileResult }) {
   const sc = baseScale * zoom;
   const ox = baseOffX * zoom + pan.x;
   const oy = H - (baseOffY * zoom + pan.y);
-  const tx = (x: number) => ox + (x - sx) * sc;
-  const ty = (y: number) => oy - (y - sy) * sc;
+  // Match the fixed 180° Botswana Lo-grid orientation used by COGO. Keeping
+  // this in the projection (rather than altering point coordinates) leaves
+  // the TIN, contours, elevations and volume calculations untouched.
+  const tx = (x: number) => W - (ox + (x - sx) * sc);
+  const ty = (y: number) => H - (oy - (y - sy) * sc);
   const isModified = zoom !== 1 || pan.x !== 0 || pan.y !== 0;
 
   return (
@@ -232,8 +242,9 @@ function ChangeCanvas({
   const scale = Math.min((W - PAD * 2) / sw, (H - PAD * 2) / sh);
   const offX = PAD + ((W - PAD * 2) - sw * scale) / 2;
   const offY = PAD + ((H - PAD * 2) - sh * scale) / 2;
-  const tx = (x: number) => offX + (x - sx) * scale;
-  const ty = (y: number) => H - (offY + (y - sy) * scale);
+  // Same 180° plan orientation as COGO and the DSM plan above.
+  const tx = (x: number) => W - (offX + (x - sx) * scale);
+  const ty = (y: number) => offY + (y - sy) * scale;
 
   const maxD = Math.max(...comp.faces.map((f) => Math.abs(f.d)), 0.001);
 

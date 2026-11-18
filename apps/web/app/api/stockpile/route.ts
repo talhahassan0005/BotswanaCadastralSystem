@@ -6,6 +6,28 @@ import type { XYZ } from "@/lib/server/delaunay";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Repair an unambiguous locale-import error such as one RL arriving as
+ * 950134 while the rest of the survey is around 950.134 m. This can remain
+ * in an older saved Data Import result even after the Excel reader itself is
+ * fixed. The guard is intentionally strict: the value must be over 100x the
+ * survey median, and dividing it by 1000 must put it close to that median.
+ * Legitimately high or consistently scaled elevation datasets are untouched.
+ */
+function repairLostDecimalRl(points: XYZ[]): XYZ[] {
+  if (points.length < 3) return points;
+  const zs = points.map((p) => p.z).filter(Number.isFinite).sort((a, b) => a - b);
+  const mid = Math.floor(zs.length / 2);
+  const median = zs.length % 2 ? zs[mid] : (zs[mid - 1] + zs[mid]) / 2;
+  const medianMagnitude = Math.max(Math.abs(median), 1);
+  const plausibleDistance = Math.max(50, medianMagnitude * 0.25);
+  return points.map((p) => {
+    if (Math.abs(p.z) <= medianMagnitude * 100) return p;
+    const repaired = p.z / 1000;
+    return Math.abs(repaired - median) <= plausibleDistance ? { ...p, z: repaired } : p;
+  });
+}
+
 /** Gift-wrapping (Jarvis march) convex hull on XY. Returns indices into pts[]. */
 function convexHull(pts: XYZ[]): number[] {
   const n = pts.length;
@@ -63,7 +85,7 @@ export async function POST(req: Request) {
       return [];
     }
 
-    const points = readPoints(body.points ?? body.text);
+    const points = repairLostDecimalRl(readPoints(body.points ?? body.text));
     if (points.length < 3) throw new Error("need at least 3 XYZ points for current survey");
 
     const interval = Number(body.interval) || 0;
