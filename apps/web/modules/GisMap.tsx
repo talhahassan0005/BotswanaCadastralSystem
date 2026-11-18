@@ -180,10 +180,13 @@ export function GisMap() {
   // Drawing tools (client req 2026-11-17): Draw Polygon, Draw Line, Circle,
   // Calculate Area — same as Google Earth. Drawn features appear as "layers"
   // in a left-side panel.
-  type Tool = "none" | "point" | "ruler" | "draw-polygon" | "draw-line" | "draw-circle" | "select-computation";
+  type Tool = "none" | "point" | "ruler" | "draw-polygon" | "draw-line" | "draw-circle" | "select-computation" | "select";
   const [tool, setTool] = useState<Tool>("none");
   const toolRef = useRef<Tool>("none");
   toolRef.current = tool;
+  const [selectedMapItem, setSelectedMapItem] = useState<
+    { kind: "manual-point" | "drawn-layer"; id: string; name: string } | null
+  >(null);
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(0);
   const coordBoxRef = useRef<HTMLDivElement | null>(null);
@@ -403,6 +406,20 @@ export function GisMap() {
   function removeLayer(id: string) {
     setDrawnLayers((ls) => ls.filter((l) => l.id !== id));
   }
+  function deleteSelectedMapItem() {
+    if (!selectedMapItem) return;
+    if (selectedMapItem.kind === "manual-point") {
+      setManualPts((cur) => {
+        const next = cur.filter((p) => p.id !== selectedMapItem.id);
+        docRef.current = { ...docRef.current, extra: next };
+        setCogoWorkspaceDoc(docRef.current);
+        return next;
+      });
+    } else {
+      removeLayer(selectedMapItem.id);
+    }
+    setSelectedMapItem(null);
+  }
   function toggleLayerVisibility(id: string) {
     setDrawnLayers((ls) => ls.map((l) => l.id === id ? { ...l, visible: !l.visible } : l));
   }
@@ -616,6 +633,7 @@ export function GisMap() {
           }
           const t = toolRef.current;
           if (t === "none") return;
+          if (t === "select") { setSelectedMapItem(null); return; }
           const ll: [number, number] = [ev.latlng.lat, ev.latlng.lng];
           const en = toENRef.current(ll[0], ll[1]);
           if (t === "point") { if (en) addPointRef.current("", en[0], en[1]); }
@@ -712,7 +730,14 @@ export function GisMap() {
     for (const p of manualPts) {
       const ll = toLatLon(p.east, p.north);
       if (!ll) continue;
-      L.circleMarker(ll, { radius: 5, color: "#c026d3", weight: 2, fillColor: "#f0abfc", fillOpacity: 1 })
+      const selected = selectedMapItem?.kind === "manual-point" && selectedMapItem.id === p.id;
+      const marker = L.circleMarker(ll, {
+        radius: selected ? 8 : 5,
+        color: selected ? "#dc2626" : "#c026d3",
+        weight: selected ? 3 : 2,
+        fillColor: selected ? "#fca5a5" : "#f0abfc",
+        fillOpacity: 1,
+      })
         .bindTooltip(p.name, { permanent: true, direction: "right", offset: [6, 0] })
         .bindPopup(
           `<div style="min-width:210px;font-size:12px">` +
@@ -722,11 +747,16 @@ export function GisMap() {
           `<div><span style="color:#64748b">Latitude:</span> ${ll[0].toFixed(8)}</div>` +
           `<div><span style="color:#64748b">Longitude:</span> ${ll[1].toFixed(8)}</div>` +
           `</div>`
-        )
-        .addTo(group);
+        );
+      marker.on("click", (ev: any) => {
+        if (toolRef.current !== "select") return;
+        L.DomEvent.stopPropagation(ev);
+        setSelectedMapItem({ kind: "manual-point", id: p.id, name: p.name });
+      });
+      marker.addTo(group);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualPts, mapReady]);
+  }, [manualPts, mapReady, selectedMapItem]);
 
   // Ruler: the clicked points joined by a line, each leg labelled with its
   // grid distance (from the projected Y/X, like the survey itself).
@@ -758,11 +788,17 @@ export function GisMap() {
     group.clearLayers();
     for (const layer of drawnLayers) {
       if (!layer.visible) continue;
+      const selected = selectedMapItem?.kind === "drawn-layer" && selectedMapItem.id === layer.id;
       if (layer.kind === "polygon") {
-        const pg = L.polygon(layer.latlngs, { color: "#3b82f6", weight: 2, fillColor: "#3b82f6", fillOpacity: 0.15 });
+        const pg = L.polygon(layer.latlngs, { color: selected ? "#dc2626" : "#3b82f6", weight: selected ? 4 : 2, fillColor: selected ? "#ef4444" : "#3b82f6", fillOpacity: selected ? 0.22 : 0.15 });
         pg.bindTooltip(layer.name, { permanent: false });
         if (layer.areaM2 != null) pg.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Area: ${formatArea(layer.areaM2)}<br/>Perimeter: ${formatLength(layer.perimeterM ?? 0)}`);
         pg.on("click", (ev: any) => {
+          if (toolRef.current === "select") {
+            L.DomEvent.stopPropagation(ev);
+            setSelectedMapItem({ kind: "drawn-layer", id: layer.id, name: layer.name });
+            return;
+          }
           if (toolRef.current !== "select-computation") return;
           L.DomEvent.stopPropagation(ev);
           setDrawDraft(layer.latlngs);
@@ -770,18 +806,28 @@ export function GisMap() {
         });
         pg.addTo(group);
       } else if (layer.kind === "line") {
-        const pl = L.polyline(layer.latlngs, { color: "#ef4444", weight: 2.5 });
+        const pl = L.polyline(layer.latlngs, { color: selected ? "#dc2626" : "#ef4444", weight: selected ? 5 : 2.5 });
         pl.bindTooltip(layer.name, { permanent: false });
         if (layer.perimeterM != null) pl.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Length: ${formatLength(layer.perimeterM)}`);
+        pl.on("click", (ev: any) => {
+          if (toolRef.current !== "select") return;
+          L.DomEvent.stopPropagation(ev);
+          setSelectedMapItem({ kind: "drawn-layer", id: layer.id, name: layer.name });
+        });
         pl.addTo(group);
       } else if (layer.kind === "circle" && layer.radius != null) {
-        const c = L.circle(layer.latlngs[0], { radius: layer.radius, color: "#8b5cf6", weight: 2, fillColor: "#8b5cf6", fillOpacity: 0.1 });
+        const c = L.circle(layer.latlngs[0], { radius: layer.radius, color: selected ? "#dc2626" : "#8b5cf6", weight: selected ? 4 : 2, fillColor: selected ? "#ef4444" : "#8b5cf6", fillOpacity: selected ? 0.2 : 0.1 });
         c.bindTooltip(layer.name, { permanent: false });
         c.bindPopup(`<strong>${esc(layer.name)}</strong><br/>Radius: ${formatLength(layer.radius)}<br/>Area: ${formatArea(layer.areaM2 ?? 0)}`);
+        c.on("click", (ev: any) => {
+          if (toolRef.current !== "select") return;
+          L.DomEvent.stopPropagation(ev);
+          setSelectedMapItem({ kind: "drawn-layer", id: layer.id, name: layer.name });
+        });
         c.addTo(group);
       }
     }
-  }, [drawnLayers, mapReady]);
+  }, [drawnLayers, mapReady, selectedMapItem]);
 
   // Render the in-progress drawing draft (dashed preview).
   useEffect(() => {
@@ -859,9 +905,9 @@ export function GisMap() {
     if (showRefMarks) map.addLayer(layer); else map.removeLayer(layer);
   }, [showRefMarks, mapReady]);
 
-  // Geographic graticule with labelled latitude/longitude markers. Spacing
-  // adapts to the current extent: whole-country views show degree lines like
-  // 22°E / 18°S, while close site views retain useful decimal-degree marks.
+  // Geographic graticule with whole-degree latitude/longitude markers only
+  // (for example 22°E / 18°S). Do not add decimal, minute or second
+  // subdivisions: the client's reference grid is degree-only.
   useEffect(() => {
     const L = window.L, map = mapRef.current, group = gridLayerRef.current;
     if (!L || !map || !group) return;
@@ -871,11 +917,9 @@ export function GisMap() {
       const bounds = map.getBounds();
       const west = bounds.getWest(), east = bounds.getEast();
       const south = bounds.getSouth(), north = bounds.getNorth();
-      const span = Math.max(east - west, north - south);
-      const step = span > 12 ? 2 : span > 5 ? 1 : span > 2 ? 0.5 : span > 0.5 ? 0.1 : span > 0.1 ? 0.02 : span > 0.02 ? 0.005 : 0.001;
-      const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+      const step = 1;
       const label = (v: number, axis: "lat" | "lon") =>
-        `${Math.abs(v).toFixed(decimals)}°${axis === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E")}`;
+        `${Math.abs(v).toFixed(0)}°${axis === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E")}`;
       const lineStyle = { color: "#475569", weight: 1, opacity: 0.5, interactive: false };
       const icon = (text: string, rotate = false, horizontalTick = false) => L.divIcon({
         className: "",
@@ -950,6 +994,20 @@ export function GisMap() {
             <RulerIcon />
             {tool === "ruler" ? "Click points to measure…" : "Ruler"}
           </Button>
+          <Button
+            variant={tool === "select" ? "primary" : "ghost"}
+            onClick={() => {
+              const active = tool === "select";
+              setTool(active ? "none" : "select");
+              if (active) setSelectedMapItem(null);
+            }}
+          >
+            {tool === "select" ? "Click an item…" : "Select"}
+          </Button>
+          <Button variant="ghost" onClick={deleteSelectedMapItem} disabled={!selectedMapItem}>
+            Delete
+          </Button>
+          {selectedMapItem && <span className="text-xs text-red-600">Selected: {selectedMapItem.name}</span>}
           <Button
             variant={tool === "select-computation" ? "primary" : "ghost"}
             onClick={() => {
