@@ -24,6 +24,7 @@ import { TribalLeaseSketch, type LeaseMeta } from "@/components/TribalLeaseSketc
 import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { transformPoint } from "@/lib/server/crs";
+import { inverse } from "@/lib/server/geometry";
 import { fitFontSize } from "@/lib/wrapSvgText";
 import { formatDegreeSquare, validateDegreeSquare, type DegreeSquareBounds } from "@/lib/degreeSquare";
 
@@ -39,7 +40,7 @@ import { formatDegreeSquare, validateDegreeSquare, type DegreeSquareBounds } fro
  *  unparseable field falls straight back to the computed value.
  *  These feed the TABLE ONLY — the polygon is still drawn from the beacon
  *  coordinates, exactly as before. */
-type SideEdits = Record<string, { distance?: string; bearing_dms?: string }>;
+type SideEdits = Record<string, { distance?: string; bearing_dms?: string; east?: string; north?: string }>;
 
 const KINDS: { id: DiagramKind; label: string; blurb: string }[] = [
   { id: "surveyed", label: "Surveyed", blurb: "Parcel surveyed on the ground — beacons measured and computed." },
@@ -301,8 +302,16 @@ export function Diagrams() {
   });
 
   const points = useMemo(
-    () => (fig?.points ?? []).map((p) => ({ name: p.name, east: p.east, north: p.north })),
-    [fig]
+    () => (fig?.points ?? []).map((p, i) => {
+      const edit = sideEdits[String(i)];
+      const east = Number(edit?.east), north = Number(edit?.north);
+      return {
+        name: p.name,
+        east: edit?.east?.trim() && Number.isFinite(east) ? east : p.east,
+        north: edit?.north?.trim() && Number.isFinite(north) ? north : p.north,
+      };
+    }),
+    [fig, sideEdits]
   );
   // Presentation rotation: exactly the 180-degree Lo-grid display turn, no
   // auto-alignment residual (client req 2026-11-16, side-by-side COGO vs
@@ -344,16 +353,22 @@ export function Diagrams() {
   // The computed sides, straight off the COGO legs — what the table shows
   // when nothing has been overridden by hand, and what the override boxes
   // show as their placeholder.
-  const baseSides = useMemo(
-    () =>
-      (fig?.legs ?? []).map((l) => ({
+  const baseSides = useMemo(() => {
+    const hasCoordinateEdits = Object.values(sideEdits).some((e) => e.east?.trim() || e.north?.trim());
+    if (hasCoordinateEdits && points.length >= 2) {
+      return points.map((p, i) => {
+        const next = points[(i + 1) % points.length];
+        const [bearing, distance] = inverse(p, next);
+        return { from: p.name, to: next.name, bearing_dms: formatDms(bearing), distance };
+      });
+    }
+    return (fig?.legs ?? []).map((l) => ({
         from: l.from,
         to: l.to,
         bearing_dms: l.bearing_dms,
         distance: l.distance,
-      })),
-    [fig]
-  );
+      }));
+  }, [fig, points, sideEdits]);
   // Hand-typed overrides applied on top (see SideEdits). Done here, at the
   // single place the sides are produced, so the SVG sheet and the DXF
   // export both print the same values without either of them knowing that
@@ -409,6 +424,16 @@ export function Diagrams() {
     }
     return { distance, bearing };
   }, [sideEdits]);
+  const editedCoordinateCells = useMemo(() => {
+    const east = new Set<number>(), north = new Set<number>();
+    for (const [k, v] of Object.entries(sideEdits)) {
+      const i = Number(k);
+      if (!Number.isInteger(i)) continue;
+      if (v.east?.trim()) east.add(i);
+      if (v.north?.trim()) north.add(i);
+    }
+    return { east, north };
+  }, [sideEdits]);
   /** Write one cell's override, dropping the row entirely once both of its
    *  cells are empty again so a cleared row leaves nothing in the saved
    *  project and falls straight back to the computed value. */
@@ -418,14 +443,44 @@ export function Diagrams() {
       const prop = field === "distance" ? "distance" : "bearing_dms";
       const next = { ...m, [key]: { ...(m[key] ?? {}), [prop]: raw } };
       const row = next[key];
-      if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim()) delete next[key];
+      if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim() && !(row.east ?? "").trim() && !(row.north ?? "").trim()) delete next[key];
       return next;
     });
+  const setCoordinateEdit = (index: number, field: "east" | "north", raw: string) =>
+    setSideEdits((m) => {
+      const key = String(index);
+      const next = { ...m, [key]: { ...(m[key] ?? {}), [field]: raw } };
+      const row = next[key];
+      if (!(row.distance ?? "").trim() && !(row.bearing_dms ?? "").trim() && !(row.east ?? "").trim() && !(row.north ?? "").trim()) delete next[key];
+      return next;
+    });
+  const clearSideOverrides = () => setSideEdits((current) => {
+    const next: SideEdits = {};
+    for (const [key, row] of Object.entries(current)) {
+      if (row.east?.trim() || row.north?.trim()) next[key] = { east: row.east, north: row.north };
+    }
+    return next;
+  });
+  const clearCoordinateOverrides = () => setSideEdits((current) => {
+    const next: SideEdits = {};
+    for (const [key, row] of Object.entries(current)) {
+      if (row.distance?.trim() || row.bearing_dms?.trim()) next[key] = { distance: row.distance, bearing_dms: row.bearing_dms };
+    }
+    return next;
+  });
   const openSidePrompt = (index: number, field: "distance" | "bearing", clientX: number, clientY: number) => {
     const e = sideEdits[String(index)] ?? {};
     setSidePrompt({
       index, field,
       value: (field === "distance" ? e.distance : e.bearing_dms) ?? "",
+      sx: clientX, sy: clientY,
+    });
+  };
+  const openCoordinatePrompt = (index: number, field: "east" | "north", clientX: number, clientY: number) => {
+    const edit = sideEdits[String(index)] ?? {};
+    setCoordinatePrompt({
+      index, field,
+      value: edit[field] ?? "",
       sx: clientX, sy: clientY,
     });
   };
@@ -675,6 +730,9 @@ export function Diagrams() {
   // in the table on the sheet itself and types over it).
   const [sidePrompt, setSidePrompt] = useState<
     { index: number; field: "distance" | "bearing"; value: string; sx: number; sy: number } | null
+  >(null);
+  const [coordinatePrompt, setCoordinatePrompt] = useState<
+    { index: number; field: "east" | "north"; value: string; sx: number; sy: number } | null
   >(null);
   // Interactive text rotation via the selected text's rotate handle (client
   // req 2026-10-20): angle follows the pointer around the text's anchor.
@@ -2234,6 +2292,10 @@ export function Diagrams() {
                 editableSides={sidesEditable}
                 onSideCellClick={openSidePrompt}
                 editedSideCells={editedSideCells}
+                editableCoordinates={kind === "compiled"}
+                onCoordinateCellClick={openCoordinatePrompt}
+                editedCoordinateCells={editedCoordinateCells}
+                hideCoordinates={kind === "framed"}
                 manualAnnotations={[...annotations, ...autoShared.annotations]}
                 pendingAnnotationPoint={pendingPoint}
                 selectedAnnotationId={selectedAnnotationId}
@@ -2366,6 +2428,54 @@ export function Diagrams() {
                   <button
                     type="button"
                     onClick={() => { setSideEdit(sidePrompt.index, sidePrompt.field, ""); close(); }}
+                    className="rounded border border-slate-200 px-1.5 py-1 text-slate-600 hover:bg-slate-50"
+                  >Reset</button>
+                </div>
+              </div>
+            );
+          })()}
+          {coordinatePrompt && (() => {
+            const point = (fig?.points ?? [])[coordinatePrompt.index];
+            if (!point) return null;
+            const isEast = coordinatePrompt.field === "east";
+            const computed = tCoord(isEast ? point.east : point.north);
+            const close = () => setCoordinatePrompt(null);
+            const commit = () => {
+              const raw = coordinatePrompt.value.trim();
+              if (raw && !Number.isFinite(Number(raw.replace(/\s/g, "")))) {
+                window.alert("Enter a valid numeric coordinate.");
+                return;
+              }
+              setCoordinateEdit(coordinatePrompt.index, coordinatePrompt.field, raw.replace(/\s/g, ""));
+              close();
+            };
+            return (
+              <div
+                className="fixed z-20 w-56 rounded border border-brand bg-white p-2 text-xs shadow-md"
+                style={{ left: Math.min(coordinatePrompt.sx + 12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240), top: coordinatePrompt.sy + 12 }}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="font-semibold text-brand-dark">
+                    Point {boundaryLetter(coordinatePrompt.index)} — {isEast ? "Y" : "X"} coordinate
+                  </span>
+                  <button type="button" onClick={close} className="text-slate-400 hover:text-slate-700" aria-label="Cancel">✕</button>
+                </div>
+                <input
+                  autoFocus
+                  value={coordinatePrompt.value}
+                  onChange={(ev) => setCoordinatePrompt((p) => p ? { ...p, value: ev.target.value } : p)}
+                  onKeyDown={(ev) => { if (ev.key === "Enter") commit(); if (ev.key === "Escape") close(); }}
+                  placeholder={computed}
+                  className="mb-1.5 w-full rounded border border-slate-200 px-1.5 py-1 font-mono tabular-nums"
+                />
+                <p className="mb-1.5 text-[10px] leading-snug text-slate-500">
+                  Original: {computed}. Saving updates the coordinate table, boundary geometry, directions and distances on this diagram.
+                </p>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={commit} className="flex-1 rounded bg-brand px-1.5 py-1 font-semibold text-white">Save</button>
+                  <button
+                    type="button"
+                    onClick={() => { setCoordinateEdit(coordinatePrompt.index, coordinatePrompt.field, ""); close(); }}
                     className="rounded border border-slate-200 px-1.5 py-1 text-slate-600 hover:bg-slate-50"
                   >Reset</button>
                 </div>
@@ -2567,8 +2677,53 @@ export function Diagrams() {
                         );
                       })}
                     </div>
-                    {Object.keys(sideEdits).length > 0 && (
-                      <Button variant="ghost" onClick={() => setSideEdits({})}>Clear all overrides</Button>
+                    {(editedSideCells.distance.size > 0 || editedSideCells.bearing.size > 0) && (
+                      <Button variant="ghost" onClick={clearSideOverrides}>Clear side overrides</Button>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {kind === "compiled" && (
+              <Card title="Coordinates">
+                {points.length === 0 ? (
+                  <p className="text-xs text-slate-500">Pick a lot first — its coordinates will appear here.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[11px] leading-snug text-slate-500">
+                      Edit Y/X here just like Sides &amp; Directions, or click a coordinate in the sheet table. Empty a box to restore the computed coordinate.
+                    </p>
+                    <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-slate-400">
+                      <span className="w-7 shrink-0">Point</span>
+                      <span className="flex-1 min-w-0">Y</span>
+                      <span className="flex-1 min-w-0">X</span>
+                    </div>
+                    <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
+                      {(fig?.points ?? []).map((point, i) => {
+                        const edit = sideEdits[String(i)] ?? {};
+                        const box = "min-w-0 flex-1 rounded border px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:border-slate-400";
+                        return (
+                          <div key={`${point.name ?? "point"}-${i}`} className="flex items-center gap-1">
+                            <span className="w-7 shrink-0 text-[11px] font-medium text-slate-600">{boundaryLetter(i)}</span>
+                            <input
+                              className={`${box} ${edit.east?.trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
+                              value={edit.east ?? ""}
+                              placeholder={tCoord(point.east)}
+                              onChange={(event) => setCoordinateEdit(i, "east", event.target.value)}
+                            />
+                            <input
+                              className={`${box} ${edit.north?.trim() ? "border-slate-500 bg-slate-50" : "border-slate-200"}`}
+                              value={edit.north ?? ""}
+                              placeholder={tCoord(point.north)}
+                              onChange={(event) => setCoordinateEdit(i, "north", event.target.value)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(editedCoordinateCells.east.size > 0 || editedCoordinateCells.north.size > 0) && (
+                      <Button variant="ghost" onClick={clearCoordinateOverrides}>Clear coordinate overrides</Button>
                     )}
                   </div>
                 )}

@@ -102,7 +102,7 @@ export function CogoWorkspace({
     closed: boolean;
   } | null;
 }) {
-  const { config, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
+  const { config, diagramFigure, setDiagramFigure, setDiagramInput, setActiveTab, cogoPlots, setCogoPlots, cogoWorkspaceDoc, setCogoWorkspaceDoc } = useStore();
   // Restore whatever was drawn here last time (client req 2026-08-23: a
   // polygon/line/point added in this work station must survive a refresh,
   // not need redoing) — read once, synchronously, as each piece of state's
@@ -721,7 +721,10 @@ export function CogoWorkspace({
    *  coordinates, keeping its name. */
   function editPointCoordsById(id: string, east: number, north: number): string | null {
     if (!Number.isFinite(east) || !Number.isFinite(north)) return null;
+    const original = visible.find((p) => p.id === id);
+    if (!original) return null;
     snapshot();
+    syncEditedPointCoordinates(original, east, north);
     if (id.startsWith("imp-")) {
       const orig = basePoints.find((p) => p.id === id);
       if (!orig) return null;
@@ -741,6 +744,38 @@ export function CogoWorkspace({
     }
     setExtra((e) => e.map((p) => (p.id === id ? { ...p, east, north } : p)));
     return id;
+  }
+
+  /** Keep every stored geometry that copied this beacon in sync with a
+   * direct Y/X edit from the Points table. Numbered plots and the active
+   * Diagram contain point snapshots (not references to `visible`), so
+   * changing only the table point previously left Diagrams showing the old
+   * coordinates. Rebuilding an affected figure also refreshes its sides,
+   * bearings, perimeter and area from the corrected point. */
+  function syncEditedPointCoordinates(original: WPoint, east: number, north: number) {
+    const EPS = 1e-6;
+    const same = (p: { east: number; north: number }) =>
+      Math.abs(p.east - original.east) < EPS && Math.abs(p.north - original.north) < EPS;
+    const move = <T extends { east: number; north: number }>(p: T): T => same(p) ? { ...p, east, north } : p;
+
+    setLines((current) => current.map((line) => ({
+      ...line,
+      ...(Math.abs(line.aE - original.east) < EPS && Math.abs(line.aN - original.north) < EPS ? { aE: east, aN: north } : {}),
+      ...(Math.abs(line.bE - original.east) < EPS && Math.abs(line.bN - original.north) < EPS ? { bE: east, bN: north } : {}),
+    })));
+    setPolygons((current) => current.map((polygon) =>
+      polygon.points.some(same) ? { ...polygon, points: polygon.points.map(move) } : polygon
+    ));
+
+    const nextPlots = cogoPlots.map((plot) => {
+      if (!plot.fig.points.some(same)) return plot;
+      return { ...plot, fig: buildFigureFromPoints(plot.fig.points.map(move)) };
+    });
+    if (nextPlots.some((plot, i) => plot !== cogoPlots[i])) setCogoPlots(nextPlots);
+
+    if (diagramFigure?.points.some(same)) {
+      setDiagramFigure(buildFigureFromPoints(diagramFigure.points.map(move)));
+    }
   }
   /** Negates one coordinate axis ("y" = east column, "x" = north column).
    *  With point rows selected in the table only those points flip; with no

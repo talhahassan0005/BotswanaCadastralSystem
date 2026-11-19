@@ -227,6 +227,10 @@ interface Props {
   /** Row indexes that currently carry a hand-typed value — faintly shaded so
    *  the surveyor can see at a glance which numbers are no longer computed. */
   editedSideCells?: { distance: Set<number>; bearing: Set<number> };
+  editableCoordinates?: boolean;
+  onCoordinateCellClick?: (index: number, field: "east" | "north", clientX: number, clientY: number) => void;
+  editedCoordinateCells?: { east: Set<number>; north: Set<number> };
+  hideCoordinates?: boolean;
 }
 
 const PARCEL_COLORS = ["#0d9488", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#16a34a", "#dc2626", "#0891b2"];
@@ -323,6 +327,7 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
     rotation: rotationProp, arrowRotation: arrowRotationProp, flip: flipProp, blockOffsets, onBlockOffset,
     labelOffsets, selectedLabel, onLabelClick, onLabelPointerDown, onLabelPointerMove, onLabelPointerUp,
     figureMovable, frameMovable, editableSides, onSideCellClick, editedSideCells,
+    editableCoordinates, onCoordinateCellClick, editedCoordinateCells, hideCoordinates,
   },
   ref
 ) {
@@ -632,8 +637,30 @@ export const SgDiagram = forwardRef<SVGSVGElement, Props>(function SgDiagram(
               {p && (
                 <>
                   <text x={xPt + 8} y={y} fontWeight="medium">{p.name}</text>
-                  <text x={xY + 8} y={y}>{tCoord(p.east)}</text>
-                  <text x={xX + 8} y={y}>{tCoord(p.north)}</text>
+                  {!hideCoordinates && <text x={xY + 8} y={y}>{tCoord(p.east)}</text>}
+                  {!hideCoordinates && <text x={xX + 8} y={y}>{tCoord(p.north)}</text>}
+                  {!hideCoordinates && editableCoordinates && !drawMode && (
+                    <>
+                      <rect
+                        data-noexport="1"
+                        x={xY} y={dataTop + i * rowH} width={Math.max(0, xYR - xY)} height={rowH}
+                        fill={editedCoordinateCells?.east.has(i) ? "#000" : "#fff"}
+                        fillOpacity={editedCoordinateCells?.east.has(i) ? 0.06 : 0.001}
+                        style={{ cursor: "text" }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onCoordinateCellClick?.(i, "east", e.clientX, e.clientY); }}
+                      />
+                      <rect
+                        data-noexport="1"
+                        x={xX} y={dataTop + i * rowH} width={Math.max(0, xXR - xX)} height={rowH}
+                        fill={editedCoordinateCells?.north.has(i) ? "#000" : "#fff"}
+                        fillOpacity={editedCoordinateCells?.north.has(i) ? 0.06 : 0.001}
+                        style={{ cursor: "text" }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onCoordinateCellClick?.(i, "north", e.clientX, e.clientY); }}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </g>
