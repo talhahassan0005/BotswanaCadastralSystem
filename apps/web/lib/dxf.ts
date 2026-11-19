@@ -233,8 +233,8 @@ export function writeDxf(d: ImportedDrawing): string {
   // $EXTMIN/$EXTMAX: some viewers zoom-to-extents from these on open
   // rather than the raw geometry — a missing/zero range can make an
   // otherwise-valid drawing appear blank or fail to display.
-  const allX = [...d.points.map((p) => p.x), ...d.polylines.flatMap((l) => l.pts.map((v) => v.x)), ...d.texts.map((t) => t.x)];
-  const allY = [...d.points.map((p) => p.y), ...d.polylines.flatMap((l) => l.pts.map((v) => v.y)), ...d.texts.map((t) => t.y)];
+  const allX = [...d.points.map((p) => p.x), ...d.polylines.flatMap((l) => l.pts.map((v) => v.x)), ...(d.circles ?? []).flatMap((c) => [c.x - c.r, c.x + c.r]), ...d.texts.map((t) => t.x)];
+  const allY = [...d.points.map((p) => p.y), ...d.polylines.flatMap((l) => l.pts.map((v) => v.y)), ...(d.circles ?? []).flatMap((c) => [c.y - c.r, c.y + c.r]), ...d.texts.map((t) => t.y)];
   const minX = allX.length ? Math.min(...allX) : 0, maxX = allX.length ? Math.max(...allX) : 0;
   const minY = allY.length ? Math.min(...allY) : 0, maxY = allY.length ? Math.max(...allY) : 0;
 

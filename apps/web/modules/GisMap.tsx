@@ -9,6 +9,7 @@ import { parseSurveyCsv } from "@/lib/server/csv";
 import { inverse } from "@/lib/server/geometry";
 import { formatDms } from "@/lib/server/angles";
 import { createZip } from "@/lib/zip";
+import { writeDxf, type ImportedDrawing } from "@/lib/dxf";
 import type { ParcelDoc, StockpileResult } from "@/lib/types";
 import type { WPoint } from "@/lib/cogoTools/types";
 import { REF_MARKS, type RefMark } from "@/lib/refmarks";
@@ -995,12 +996,60 @@ export function GisMap() {
     downloadBlob(blob, `${(config.name || "survey").replace(/\s+/g, "_")}.kmz`);
   }
 
+  /** Export the live GIS drawing, including every edit made on this screen,
+   * in the project's survey grid. DXF is a Cartesian format, so map-drawn
+   * WGS84 vertices are converted back to the active Lo/UTM grid before they
+   * are written. Invisible drawing layers are intentionally retained: hiding
+   * a layer is a display edit, not a request to discard its survey data. */
+  function exportDxf() {
+    const drawing: ImportedDrawing = { points: [], polylines: [], circles: [], texts: [] };
+
+    for (const b of beacons) {
+      drawing.points.push({ x: b.east, y: b.north, label: b.id, layer: "SURVEY_POINTS" });
+    }
+    for (const p of manualPts) {
+      drawing.points.push({ x: p.east, y: p.north, label: p.name, layer: "GIS_POINTS" });
+    }
+    for (const parcel of parcels) {
+      const pts = parcel.ring.map(([lat, lon]) => toEN(lat, lon)).filter((p): p is [number, number] => p != null);
+      if (pts.length < 3) continue;
+      drawing.polylines.push({ pts: pts.map(([x, y]) => ({ x, y })), closed: true, layer: "PARCELS" });
+      const x = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+      const y = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+      drawing.texts.push({ x, y, text: parcel.number, height: 2.5, layer: "PARCEL_LABELS", anchor: "middle" });
+    }
+    for (const layer of drawnLayers) {
+      const pts = layer.latlngs.map(([lat, lon]) => toEN(lat, lon)).filter((p): p is [number, number] => p != null);
+      if (layer.kind === "circle") {
+        const centre = pts[0];
+        if (centre && layer.radius && layer.radius > 0) {
+          drawing.circles!.push({ x: centre[0], y: centre[1], r: layer.radius, layer: "GIS_CIRCLES" });
+          drawing.texts.push({ x: centre[0], y: centre[1], text: layer.name, height: 2.5, layer: "GIS_LABELS", anchor: "middle" });
+        }
+        continue;
+      }
+      const minimum = layer.kind === "polygon" ? 3 : 2;
+      if (pts.length < minimum) continue;
+      drawing.polylines.push({
+        pts: pts.map(([x, y]) => ({ x, y })),
+        closed: layer.kind === "polygon",
+        layer: layer.kind === "polygon" ? "GIS_POLYGONS" : "GIS_LINES",
+      });
+      const x = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+      const y = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+      drawing.texts.push({ x, y, text: layer.name, height: 2.5, layer: "GIS_LABELS", anchor: "middle" });
+    }
+
+    const blob = new Blob([writeDxf(drawing)], { type: "application/dxf" });
+    downloadBlob(blob, `${(config.name || "survey").replace(/\s+/g, "_")}_gis.dxf`);
+  }
+
   const earthUrl = `https://earth.google.com/web/@${centroid[0]},${centroid[1]},1000a,3000d,35y,0h,0t,0r`;
   // Client-added points (the Add Point tool) count as exportable data too —
   // previously this only looked at beacons/parcels, so a project with
   // nothing BUT manually-added GIS points had both export buttons
   // wrongly disabled.
-  const hasData = beacons.length > 0 || manualPts.length > 0;
+  const hasData = beacons.length > 0 || manualPts.length > 0 || parcels.length > 0 || drawnLayers.length > 0;
 
   return (
     <div>
@@ -1008,6 +1057,7 @@ export function GisMap() {
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Button onClick={exportKml} disabled={!hasData}>⬇ Export KML</Button>
           <Button onClick={exportKmz} disabled={!hasData}>⬇ Export KMZ</Button>
+          <Button onClick={exportDxf} disabled={!hasData}>⬇ Export DXF</Button>
           <a href={earthUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="ghost">Open in Google Earth →</Button>
           </a>
