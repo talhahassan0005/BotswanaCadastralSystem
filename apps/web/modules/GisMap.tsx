@@ -191,6 +191,7 @@ export function GisMap() {
   const [mapReady, setMapReady] = useState(0);
   const coordBoxRef = useRef<HTMLDivElement | null>(null);
   const manualLayerRef = useRef<any>(null);
+  const previewPointLayerRef = useRef<any>(null);
   const rulerLayerRef = useRef<any>(null);
   const pointsLayerRef = useRef<any>(null);
   const polysLayerRef = useRef<any>(null);
@@ -282,11 +283,11 @@ export function GisMap() {
     if (/^UTM/i.test(cs.replace(/\s/g, ""))) return { a: "Easting", b: "Northing", aPh: "Easting (e.g. 389123.45)", bPh: "Northing (e.g. 7268431.02)" };
     return { a: "Y", b: "X", aPh: "Y (e.g. -97468.060)", bPh: "X (e.g. 2728457.058)" };
   }
-  function addTypedPoint() {
+  function resolveTypedPoint(): { east: number; north: number; ll: [number, number] } | null {
     const cs = typed.cs || src;
     const y = Number(typed.y.replace(/\s/g, "")), x = Number(typed.x.replace(/\s/g, ""));
     const f = csFields(cs);
-    if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr(`Enter ${f.a} and ${f.b} as numbers.`); return; }
+    if (!typed.y.trim() || !typed.x.trim() || !isFinite(y) || !isFinite(x)) { setTypedErr(`Enter ${f.a} and ${f.b} as numbers.`); return null; }
     // Bring the pair onto the project's own grid first — everything
     // downstream (the point list, the Cadastral work station, the exports)
     // is in that grid, so a point typed in WGS84 or UTM has to land there
@@ -297,16 +298,36 @@ export function GisMap() {
         [e, n] = transformPoint(y, x, cs, src);
       } catch (ex: any) {
         setTypedErr(ex?.message ?? `Could not convert from ${cs}.`);
-        return;
+        return null;
       }
-      if (!isFinite(e) || !isFinite(n)) { setTypedErr(`Those coordinates don't convert from ${cs}.`); return; }
+      if (!isFinite(e) || !isFinite(n)) { setTypedErr(`Those coordinates don't convert from ${cs}.`); return null; }
     }
     const ll = toLatLon(e, n);
-    if (!ll) { setTypedErr(`These coordinates don't fall on the map in ${src}.`); return; }
+    if (!ll) { setTypedErr(`These coordinates don't fall on the map in ${src}.`); return null; }
     setTypedErr(null);
-    addPoint(typed.name, e, n);
+    return { east: e, north: n, ll };
+  }
+  function addTypedPoint() {
+    const resolved = resolveTypedPoint();
+    if (!resolved) return;
+    const { east, north, ll } = resolved;
+    previewPointLayerRef.current?.clearLayers();
+    addPoint(typed.name, east, north);
     setTyped({ name: "", y: "", x: "", cs: typed.cs });
     mapRef.current?.setView(ll, Math.max(mapRef.current.getZoom?.() ?? 16, 16));
+  }
+  function zoomToTypedPoint() {
+    const resolved = resolveTypedPoint();
+    if (!resolved) return;
+    const L = window.L, map = mapRef.current, layer = previewPointLayerRef.current;
+    if (!L || !map || !layer) { setTypedErr("The map is still loading."); return; }
+    layer.clearLayers();
+    L.circleMarker(resolved.ll, {
+      radius: 8, color: "#f59e0b", weight: 3, fillColor: "#fef3c7", fillOpacity: 0.9,
+    })
+      .bindTooltip(`Preview: ${esc(typed.name.trim() || "new point")}`, { permanent: true, direction: "right", offset: [8, 0] })
+      .addTo(layer);
+    map.setView(resolved.ll, Math.max(map.getZoom?.() ?? 17, 17));
   }
 
   async function computeSelection(polygon: [number, number][]) {
@@ -688,6 +709,7 @@ export function GisMap() {
         refMarksLayerRef.current = rmGroup;
         gridLayerRef.current = L.layerGroup().addTo(map);
         manualLayerRef.current = L.layerGroup().addTo(map);
+        previewPointLayerRef.current = L.layerGroup().addTo(map);
         rulerLayerRef.current = L.layerGroup().addTo(map);
         drawLayerRef.current = L.layerGroup().addTo(map);
         drawDraftLayerRef.current = L.layerGroup().addTo(map);
@@ -711,6 +733,7 @@ export function GisMap() {
       gisShow = null; // the map this pointed at is about to be destroyed
       mapRef.current = null;
       manualLayerRef.current = null;
+      previewPointLayerRef.current = null;
       rulerLayerRef.current = null;
       refMarksLayerRef.current = null;
       gridLayerRef.current = null;
@@ -1083,6 +1106,7 @@ export function GisMap() {
           <input value={typed.y} onChange={(e) => setTyped((t) => ({ ...t, y: e.target.value }))} placeholder={csFields(typed.cs || src).aPh} className="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
           <input value={typed.x} onChange={(e) => setTyped((t) => ({ ...t, x: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") addTypedPoint(); }} placeholder={csFields(typed.cs || src).bPh} className="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono focus:border-brand focus:outline-none" />
           <Button variant="ghost" onClick={addTypedPoint}>Add</Button>
+          <Button variant="ghost" onClick={zoomToTypedPoint}>Zoom to Point</Button>
           {typedErr && <span className="text-red-600">{typedErr}</span>}
           {!typedErr && (typed.cs || src) !== src && (
             <span className="text-slate-400">converted to {displayLo(src)} on Add</span>
