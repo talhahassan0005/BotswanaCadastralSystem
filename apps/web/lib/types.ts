@@ -79,12 +79,6 @@ export interface CogoResult {
     v_distance?: number;
     v_direction_sec?: number;
   }[];
-  /** Geographic reference derived from the validated degree-square bounds.
-   * Survey East/North geometry remains in the selected project CRS. */
-  degree_square?: {
-    degreeFrom: number; minuteFrom: number; degreeTo: number; minuteTo: number;
-    fromDecimal: number; toDecimal: number; referenceDecimal: number;
-  };
 }
 
 export interface ValidationResult {

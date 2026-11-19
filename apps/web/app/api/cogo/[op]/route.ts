@@ -20,23 +20,6 @@ function point(p: { east: number; north: number; name?: string | null }): Point 
   return { east: p.east, north: p.north, name: p.name ?? null };
 }
 
-function degreeSquareResult(req: any) {
-  const d = req.degree_square;
-  if (!d) return {};
-  const values = [d.degreeFrom, d.minuteFrom, d.degreeTo, d.minuteTo].map(Number);
-  if (!values.every(Number.isInteger)) throw new Error("degree-square degrees and minutes must be whole numbers");
-  const [degreeFrom, minuteFrom, degreeTo, minuteTo] = values;
-  if (degreeFrom < 16 || degreeTo > 29 || degreeTo !== degreeFrom + 1) {
-    throw new Error("degree-square pair must be consecutive and within the Elo range 16–29");
-  }
-  if (minuteFrom < 0 || minuteFrom > 59 || minuteTo < 0 || minuteTo > 59) {
-    throw new Error("degree-square minutes must be between 0 and 59");
-  }
-  const fromDecimal = degreeFrom + minuteFrom / 60;
-  const toDecimal = degreeTo + minuteTo / 60;
-  return { degree_square: { degreeFrom, minuteFrom, degreeTo, minuteTo, fromDecimal, toDecimal, referenceDecimal: (fromDecimal + toDecimal) / 2 } };
-}
-
 /** All COGO endpoints, dispatched by the [op] path segment. Mirrors the Python
  *  engine's main.py routes + their rounding so output is byte-compatible. */
 export async function POST(req: Request, { params }: { params: { op: string } }) {
@@ -89,7 +72,6 @@ function handleTraverse(req: any) {
 
   const c = result.closure;
   return {
-    ...degreeSquareResult(req),
     type: result.type,
     adjustment: result.adjustment,
     closure: {
@@ -158,7 +140,6 @@ function handleCoordinates(req: any) {
   // so the UI doesn't present it as a perfect "exact" figure.
   const degenerate = closed && pts.length >= 3 && area < 1e-6;
   return {
-    ...degreeSquareResult(req),
     type: closed ? "closed" : "open",
     adjustment: "none",
     closure: {

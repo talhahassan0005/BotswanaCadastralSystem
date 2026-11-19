@@ -26,7 +26,6 @@ import { formatDms, normalizeDeg, parseBearing } from "@/lib/server/angles";
 import { transformPoint } from "@/lib/server/crs";
 import { inverse } from "@/lib/server/geometry";
 import { fitFontSize } from "@/lib/wrapSvgText";
-import { formatDegreeSquare, validateDegreeSquare, type DegreeSquareBounds } from "@/lib/degreeSquare";
 
 /** Hand-typed overrides for the SIDES (METRES) and DIRECTIONS columns of
  *  the top table (client req 2026-11-14: "Under frame and compilation, the
@@ -127,10 +126,10 @@ function defaultBeaconDescription(): string {
  * the immediate TOP latitude grid line first and the immediate RIGHT
  * longitude grid line second, then retain their whole-degree parts only:
  * e.g. 24°30'S / 25°03'E -> 2425. */
-function automaticDegreeSquareBounds(
+function automaticDegreeSquare(
   pts: { east: number; north: number }[],
   coordinateSystem: string
-): DegreeSquareBounds | null {
+): string | null {
   if (!pts.length) return null;
   const east = pts.reduce((sum, p) => sum + p.east, 0) / pts.length;
   const north = pts.reduce((sum, p) => sum + p.north, 0) / pts.length;
@@ -142,15 +141,9 @@ function automaticDegreeSquareBounds(
     // line instead of moving it into the next cell because of FP noise.
     const topLat = Math.ceil(lat * 60 - 1e-9) / 60;
     const rightLon = Math.ceil(lon * 60 - 1e-9) / 60;
-    const split = (v: number) => {
-      const abs = Math.abs(v);
-      const degree = Math.floor(abs + 1e-9);
-      const minute = Math.round((abs - degree) * 60);
-      return minute === 60 ? { degree: degree + 1, minute: 0 } : { degree, minute };
-    };
-    const from = split(topLat), to = split(rightLon);
-    const bounds = { degreeFrom: from.degree, minuteFrom: from.minute, degreeTo: to.degree, minuteTo: to.minute };
-    return validateDegreeSquare(bounds) ? null : bounds;
+    const latDegree = Math.floor(Math.abs(topLat) + 1e-9);
+    const lonDegree = Math.floor(Math.abs(rightLon) + 1e-9);
+    return `${String(latDegree).padStart(2, "0")}${String(lonDegree).padStart(2, "0")}`;
   } catch {
     return null;
   }
@@ -1155,46 +1148,13 @@ export function Diagrams() {
   // (client req 2026-10-21).
   const liveCoordinateSystem = config.coordinateSystem.replace(" Botswana", "");
   const computedDegreeSquare = useMemo(
-    () => config.degreeSquareBounds && !validateDegreeSquare(config.degreeSquareBounds)
-      ? config.degreeSquareBounds
-      : automaticDegreeSquareBounds(points, liveCoordinateSystem),
-    [points, liveCoordinateSystem, config.degreeSquareBounds]
+    () => automaticDegreeSquare(points, liveCoordinateSystem),
+    [points, liveCoordinateSystem]
   );
   useEffect(() => {
     if (!computedDegreeSquare) return;
-    setMeta((m) => {
-      if (m.degreeSquareManual) return m;
-      const label = formatDegreeSquare(computedDegreeSquare);
-      const b = m.degreeSquareBounds;
-      if (m.degreeSquare === label && b && b.degreeFrom === computedDegreeSquare.degreeFrom &&
-          b.minuteFrom === computedDegreeSquare.minuteFrom && b.degreeTo === computedDegreeSquare.degreeTo &&
-          b.minuteTo === computedDegreeSquare.minuteTo) return m;
-      return { ...m, degreeSquare: label, degreeSquareBounds: computedDegreeSquare };
-    });
+    setMeta((m) => m.degreeSquare === computedDegreeSquare ? m : { ...m, degreeSquare: computedDegreeSquare });
   }, [computedDegreeSquare]);
-  const degreeSquareBounds: DegreeSquareBounds = meta.degreeSquareBounds ?? computedDegreeSquare ?? {
-    degreeFrom: 18, minuteFrom: 0, degreeTo: 19, minuteTo: 0,
-  };
-  const degreeSquareError = validateDegreeSquare(degreeSquareBounds);
-  const updateDegreeSquare = (field: keyof DegreeSquareBounds, raw: string) => {
-    const next = { ...degreeSquareBounds, [field]: Number(raw) };
-    const error = validateDegreeSquare(next);
-    setMeta((m) => ({
-      ...m,
-      degreeSquareBounds: next,
-      degreeSquareManual: true,
-      ...(error ? {} : { degreeSquare: formatDegreeSquare(next) }),
-    }));
-  };
-  const resetDegreeSquare = () => {
-    if (!computedDegreeSquare) return;
-    setMeta((m) => ({
-      ...m,
-      degreeSquareBounds: computedDegreeSquare,
-      degreeSquare: formatDegreeSquare(computedDegreeSquare),
-      degreeSquareManual: false,
-    }));
-  };
   const fullMeta: DiagramMeta = {
     ...meta,
     coordinateSystem: liveCoordinateSystem,
@@ -2214,36 +2174,13 @@ export function Diagrams() {
                   {!isBorehole && (
                     <Field label="General Plan No."><Input value={meta.gpNo} onChange={set("gpNo")} /></Field>
                   )}
-                  <Field label="Degree Square">
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {([
-                        ["degreeFrom", "From °"], ["minuteFrom", "From '"],
-                        ["degreeTo", "To °"], ["minuteTo", "To '"],
-                      ] as const).map(([field, label]) => (
-                        <label key={field} className="text-[10px] text-slate-500">
-                          {label}
-                          <input
-                            type="number"
-                            min={field.startsWith("minute") ? 0 : 16}
-                            max={field.startsWith("minute") ? 59 : 29}
-                            step={1}
-                            value={degreeSquareBounds[field]}
-                            onChange={(e) => updateDegreeSquare(field, e.target.value)}
-                            className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm text-slate-700"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className={degreeSquareError ? "text-xs text-red-600" : "text-xs text-slate-500"}>
-                        {degreeSquareError ?? formatDegreeSquare(degreeSquareBounds)}
-                      </span>
-                      {meta.degreeSquareManual && computedDegreeSquare && (
-                        <button type="button" onClick={resetDegreeSquare} className="shrink-0 text-xs underline text-slate-500">
-                          Use automatic
-                        </button>
-                      )}
-                    </div>
+                  <Field label="Degree Square (automatic)">
+                    <input
+                      value={meta.degreeSquare}
+                      readOnly
+                      title="Calculated automatically from the figure's geographic grid square"
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                    />
                   </Field>
                   <Field label="D.S.M File"><Input value={meta.dsmFile ?? ""} onChange={set("dsmFile")} placeholder="e.g. CAD T9" /></Field>
                   <Field label="Comp."><Input value={meta.comp ?? ""} onChange={set("comp")} /></Field>
