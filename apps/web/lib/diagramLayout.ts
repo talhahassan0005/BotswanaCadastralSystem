@@ -51,6 +51,8 @@ export interface DiagramMeta {
   srNo: string;
   gpNo: string;
   degreeSquare: string;
+  degreeSquareBounds?: import("./degreeSquare").DegreeSquareBounds;
+  degreeSquareManual?: boolean;
   beaconDescription: string; // e.g. "All Beacons:12mm Iron Peg"
   areaHa: number;
   closed: boolean;

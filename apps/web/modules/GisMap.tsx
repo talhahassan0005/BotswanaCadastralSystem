@@ -928,9 +928,8 @@ export function GisMap() {
     if (showRefMarks) map.addLayer(layer); else map.removeLayer(layer);
   }, [showRefMarks, mapReady]);
 
-  // Geographic graticule with whole-degree latitude/longitude markers only
-  // (for example 22°E / 18°S). Do not add decimal, minute or second
-  // subdivisions: the client's reference grid is degree-only.
+  // Elo graticule: only odd-numbered whole-degree lines are named/drawn
+  // (21, 23, 25, 27, 29). Do not add decimal, minute or second labels.
   useEffect(() => {
     const L = window.L, map = mapRef.current, group = gridLayerRef.current;
     if (!L || !map || !group) return;
@@ -953,6 +952,7 @@ export function GisMap() {
       const lonStart = Math.ceil(west / step) * step;
       for (let lon = lonStart, guard = 0; lon <= east + step * 1e-6 && guard < 50; lon += step, guard++) {
         const v = Number(lon.toFixed(10));
+        if (Math.abs(Math.round(v)) % 2 !== 1) continue;
         L.polyline([[south, v], [north, v]], lineStyle).addTo(group);
         L.marker([north - (north - south) * 0.035, v], { icon: icon(label(v, "lon")), interactive: false }).addTo(group);
         L.marker([south + (north - south) * 0.035, v], { icon: icon(label(v, "lon")), interactive: false }).addTo(group);
@@ -960,6 +960,7 @@ export function GisMap() {
       const latStart = Math.ceil(south / step) * step;
       for (let lat = latStart, guard = 0; lat <= north + step * 1e-6 && guard < 50; lat += step, guard++) {
         const v = Number(lat.toFixed(10));
+        if (Math.abs(Math.round(v)) % 2 !== 1) continue;
         L.polyline([[v, west], [v, east]], lineStyle).addTo(group);
         L.marker([v, west + (east - west) * 0.015], { icon: icon(label(v, "lat"), true, true), interactive: false }).addTo(group);
         L.marker([v, east - (east - west) * 0.015], { icon: icon(label(v, "lat"), true, true), interactive: false }).addTo(group);

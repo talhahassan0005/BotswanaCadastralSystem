@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { CogoResult, ImportResult, StockpileResult, TopoResult, ValidationResult, VolumeResult } from "./types";
+import type { DegreeSquareBounds } from "./degreeSquare";
 
 export type Discipline = "Cadastral" | "Engineering" | "Mining" | "GIS";
 
@@ -25,6 +26,7 @@ export interface ProjectConfig {
   name: string;
   surveyor: string;
   coordinateSystem: string; // e.g. "Lo 26 Botswana"
+  degreeSquareBounds?: DegreeSquareBounds;
   discipline: Discipline; // Stage-3 project type
   traverseType: "closed" | "link" | "open";
   adjustment: "bowditch" | "transit" | "lsq" | "none";

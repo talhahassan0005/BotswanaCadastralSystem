@@ -7,6 +7,7 @@ import type { CogoResult } from "@/lib/types";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import { CogoWorkspace } from "@/components/CogoWorkspace";
 import { COORDINATE_SYSTEM_OPTIONS } from "@/lib/crsOptions";
+import { degreeMinuteToDecimal, degreeSquareReference, formatDegreeSquare, validateDegreeSquare, type DegreeSquareBounds } from "@/lib/degreeSquare";
 
 export function CogoEngine() {
   const { config, setConfig, importResult, cogoResult, setCogoResult, setActiveTab } = useStore();
@@ -14,6 +15,35 @@ export function CogoEngine() {
   const [running, setRunning] = useState(false);
   const [endE, setEndE] = useState(""); // known end-station coords (link traverse)
   const [endN, setEndN] = useState("");
+  const [degreeSquareInput, setDegreeSquareInput] = useState(() => ({
+    degreeFrom: config.degreeSquareBounds ? String(config.degreeSquareBounds.degreeFrom) : "",
+    minuteFrom: config.degreeSquareBounds ? String(config.degreeSquareBounds.minuteFrom) : "",
+    degreeTo: config.degreeSquareBounds ? String(config.degreeSquareBounds.degreeTo) : "",
+    minuteTo: config.degreeSquareBounds ? String(config.degreeSquareBounds.minuteTo) : "",
+  }));
+  const degreeSquareBounds: DegreeSquareBounds | null = Object.values(degreeSquareInput).every((v) => v.trim() !== "")
+    ? {
+        degreeFrom: Number(degreeSquareInput.degreeFrom), minuteFrom: Number(degreeSquareInput.minuteFrom),
+        degreeTo: Number(degreeSquareInput.degreeTo), minuteTo: Number(degreeSquareInput.minuteTo),
+      }
+    : null;
+  const degreeSquareError = degreeSquareBounds ? validateDegreeSquare(degreeSquareBounds) : null;
+  const setDegreeSquareField = (field: keyof typeof degreeSquareInput, value: string) => {
+    const next = { ...degreeSquareInput, [field]: value };
+    setDegreeSquareInput(next);
+    if (!Object.values(next).every((v) => v.trim() !== "")) return;
+    const bounds = {
+      degreeFrom: Number(next.degreeFrom), minuteFrom: Number(next.minuteFrom),
+      degreeTo: Number(next.degreeTo), minuteTo: Number(next.minuteTo),
+    };
+    if (!validateDegreeSquare(bounds)) setConfig({ degreeSquareBounds: bounds });
+  };
+  const degreeSquarePayload = degreeSquareBounds && !degreeSquareError ? {
+    ...degreeSquareBounds,
+    fromDecimal: degreeMinuteToDecimal(degreeSquareBounds.degreeFrom, degreeSquareBounds.minuteFrom),
+    toDecimal: degreeMinuteToDecimal(degreeSquareBounds.degreeTo, degreeSquareBounds.minuteTo),
+    referenceDecimal: degreeSquareReference(degreeSquareBounds),
+  } : undefined;
 
   // Build traverse legs from the imported rows (each row carries the leg leaving it).
   const legs = useMemo(() => {
@@ -94,6 +124,11 @@ export function CogoEngine() {
 
   async function run() {
     setError(null);
+    const degreeSquareStarted = Object.values(degreeSquareInput).some((v) => v.trim() !== "");
+    if (degreeSquareStarted && (!degreeSquareBounds || degreeSquareError)) {
+      setError(degreeSquareError ?? "Complete all four degree-square values before running the computation.");
+      return;
+    }
     setRunning(true);
     if (!config.cogoRunOnce) setConfig({ cogoRunOnce: true });
     try {
@@ -121,6 +156,7 @@ export function CogoEngine() {
           type: config.traverseType,
           adjustment: config.adjustment,
           end_known: endKnown,
+          degree_square: degreeSquarePayload,
         });
       } else if (coordPoints.length >= 3) {
         // Coordinate-only import (X,Y[,Z]) — no bearings/distances needed. Build the
@@ -145,6 +181,7 @@ export function CogoEngine() {
         result = await apiJson<CogoResult>("/cogo/coordinates", {
           points: coordPoints,
           type: config.traverseType,
+          degree_square: degreeSquarePayload,
         });
       } else {
         setError(
@@ -314,6 +351,29 @@ export function CogoEngine() {
               <p className="mt-1 text-xs text-slate-400">
                 Labels the survey documents (diagram, general plan). The planar traverse
                 arithmetic — bearings, distances and area — is identical across systems.
+              </p>
+            </Field>
+            <Field label="Degree square bounds">
+              <div className="grid grid-cols-4 gap-1.5">
+                {([
+                  ["degreeFrom", "From °"], ["minuteFrom", "From '"],
+                  ["degreeTo", "To °"], ["minuteTo", "To '"],
+                ] as const).map(([field, label]) => (
+                  <label key={field} className="text-[10px] text-slate-500">
+                    {label}
+                    <input
+                      type="number" step={1}
+                      min={field.startsWith("minute") ? 0 : 16}
+                      max={field.startsWith("minute") ? 59 : 29}
+                      value={degreeSquareInput[field]}
+                      onChange={(e) => setDegreeSquareField(field, e.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-200 px-1.5 py-1.5 text-xs"
+                    />
+                  </label>
+                ))}
+              </div>
+              <p className={`mt-1 text-xs ${degreeSquareError ? "text-red-600" : "text-slate-400"}`}>
+                {degreeSquareError ?? (degreeSquareBounds ? `${formatDegreeSquare(degreeSquareBounds)} · centre ${degreeSquareReference(degreeSquareBounds).toFixed(6)}°` : "Enter both degree-line pairs (Elo range 16–29).")}
               </p>
             </Field>
             <Field label="Starting beacon">
