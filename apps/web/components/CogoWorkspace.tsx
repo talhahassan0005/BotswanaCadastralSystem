@@ -601,6 +601,54 @@ export function CogoWorkspace({
     setSelected(null);
     setHistVer((v) => v + 1);
   }
+
+  /** Remove polygons as project entities, not only as canvas paint. A
+   * numbered polygon is also copied into cogoPlots for Diagrams, Working
+   * Plan, GIS and reports; leaving that copy behind made a deleted lot keep
+   * appearing elsewhere and kept its number occupied. Geometry matching
+   * also removes stale copies left by an earlier rename of the same lot. */
+  function deletePolygonsEverywhere(ids: Set<string>) {
+    if (!ids.size) return;
+    const doomed = polygons.filter((p) => ids.has(p.id));
+    if (!doomed.length) return;
+    const doomedNumbers = new Set(
+      doomed.flatMap((p) => [polygonMeta[p.id]?.position, p.name])
+        .map((n) => n?.trim().toLowerCase())
+        .filter((n): n is string => !!n)
+    );
+    const sameBoundary = (
+      a: { east: number; north: number }[],
+      b: { east: number; north: number }[]
+    ) => a.length === b.length && a.every((p) =>
+      b.some((q) => Math.abs(p.east - q.east) < 0.001 && Math.abs(p.north - q.north) < 0.001)
+    );
+
+    setPolygons((ps) => ps.filter((p) => !ids.has(p.id)));
+    setPolygonMeta((current) => {
+      const next = { ...current };
+      ids.forEach((id) => delete next[id]);
+      return next;
+    });
+    setCogoPlots(cogoPlots.filter((plot) =>
+      !doomedNumbers.has(plot.number.trim().toLowerCase()) &&
+      !doomed.some((polygon) => sameBoundary(plot.fig.points, polygon.points))
+    ));
+
+    // Do not leave a deleted lot as the active generated diagram.
+    if (diagramFigure && doomed.some((polygon) => sameBoundary(diagramFigure.points, polygon.points))) {
+      setDiagramFigure(null);
+      setDiagramInput(null);
+    }
+
+    // Keep the next-number suggestion based only on lots that still exist.
+    const remainingNumbers = polygons
+      .filter((p) => !ids.has(p.id))
+      .map((p) => polygonMeta[p.id]?.position?.trim())
+      .filter((n): n is string => !!n);
+    const numeric = remainingNumbers.map(Number).filter(Number.isFinite);
+    setLastPlotNumber(numeric.length ? String(Math.max(...numeric)) : remainingNumbers.at(-1) ?? null);
+  }
+
   function deleteSelected() {
     // Part 10e: a multi-selection (box/lasso/click-to-add) deletes as a
     // group, across points/lines/polygons together; otherwise fall back to
@@ -630,7 +678,7 @@ export function CogoWorkspace({
         for (const l of lines) if (lineIds.has(l.id)) removeSegLabelsAt(l.aE, l.aN, l.bE, l.bN);
         setLines((ls) => ls.filter((l) => !lineIds.has(l.id)));
       }
-      if (polyIds.size) setPolygons((ps) => ps.filter((p) => !polyIds.has(p.id)));
+      if (polyIds.size) deletePolygonsEverywhere(polyIds);
       setCanvasSelection(new Set());
       setSelected(null);
       return;
@@ -1189,7 +1237,7 @@ export function CogoWorkspace({
       for (const l of lines) if (tableSelected.has(l.id)) removeSegLabelsAt(l.aE, l.aN, l.bE, l.bN);
       setLines((ls) => ls.filter((l) => !tableSelected.has(l.id)));
     } else {
-      setPolygons((ps) => ps.filter((p) => !tableSelected.has(p.id)));
+      deletePolygonsEverywhere(tableSelected);
     }
     setTableSelected(new Set());
     setTableAnchor(null);
@@ -3155,9 +3203,9 @@ export function CogoWorkspace({
         const [wx, wy] = toWorld(vbx, vby);
         const hit = polygons.find((p) => pointInPolygon(wx, wy, p));
         if (hit) {
-          if (window.confirm(`Delete parcel ${hit.name || hit.id}? This removes the boundary polygon only, not its points/lines.`)) {
+          if (window.confirm(`Delete parcel ${polygonMeta[hit.id]?.position || hit.name || hit.id}? This removes its polygon, saved lot, metadata and generated diagram references from the project. Its survey points and lines will remain available for reuse.`)) {
             snapshot();
-            setPolygons((ps) => ps.filter((p) => p.id !== hit.id));
+            deletePolygonsEverywhere(new Set([hit.id]));
           }
         }
       } else if (tablesOpen && tableTab === "lines") {

@@ -886,14 +886,16 @@ export function WorkingPlanView() {
       const w = toExportWorld(p.east, p.north);
       beaconPoints.push({ x: w.east, y: w.north, label: labelOffsets[p.name]?.hidden ? undefined : p.name, layer: "BEACONS" });
     }
-    // Double Circle Tool rings (client req 2026-10-22, moved here from
-    // Diagrams — same approach as that module's own DXF export: approximate
-    // each ring as a 36-point polygon around the beacon's live screen
-    // position, radii matching the sheet's own beaconR/DOUBLE_CIRCLE_R).
-    if (doubleCircles.length) {
+    // Block-corner and Double Circle Tool rings. The preview treats either
+    // flag as the same cadastral double-circle convention, so the DXF must
+    // do the same rather than exporting block corners as plain points.
+    // Approximate each ring as a 36-point polygon around the beacon's live
+    // screen position, matching the preview's beaconR/DOUBLE_CIRCLE_R.
+    const circledBeaconNames = new Set([...blockCornerIds, ...doubleCircles]);
+    if (circledBeaconNames.size) {
       const beaconR = (allBeacons.length > 400 ? 1.4 : allBeacons.length > 150 ? 2 : 2.8) * (meta.beaconScale ?? 1);
       for (const p of allBeacons) {
-        if (!p.name || !doubleCircles.includes(p.name)) continue;
+        if (!p.name || !circledBeaconNames.has(p.name)) continue;
         const c = t!.toScreenLive ? t!.toScreenLive(p.east, p.north) : t!.toScreen(p.east, p.north);
         for (const r of [beaconR, beaconR * DOUBLE_CIRCLE_R]) {
           const pts = Array.from({ length: 36 }, (_, k) => {

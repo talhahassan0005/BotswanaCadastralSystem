@@ -47,6 +47,10 @@ let gisConversionPick: ((lat: number, lon: number) => void) | null = null;
 const ESRI_BOUNDARIES_PLACES =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const BOTSWANA_CENTER: [number, number] = [-22.33, 24.68];
+// Allow close inspection beyond the provider's native imagery resolution.
+// Leaflet will upscale the best available tile instead of stopping the map
+// at z19; maxNativeZoom below prevents requests for non-existent tiles.
+const GIS_MAX_ZOOM = 23;
 
 /** Deepest zoom Esri actually has imagery for at a place (client screenshot
  *  2026-10-23: "Map data not yet available" tiles — rural Botswana often only
@@ -564,12 +568,12 @@ export function GisMap() {
     loadLeaflet()
       .then((L) => {
         if (cancelled || !mapDivRef.current) return;
-        map = L.map(mapDivRef.current);
+        map = L.map(mapDivRef.current, { maxZoom: GIS_MAX_ZOOM });
         // maxNativeZoom starts at 17 (available almost everywhere in
         // Botswana) and is then set to what Esri really has at the place
         // being viewed, re-checked after each move.
-        const sat = L.tileLayer(ESRI_IMAGERY, { maxZoom: 19, maxNativeZoom: 17, attribution: "Imagery © Esri" });
-        const streets = L.tileLayer(OSM, { maxZoom: 19, attribution: "© OpenStreetMap" });
+        const sat = L.tileLayer(ESRI_IMAGERY, { maxZoom: GIS_MAX_ZOOM, maxNativeZoom: 17, attribution: "Imagery © Esri" });
+        const streets = L.tileLayer(OSM, { maxZoom: GIS_MAX_ZOOM, maxNativeZoom: 19, attribution: "© OpenStreetMap" });
         sat.addTo(map);
         let checkSeq = 0;
         const fitImageryZoom = () => {
@@ -590,7 +594,7 @@ export function GisMap() {
         const labelPane = map.getPane("labels");
         if (labelPane) { labelPane.style.zIndex = "350"; labelPane.style.pointerEvents = "none"; }
         const places = L.tileLayer(ESRI_BOUNDARIES_PLACES, {
-          pane: "labels", maxZoom: 19, attribution: "Boundaries & places © Esri",
+          pane: "labels", maxZoom: GIS_MAX_ZOOM, maxNativeZoom: 19, attribution: "Boundaries & places © Esri",
         });
         places.addTo(map);
         L.control.layers(
